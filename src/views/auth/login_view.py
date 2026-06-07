@@ -6,18 +6,25 @@ exactly which field failed and why.
 On successful authentication, the user's UID is written to
 `page.session.store["current_user_id"]` BEFORE navigating, so user-scoped
 screens (MyProfileView, ChatView, etc.) can identify "who am I" without
-issuing a second backend call."""
+issuing a second backend call.
+
+A HUB screen: it provides a heading + the form (`get_body`) and the two action
+buttons (`get_actions`); the framework (`BaseView` + `ScreenShell`) renders the
+shared centered, max-width, semi-transparent card — identical to Signup and
+Welcome (the design baseline)."""
 import asyncio
 import logging
 
 import flet as ft
 
 from views._base import BaseView
-from views.auth.widgets.auth_card import auth_modal
+from views.common.screen import ScreenType
 from views.common.session import safe_remove
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
+from components.typography import create_screen_heading
+from components.feedback import create_field_error_label, set_field_error, clear_field_errors
 from services.I_Auth_Service import IAuthService
 from utils import local_storage
 from utils.constants import TextSizes, ThemeColors, UIConstants
@@ -34,16 +41,17 @@ SESSION_USER_EMAIL_KEY = "current_user_email"
 
 class LoginView(BaseView):
     ROUTE = "/auth/login"
+    SCREEN_TYPE = ScreenType.HUB
 
     def __init__(self, page: ft.Page, auth: IAuthService) -> None:
         super().__init__(page)
         self.auth = auth
 
     # ============================================================
-    #  Layout
+    #  Layout — the interface the framework renders
     # ============================================================
 
-    def build(self) -> ft.View:
+    def get_body(self) -> ft.Control:
         # ---- Inputs ----
         self._email_field = create_hebrew_text_field(
             "אימייל",
@@ -56,8 +64,8 @@ class LoginView(BaseView):
         )
 
         # ---- Adjacent error labels (one per field) ----
-        self._email_error    = self._make_error_label()
-        self._password_error = self._make_error_label()
+        self._email_error    = create_field_error_label()
+        self._password_error = create_field_error_label()
 
         # ---- "Remember Me" — large, senior-friendly checkbox. When ticked,
         # a successful login persists a backend-minted device token (NOT the
@@ -71,34 +79,28 @@ class LoginView(BaseView):
             rtl=True,
         )
 
-        content = ft.Column(
+        # STRETCH so the fixed-width inputs flex to the (responsive) card width.
+        return ft.Column(
             controls=[
-                ft.Text(
-                    "התחברות למערכת", size=TextSizes.H1, weight=ft.FontWeight.BOLD,
-                    color=ThemeColors.TEXT_MAIN, rtl=True,
-                    text_align=ft.TextAlign.CENTER,
-                ),
-
+                create_screen_heading("התחברות למערכת", center=True),
                 self._email_field,
                 self._email_error,
-
                 self._password_field,
                 self._password_error,
-
                 self._remember_me,
-
-                # Primary (red) = the constructive login action; secondary
-                # (blue-grey) = cancel/navigation, per the action hierarchy.
-                create_primary_button("התחבר", self._on_login_click),
-                create_secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
             ],
             tight=True,
             spacing=UIConstants.ELEMENT_SPACING,   # match the Welcome baseline
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        # auth_modal centers `content` via the shared hub_screen primitive; bind
-        # the View into the navigation-stack lifecycle (system back / _is_live).
-        return self._bind_lifecycle(auth_modal(self.page, self.ROUTE, content))
+
+    def get_actions(self) -> list[ft.Control]:
+        # Primary (red) = the constructive login action; secondary (blue-grey) =
+        # cancel/navigation, per the action hierarchy.
+        return [
+            create_primary_button("התחבר", self._on_login_click),
+            create_secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
+        ]
 
     # ============================================================
     #  Submit handler
@@ -129,14 +131,14 @@ class LoginView(BaseView):
 
         # ---- Field-level validation (no I/O) ----
         if not self.auth.is_email_valid(email):
-            self._set_error(
+            set_field_error(
                 self._email_error,
                 "כתובת האימייל שהוזנה אינה חוקית (למשל: name@domain.com)",
             )
             return
 
         if not self.auth.is_password_valid(password):
-            self._set_error(self._password_error, "אנא הזן סיסמה תקינה")
+            set_field_error(self._password_error, "אנא הזן סיסמה תקינה")
             return
 
         # ---- Backend call (blocking → off the UI thread) ----
@@ -167,7 +169,7 @@ class LoginView(BaseView):
             self.page.go("/menu")
         else:
             # Generic backend failure → pin to password field (typical cause)
-            self._set_error(
+            set_field_error(
                 self._password_error,
                 "ההתחברות נכשלה. אנא בדוק/י את האימייל והסיסמה ונסה/י שוב.",
             )
@@ -210,27 +212,9 @@ class LoginView(BaseView):
     #  Error-label helpers
     # ============================================================
 
-    @staticmethod
-    def _make_error_label() -> ft.Text:
-        """Create a hidden, high-visibility, RTL error label sized for seniors."""
-        return ft.Text(
-            value="",
-            size=TextSizes.INPUT,
-            color=ft.Colors.RED_ACCENT_700,
-            weight=ft.FontWeight.W_500,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-            visible=False,
-            selectable=False,
-        )
-
     def _set_error(self, label: ft.Text, message: str) -> None:
-        label.value = message
-        label.visible = bool(message)
-        label.update()
+        set_field_error(label, message)
 
     def _clear_errors(self) -> None:
-        for label in (self._email_error, self._password_error):
-            label.value = ""
-            label.visible = False
+        clear_field_errors(self._email_error, self._password_error)
         self.page.update()

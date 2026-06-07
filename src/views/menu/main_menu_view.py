@@ -25,8 +25,9 @@ from views._base import BaseView
 from views.common.screen import ScreenType
 from views.common.session import safe_remove
 from components.buttons import create_primary_button, create_secondary_button
+from components.typography import create_screen_heading
 from utils import local_storage
-from utils.constants import TextSizes, UIConstants, ThemeColors
+from utils.constants import UIConstants, ThemeColors
 
 log = logging.getLogger(__name__)
 
@@ -49,14 +50,7 @@ class MainMenuView(BaseView):
     SESSION_USER_EMAIL_KEY = "current_user_email"
 
     def get_body(self) -> ft.Control:
-        return ft.Text(
-            "תפריט ראשי",
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.CENTER,
-        )
+        return create_screen_heading("תפריט ראשי", center=True)
 
     def get_actions(self) -> list[ft.Control]:
         # Three large primary choices, a divider, then the secondary (blue-grey)

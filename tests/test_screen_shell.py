@@ -48,7 +48,7 @@ class FakePage:
         self.width = width
         self.views = []
         self.route = None
-        self.on_resized = None
+        self.on_resize = None
 
 
 def _is_error_component(ctrl) -> bool:

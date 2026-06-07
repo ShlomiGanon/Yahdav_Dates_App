@@ -3,7 +3,7 @@ import flet as ft
 from views._base import BaseView
 from views.common.screen import ScreenType
 from components.buttons import create_primary_button
-from utils.constants import TextSizes, ThemeColors
+from components.typography import create_screen_heading
 
 
 class WelcomeView(BaseView):
@@ -19,14 +19,7 @@ class WelcomeView(BaseView):
     SCREEN_TYPE = ScreenType.HUB
 
     def get_body(self) -> ft.Control:
-        return ft.Text(
-            "ברוכים הבאים ליחדיו",
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.CENTER,
-        )
+        return create_screen_heading("ברוכים הבאים ליחדיו", center=True)
 
     def get_actions(self) -> list[ft.Control]:
         return [

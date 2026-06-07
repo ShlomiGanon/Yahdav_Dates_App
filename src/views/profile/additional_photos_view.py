@@ -28,6 +28,8 @@ from views.common.navigation import back_to_menu_button, back_button
 from views.common.photos import DEFAULT_PROFILE_IMAGE, extra_photo_urls, photo_thumb
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
+from components.typography import create_screen_heading
+from components.feedback import create_status_banner, show_status
 from services.I_Profile_Repository import IProfileRepository
 from services.I_Storage_Service import IStorageService
 from models.user_profile import UserProfile
@@ -66,14 +68,7 @@ class AdditionalPhotosView(BaseView):
     # ============================================================
 
     def get_body(self) -> ft.Control:
-        heading = ft.Text(
-            "תמונות נוספות",
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
+        heading = create_screen_heading("תמונות נוספות")
         hint = ft.Text(
             f"ניתן להוסיף עד {StorageConfig.MAX_EXTRA_PHOTOS} תמונות, "
             f"בנוסף לתמונת הפרופיל הראשית.",
@@ -105,18 +100,8 @@ class AdditionalPhotosView(BaseView):
         ]
 
     def get_status_banner(self) -> ft.Control:
-        self._status_text = ft.Text(
-            value="", size=TextSizes.BODY, color=ft.Colors.WHITE,
-            weight=ft.FontWeight.W_600, rtl=True, text_align=ft.TextAlign.RIGHT,
-        )
-        self._status_banner = ft.Container(
-            content=self._status_text,
-            bgcolor=ThemeColors.SUCCESS,
-            padding=14,
-            border_radius=UIConstants.CORNER_RADIUS,
-            visible=False,
+        self._status_banner, self._status_text = create_status_banner(
             width=UIConstants.INPUT_WIDTH,
-            alignment=ft.Alignment(0, 0),
         )
         return self._status_banner
 
@@ -136,7 +121,7 @@ class AdditionalPhotosView(BaseView):
     async def _load_profile_data(self) -> None:
         current_user = self.page.session.store.get(self.SESSION_USER_ID_KEY)
         if not current_user:
-            await self._show_status("אנא התחבר/י תחילה.", ok=False)
+            await show_status(self._status_banner, self._status_text,"אנא התחבר/י תחילה.", ok=False)
             await asyncio.sleep(1.5)
             # Route Liveness Check: don't bounce a user who already left.
             if not self._is_live():
@@ -152,7 +137,7 @@ class AdditionalPhotosView(BaseView):
         except Exception:
             loading.hide_loading(self.page)
             log.exception("AdditionalPhotos: load failed user=%s", current_user)
-            await self._show_status("טעינת התמונות נכשלה. אנא נסה/י שוב.", ok=False)
+            await show_status(self._status_banner, self._status_text,"טעינת התמונות נכשלה. אנא נסה/י שוב.", ok=False)
             return
         loading.hide_loading(self.page)
 
@@ -162,7 +147,7 @@ class AdditionalPhotosView(BaseView):
             return
 
         if profile is None:
-            await self._show_status("לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False)
+            await show_status(self._status_banner, self._status_text,"לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False)
             await asyncio.sleep(1.5)
             self.page.go("/auth/login")
             return
@@ -235,16 +220,16 @@ class AdditionalPhotosView(BaseView):
 
     async def _on_add_photo(self, e: ft.ControlEvent) -> None:
         if self._current_profile is None:
-            await self._show_status("לא ניתן להוסיף — הפרופיל לא נטען.", ok=False)
+            await show_status(self._status_banner, self._status_text,"לא ניתן להוסיף — הפרופיל לא נטען.", ok=False)
             return
         if len(self._extras()) >= StorageConfig.MAX_EXTRA_PHOTOS:
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 f"ניתן להוסיף עד {StorageConfig.MAX_EXTRA_PHOTOS} תמונות נוספות.",
                 ok=False,
             )
             return
         if self._file_picker is None:
-            await self._show_status("בורר הקבצים אינו זמין כעת.", ok=False)
+            await show_status(self._status_banner, self._status_text,"בורר הקבצים אינו זמין כעת.", ok=False)
             return
 
         try:
@@ -256,13 +241,13 @@ class AdditionalPhotosView(BaseView):
             )
         except Exception:
             log.exception("AdditionalPhotos: file picker failed")
-            await self._show_status("פתיחת בורר הקבצים נכשלה.", ok=False)
+            await show_status(self._status_banner, self._status_text,"פתיחת בורר הקבצים נכשלה.", ok=False)
             return
         if not files:
             return
         data = files[0].bytes
         if not data:
-            await self._show_status("טעינת התמונה נכשלה. נסה/י קובץ אחר.", ok=False)
+            await show_status(self._status_banner, self._status_text,"טעינת התמונה נכשלה. נסה/י קובץ אחר.", ok=False)
             return
 
         loading.show_loading(self.page)
@@ -286,13 +271,13 @@ class AdditionalPhotosView(BaseView):
             self._current_profile.photo_urls = tuple(self._photo_urls)
             if stored_path:
                 await asyncio.to_thread(self.storage.delete_file, stored_path)
-            await self._show_status("שמירת התמונה נכשלה. אנא נסה/י שוב.", ok=False)
+            await show_status(self._status_banner, self._status_text,"שמירת התמונה נכשלה. אנא נסה/י שוב.", ok=False)
             return
         loading.hide_loading(self.page)
 
         self._photo_urls = new_list
         self._refresh_photos()
-        await self._show_status("התמונה נוספה בהצלחה!", ok=True, auto_hide_sec=3.0)
+        await show_status(self._status_banner, self._status_text,"התמונה נוספה בהצלחה!", ok=True, auto_hide_sec=3.0)
 
     async def _on_remove_photo(self, extra_index: int, e: ft.ControlEvent) -> None:
         # Map the extra's index back to the absolute photo_urls index (+1 for
@@ -314,7 +299,7 @@ class AdditionalPhotosView(BaseView):
             log.exception("AdditionalPhotos: remove failed user=%s",
                           self._current_profile.user_id)
             self._current_profile.photo_urls = tuple(self._photo_urls)
-            await self._show_status("מחיקת התמונה נכשלה. אנא נסה/י שוב.", ok=False)
+            await show_status(self._status_banner, self._status_text,"מחיקת התמונה נכשלה. אנא נסה/י שוב.", ok=False)
             return
         # DB no longer references the file → delete it (best-effort, off-thread).
         await asyncio.to_thread(self.storage.delete_file, removed_path)
@@ -322,25 +307,9 @@ class AdditionalPhotosView(BaseView):
 
         self._photo_urls = new_list
         self._refresh_photos()
-        await self._show_status("התמונה הוסרה.", ok=True, auto_hide_sec=3.0)
+        await show_status(self._status_banner, self._status_text,"התמונה הוסרה.", ok=True, auto_hide_sec=3.0)
 
     # ============================================================
     #  Status banner
     # ============================================================
 
-    async def _show_status(
-        self, message: str, *, ok: bool, auto_hide_sec: float = 0.0,
-    ) -> None:
-        if self._status_banner is None or self._status_text is None:
-            return
-        self._status_text.value = message
-        self._status_banner.bgcolor = ThemeColors.SUCCESS if ok else ThemeColors.DANGER
-        self._status_banner.visible = True
-        self._status_banner.update()
-        if auto_hide_sec > 0:
-            await asyncio.sleep(auto_hide_sec)
-            self._status_banner.visible = False
-            try:
-                self._status_banner.update()
-            except Exception:
-                pass

@@ -13,6 +13,7 @@ import flet as ft
 from views._base import BaseView
 from views.common.screen import ScreenType
 from views.common.navigation import back_to_menu_button
+from components.typography import create_screen_heading
 from utils.constants import TextSizes, ThemeColors
 
 
@@ -33,14 +34,7 @@ class PlaceholderView(BaseView):
     def get_body(self) -> ft.Control:
         return ft.Column(
             controls=[
-                ft.Text(
-                    self._title,
-                    size=TextSizes.H1,
-                    weight=ft.FontWeight.BOLD,
-                    color=ThemeColors.TEXT_MAIN,
-                    rtl=True,
-                    text_align=ft.TextAlign.CENTER,
-                ),
+                create_screen_heading(self._title, center=True),
                 ft.Text(
                     "התכונה הזו תהיה זמינה בקרוב 🙂",
                     size=TextSizes.INPUT,

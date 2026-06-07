@@ -31,6 +31,30 @@ class UIConstants:
     # Used by the ScreenShell action bar's animate= (views/common/screen.py).
     ANIM_MS = 300
 
+    # --- Content-screen frame geometry (single source of truth) ---
+    # The scrollable card + sticky action bar layout used by every CONTENT
+    # screen. These live here (not in screen.py) so ALL spacing/sizing tokens
+    # have one home; screen.py re-exports them as module-level names for the
+    # views that import CONTENT_BODY_SPACING and for its own internal use.
+    CONTENT_CARD_MARGIN       = ft.Margin.only(left=12, top=12, right=12, bottom=8)
+    CONTENT_CARD_PADDING      = ft.Padding(20, 20, 20, 16)
+    # A taller top padding for screens whose heading must clear the BG top logo
+    # (the read-only peer profile and the peer photo album).
+    CONTENT_CARD_PADDING_TALL = ft.Padding(20, 40, 20, 16)
+    CONTENT_BODY_SPACING      = 14   # gap between body controls in the card
+    ACTION_BAR_PADDING        = ft.Padding(24, 12, 24, 20)  # sticky bar outer padding
+    ACTION_BAR_SPACING        = 10   # gap between action rows
+
+    # --- Inline status banner (components/feedback.py) ---
+    STATUS_BANNER_PADDING = 14   # interior padding of the success/error banner
+
+    # --- Chat bubble (components/chat.py) ---
+    BUBBLE_PADDING = 12   # interior padding of a chat bubble
+    BUBBLE_RADIUS  = 16   # corner radius of a chat bubble
+
+    # --- List tile (components/cards.py — discover/matches member rows) ---
+    LIST_TILE_PADDING = ft.Padding(16, 8, 16, 8)   # interior padding of a member card
+
     # --- My Profile view ---
     # Translucency of the form card floating over the full-screen BG image:
     # 0.0 = fully transparent, 1.0 = solid. Tuned so the artwork shows through
@@ -68,6 +92,10 @@ class ThemeColors:
     DANGER = ft.Colors.RED_400         # אדום בהיר יותר (להתראות, כדי שיבלוט מה-Primary)
     WARNING = ft.Colors.AMBER_600      # כתום-צהוב
     INFO = ft.Colors.BLUE_400          # כחול בהיר
+    # Per-field validation error text (components/feedback.py). A strong,
+    # high-contrast red — deliberately stronger than DANGER (RED_400) so a small
+    # inline label under an input stays legible for the 50+ audience.
+    FIELD_ERROR = ft.Colors.RED_ACCENT_700
     
     # --- ניטרליים (Crucial for Balance) ---
     BACKGROUND = ft.Colors.GREY_50     # רקע כמעט לבן כדי לתת לאדום "לנשום"

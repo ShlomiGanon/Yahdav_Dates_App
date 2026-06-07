@@ -30,6 +30,10 @@ from views._base import BaseView
 from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button
 from components import loading
+from components.typography import create_screen_heading
+from components.feedback import create_status_banner, show_status
+from components.avatars import create_initial_avatar, create_unread_badge
+from components.cards import create_tile_card
 from services.I_Messaging_Service import IMessagingService
 from services.I_Profile_Repository import IProfileRepository
 from utils.constants import TextSizes, UIConstants, ThemeColors
@@ -50,8 +54,6 @@ class MatchesView(BaseView):
     _DISCOVER_ROUTE = "/matching/discover"
 
     _CARD_HEIGHT: int = UIConstants.BUTTON_HEIGHT + 16   # 86px row
-    _AVATAR_DIAMETER: int = 52
-    _BADGE_DIAMETER: int = 34
     _PREVIEW_MAX_CHARS: int = 38
 
     def __init__(
@@ -73,14 +75,7 @@ class MatchesView(BaseView):
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
     def get_body(self) -> ft.Control:
-        heading = ft.Text(
-            "היסטוריית שיחות",
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
+        heading = create_screen_heading("היסטוריית שיחות")
         # The scrolling thread list (cards fill width via the ListView); expand=True
         # bounds it inside the card.
         self._feed_list = ft.ListView(
@@ -99,22 +94,7 @@ class MatchesView(BaseView):
         return [back_to_menu_button(self.page)]   # shared helper; UNWIND to /menu
 
     def get_status_banner(self) -> ft.Control:
-        self._status_text = ft.Text(
-            value="",
-            size=TextSizes.INPUT,
-            color=ft.Colors.WHITE,
-            weight=ft.FontWeight.W_600,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
-        self._status_banner = ft.Container(
-            content=self._status_text,
-            bgcolor=ThemeColors.DANGER,
-            padding=14,
-            border_radius=UIConstants.CORNER_RADIUS,
-            visible=False,
-            alignment=ft.Alignment(0, 0),
-        )
+        self._status_banner, self._status_text = create_status_banner()
         return self._status_banner
 
     def on_mount(self) -> None:
@@ -130,7 +110,7 @@ class MatchesView(BaseView):
         # ---- Identity check: missing → bounce to login immediately ----
         current = self.page.session.store.get(self.SESSION_USER_ID_KEY)
         if not current:
-            await self._show_status("אנא התחבר/י תחילה.", ok=False)
+            await show_status(self._status_banner, self._status_text,"אנא התחבר/י תחילה.", ok=False)
             await asyncio.sleep(1.5)
             self._safe_go("/auth/login")
             return
@@ -142,7 +122,7 @@ class MatchesView(BaseView):
         except Exception:
             loading.hide_loading(self.page)
             log.exception("Matches: load failed user=%s", current)
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "טעינת השיחות נכשלה. אנא נסה/י שוב מאוחר יותר.", ok=False,
             )
             return
@@ -155,7 +135,7 @@ class MatchesView(BaseView):
 
         # ---- Empty state is a state, not an error ----
         if not threads:
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "עדיין אין שיחות. התחילו שיחה ממסך הגילוי 🙂", ok=False,
             )
             self._feed_list.controls = []
@@ -212,7 +192,7 @@ class MatchesView(BaseView):
     # ============================================================
 
     def _thread_row(self, self_id: str, t: dict) -> ft.Control:
-        avatar = self._avatar(t["name"])
+        avatar = create_initial_avatar(t["name"], diameter=52)
 
         # Details fill the space between avatar (right) and badge (left); STRETCH
         # + text_align=RIGHT pins the two lines to the right, beside the avatar.
@@ -248,7 +228,7 @@ class MatchesView(BaseView):
         # → avatar FAR RIGHT, details fill the middle, badge FAR LEFT.
         controls: list[ft.Control] = [avatar, details]
         if t["unread"] > 0:
-            controls.append(self._badge(t["unread"]))
+            controls.append(create_unread_badge(t["unread"]))
 
         row = ft.Row(
             controls=controls,
@@ -257,47 +237,10 @@ class MatchesView(BaseView):
         )
 
         # Full-width card (fills the ListView) so it never floats left.
-        return ft.Container(
-            content=row,
+        return create_tile_card(
+            row,
             height=self._CARD_HEIGHT,
-            bgcolor=ThemeColors.SURFACE,
-            border_radius=UIConstants.CORNER_RADIUS,
-            padding=ft.Padding(16, 8, 16, 8),
-            ink=True,
             on_click=lambda _e, pid=t["peer_id"]: self._open_chat(pid),
-        )
-
-    def _avatar(self, name: str) -> ft.Control:
-        """Initials circle (brand red) — simple, high-contrast, senior-readable."""
-        initial = (name.strip()[:1] or "?")
-        return ft.Container(
-            width=self._AVATAR_DIAMETER,
-            height=self._AVATAR_DIAMETER,
-            border_radius=self._AVATAR_DIAMETER / 2,
-            bgcolor=ThemeColors.PRIMARY,
-            alignment=ft.Alignment(0, 0),
-            content=ft.Text(
-                initial,
-                size=TextSizes.H2,
-                weight=ft.FontWeight.BOLD,
-                color=ThemeColors.TEXT_ON_PRIMARY,
-            ),
-        )
-
-    def _badge(self, count: int) -> ft.Control:
-        """Unread-count badge — a red circle with the number, on the far left."""
-        return ft.Container(
-            width=self._BADGE_DIAMETER,
-            height=self._BADGE_DIAMETER,
-            border_radius=self._BADGE_DIAMETER / 2,
-            bgcolor=ThemeColors.DANGER,
-            alignment=ft.Alignment(0, 0),
-            content=ft.Text(
-                str(count),
-                size=TextSizes.BODY,
-                weight=ft.FontWeight.BOLD,
-                color=ft.Colors.WHITE,
-            ),
         )
 
     def _preview(self, self_id: str, t: dict) -> str:
@@ -341,15 +284,4 @@ class MatchesView(BaseView):
         try:
             self.page.update()
         except Exception:  # noqa: BLE001 — stale view after navigation
-            pass
-
-    async def _show_status(self, message: str, *, ok: bool) -> None:
-        self._status_text.value = message
-        self._status_banner.bgcolor = (
-            ThemeColors.SUCCESS if ok else ThemeColors.DANGER
-        )
-        self._status_banner.visible = True
-        try:
-            self._status_banner.update()
-        except Exception:  # noqa: BLE001
             pass

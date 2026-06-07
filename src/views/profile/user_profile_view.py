@@ -43,6 +43,9 @@ from views.common.navigation import back_button
 from views.common.photos import extra_photo_urls
 from components import loading
 from components.buttons import create_primary_button
+from components.typography import create_screen_heading
+from components.profile_fields import create_profile_field
+from components.avatars import create_photo_avatar
 from services.I_Profile_Repository import IProfileRepository
 from models.user_profile import UserProfile, Gender
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
@@ -97,10 +100,7 @@ class UserProfileView(BaseView):
     def get_body(self) -> ft.Control:
         # Avatar + heading + fields, STRETCH/RIGHT-aligned so a long bio wraps and
         # scrolls and can never overflow the render tree.
-        self._heading = ft.Text(
-            "", size=TextSizes.H1, weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN, rtl=True, text_align=ft.TextAlign.RIGHT,
-        )
+        self._heading = create_screen_heading("")
         self._avatar_slot = ft.Container(alignment=ft.Alignment(0, 0))
         self._content = ft.Column(
             controls=[],
@@ -256,59 +256,37 @@ class UserProfileView(BaseView):
 
         gender_label = self._safe_gender_label(profile)
         if gender_label:
-            blocks.append(self._field("מין", gender_label))
+            blocks.append(create_profile_field("מין", gender_label))
 
         age = self._safe_age(profile)
         if age:
-            blocks.append(self._field("גיל", age))
+            blocks.append(create_profile_field("גיל", age))
         dob = self._safe_dob(profile)
         if dob:
-            blocks.append(self._field("תאריך לידה", dob))
+            blocks.append(create_profile_field("תאריך לידה", dob))
 
         location = self._safe_location(profile)
         if location:
-            blocks.append(self._field("מיקום", location))
+            blocks.append(create_profile_field("מיקום", location))
 
         bio = self._safe_bio(profile)
         if bio and bio != name:        # suppress the username placeholder
-            blocks.append(self._field("קצת עליי", bio))
+            blocks.append(create_profile_field("קצת עליי", bio))
 
         if not blocks:
-            blocks.append(self._field(
+            blocks.append(create_profile_field(
                 "פרטים נוספים", "המשתמש/ת עדיין לא השלים/ה את הפרופיל.",
             ))
         return blocks
 
     def _avatar(self, profile: UserProfile) -> ft.Control:
-        """The member's main picture, rendered crash-proof on the CLIENT.
-
-        Uses `ft.Image` with an `error_content` initials fallback — NOT
-        `ft.DecorationImage` (which has no fallback). If the client can't load
-        the src (a stale `data/uploads` path that doesn't exist on this machine,
-        an unreadable file, an unsupported src), Flutter renders the initials
-        circle instead of failing the render tree to a black screen. A solid
-        `bgcolor` sits behind it as a second layer of safety.
-        """
-        initial = (self._safe_name(profile).strip()[:1] or "?").upper()
-        return ft.Container(
-            width=self._AVATAR_DIAMETER,
-            height=self._AVATAR_DIAMETER,
-            border_radius=self._AVATAR_DIAMETER / 2,
-            bgcolor=ThemeColors.PRIMARY,
-            alignment=ft.Alignment(0, 0),
-            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-            content=ft.Image(
-                src=self._safe_photo_src(profile),
-                width=self._AVATAR_DIAMETER,
-                height=self._AVATAR_DIAMETER,
-                fit=ft.BoxFit.COVER,
-                error_content=ft.Text(
-                    initial,
-                    size=TextSizes.H1,
-                    weight=ft.FontWeight.BOLD,
-                    color=ThemeColors.TEXT_ON_PRIMARY,
-                ),
-            ),
+        """The member's main picture — the crash-proof styling lives in
+        `create_photo_avatar`; this method only resolves the (always-safe) src
+        and the initials fallback name."""
+        return create_photo_avatar(
+            self._safe_photo_src(profile),
+            self._safe_name(profile),
+            diameter=self._AVATAR_DIAMETER,
         )
 
     @staticmethod
@@ -335,30 +313,6 @@ class UserProfileView(BaseView):
                 spacing=12,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-        )
-
-    @staticmethod
-    def _field(label: str, value: str) -> ft.Control:
-        """Read-only label/value block. STRETCH + RIGHT text_align (never END —
-        the RTL trap). The value Text wraps within the card width, so even a
-        long bio stays inside the layout boundary."""
-        return ft.Column(
-            controls=[
-                ft.Text(
-                    label, size=TextSizes.BODY, weight=ft.FontWeight.W_600,
-                    color=ThemeColors.SECONDARY, rtl=True,
-                    text_align=ft.TextAlign.RIGHT,
-                ),
-                ft.Text(
-                    value, size=TextSizes.INPUT, color=ThemeColors.TEXT_MAIN,
-                    rtl=True, text_align=ft.TextAlign.RIGHT, selectable=True,
-                    # Wrap (default) within the bounded card; clip the rare
-                    # unbroken mega-token so it can't blow the layout width.
-                    overflow=ft.TextOverflow.CLIP,
-                ),
-            ],
-            spacing=2,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
     # ============================================================

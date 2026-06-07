@@ -17,8 +17,10 @@ from views.common.screen import ScreenType
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
+from components.typography import create_screen_heading
+from components.feedback import create_field_error_label, set_field_error, clear_field_errors
 from services.I_Auth_Service import IAuthService
-from utils.constants import TextSizes, ThemeColors, UIConstants
+from utils.constants import UIConstants
 
 
 class SignupView(BaseView):
@@ -44,16 +46,12 @@ class SignupView(BaseView):
         self._confirm_password_field = create_hebrew_text_field(
             "אימות סיסמה", password=True, on_submit=self._on_signup_click,
         )
-        self._email_error            = self._make_error_label()
-        self._password_error         = self._make_error_label()
-        self._confirm_password_error = self._make_error_label()
+        self._email_error            = create_field_error_label()
+        self._password_error         = create_field_error_label()
+        self._confirm_password_error = create_field_error_label()
         return ft.Column(
             controls=[
-                ft.Text(
-                    "הרשמה למערכת", size=TextSizes.H1, weight=ft.FontWeight.BOLD,
-                    color=ThemeColors.TEXT_MAIN, rtl=True,
-                    text_align=ft.TextAlign.CENTER,
-                ),
+                create_screen_heading("הרשמה למערכת", center=True),
                 self._email_field, self._email_error,
                 self._password_field, self._password_error,
                 self._confirm_password_field, self._confirm_password_error,
@@ -85,21 +83,21 @@ class SignupView(BaseView):
 
         # ---- Field-level validation ----
         if not self.auth.is_email_valid(email):
-            self._set_error(
+            set_field_error(
                 self._email_error,
                 "כתובת האימייל אינה תקינה או חסרה.",
             )
             return
 
         if not self.auth.is_password_valid(password):
-            self._set_error(
+            set_field_error(
                 self._password_error,
                 "הסיסמה קצרה מדי. עליה להכיל לפחות 8 תווים, אותיות ומספרים.",
             )
             return
 
         if confirm != password:
-            self._set_error(
+            set_field_error(
                 self._confirm_password_error,
                 "ההקלדה אינה תואמת לסיסמה שבחרת למעלה.",
             )
@@ -127,7 +125,7 @@ class SignupView(BaseView):
             self.page.go("/auth/login")
         else:
             # Most common backend rejection: email or derived-username taken.
-            self._set_error(
+            set_field_error(
                 self._email_error,
                 "כתובת האימייל כבר רשומה במערכת. נסה/י כתובת אחרת או התחבר/י לחשבון הקיים.",
             )
@@ -136,29 +134,10 @@ class SignupView(BaseView):
     #  Error-label helpers
     # ============================================================
 
-    @staticmethod
-    def _make_error_label() -> ft.Text:
-        """Create a hidden, high-visibility, RTL error label sized for seniors."""
-        return ft.Text(
-            value="",
-            size=TextSizes.INPUT,
-            color=ft.Colors.RED_ACCENT_700,
-            weight=ft.FontWeight.W_500,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-            visible=False,
-            selectable=False,
-        )
-
-    def _set_error(self, label: ft.Text, message: str) -> None:
-        label.value = message
-        label.visible = bool(message)
-        label.update()
-
     def _clear_errors(self) -> None:
-        for label in (self._email_error,
-                      self._password_error,
-                      self._confirm_password_error):
-            label.value = ""
-            label.visible = False
+        clear_field_errors(
+            self._email_error,
+            self._password_error,
+            self._confirm_password_error,
+        )
         self.page.update()

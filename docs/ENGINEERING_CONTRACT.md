@@ -125,7 +125,7 @@ src/
     │                                   photos (resolve_main_photo + extra_photo_urls + photo_thumb),
     │                                   navigation (back_to_menu_button), session (safe_remove),
     │                                   placeholder_view (legacy; not in the active route table).
-    ├── auth/                           welcome_view, login_view, signup_view, widgets/auth_card (auth_modal).
+    ├── auth/                           welcome_view, login_view, signup_view (all plain HUB BaseViews).
     ├── menu/                           main_menu_view (post-login hub; route /menu; owns logout).
     ├── onboarding/                     (future — empty package, not routed).
     ├── profile/                        my_profile_view (edit own + MAIN picture),
@@ -213,7 +213,8 @@ solid `bgcolor=ThemeColors.BACKGROUND` behind it as the black-screen guard) and
 in `views/common/navigation.py` (`back_to_menu_button`) and session helpers in
 `views/common/session.py` (`safe_remove`). Photo helpers live in
 `views/common/photos.py`. This shell is shared by **every** screen, including
-auth (`auth_modal`), Welcome, and the router's own error view.
+auth (Login/Signup/Welcome are plain `ScreenType.HUB` `BaseView`s) and the
+router's own error view.
 
 ### Rule 4 — Feature isolation
 `views/profile/` must not import from `views/matching/`. Shared widgets →

@@ -62,6 +62,11 @@ from views.common.photos import resolve_main_photo
 from components import loading
 from components.buttons import create_primary_button
 from components.inputs import create_hebrew_text_field
+from components.typography import create_screen_heading
+from components.feedback import (
+    create_field_error_label, set_field_error, clear_field_errors,
+    create_status_banner, show_status,
+)
 from services.I_Profile_Repository import IProfileRepository
 from services.I_Storage_Service import IStorageService
 from models.user_profile import UserProfile, LocalizedText, Gender, Location
@@ -142,14 +147,7 @@ class MyProfileView(BaseView):
     # ============================================================
 
     def get_body(self) -> ft.Control:
-        heading = ft.Text(
-            "הפרופיל שלי",
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
+        heading = create_screen_heading("הפרופיל שלי")
 
         # ---- Photos: main picture + "תמונות נוספות" navigation ----
         # The FilePicker is a Flet *service*; it's attached to THIS view's
@@ -163,7 +161,7 @@ class MyProfileView(BaseView):
         self._name_field = create_hebrew_text_field(
             "שם מלא", hebrew_content=True, on_submit=self._on_save_click,
         )
-        self._name_error = self._make_error_label()
+        self._name_error = create_field_error_label()
 
         # ---- Bio (multi-line, Hebrew content) ----
         self._bio_field = create_hebrew_text_field(
@@ -171,7 +169,7 @@ class MyProfileView(BaseView):
             multiline=True, min_lines=4, max_lines=8,
             max_length=self._BIO_MAX_CHARS,
         )
-        self._bio_error = self._make_error_label()
+        self._bio_error = create_field_error_label()
 
         # ---- Gender (large dropdown — no free typing for the 50+ audience) ----
         self._gender_dropdown = self._make_dropdown(
@@ -180,7 +178,7 @@ class MyProfileView(BaseView):
                      for g, t in _GENDER_OPTIONS],
             width=UIConstants.INPUT_WIDTH,
         )
-        self._gender_error = self._make_error_label()
+        self._gender_error = create_field_error_label()
 
         # ---- Birth date — three large dropdowns (day / month / year). ----
         # Deliberately NOT a calendar picker: three simple dropdowns are far
@@ -225,13 +223,13 @@ class MyProfileView(BaseView):
             width=UIConstants.INPUT_WIDTH,
             alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
         )
-        self._dob_error = self._make_error_label()
+        self._dob_error = create_field_error_label()
 
         # ---- Location: city (text) + region (dropdown of Israeli districts) ----
         self._city_field = create_hebrew_text_field(
             "עיר", hebrew_content=True, on_submit=self._on_save_click,
         )
-        self._city_error = self._make_error_label()
+        self._city_error = create_field_error_label()
         self._region_dropdown = self._make_dropdown(
             label="אזור",
             options=[ft.dropdown.Option(key=r, text=r) for r in _REGIONS_HE],
@@ -271,22 +269,8 @@ class MyProfileView(BaseView):
     def get_status_banner(self) -> ft.Control:
         # Inline success/error feedback (reliable across Flet versions — no
         # dependency on page.snack_bar). Sits above the buttons in the sticky bar.
-        self._status_text = ft.Text(
-            value="",
-            size=TextSizes.BODY,
-            color=ft.Colors.WHITE,
-            weight=ft.FontWeight.W_600,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
-        self._status_banner = ft.Container(
-            content=self._status_text,
-            bgcolor=ThemeColors.SUCCESS,
-            padding=14,
-            border_radius=UIConstants.CORNER_RADIUS,
-            visible=False,
+        self._status_banner, self._status_text = create_status_banner(
             width=UIConstants.INPUT_WIDTH,
-            alignment=ft.Alignment(0, 0),
         )
         return self._status_banner
 
@@ -311,7 +295,7 @@ class MyProfileView(BaseView):
 
         # ---- 2. Defensive: not logged in → bounce to login ----
         if not current_user:
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "אנא התחבר/י תחילה כדי לראות את הפרופיל שלך.",
                 ok=False,
             )
@@ -343,7 +327,7 @@ class MyProfileView(BaseView):
             # text. The technical detail goes to the log, not the screen.
             loading.hide_loading(self.page)
             log.exception("MyProfile: profile load failed for user=%s", current_user)
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "טעינת הפרופיל נכשלה. אנא נסה/י שוב מאוחר יותר.", ok=False,
             )
             return
@@ -356,7 +340,7 @@ class MyProfileView(BaseView):
 
         # ---- 4. Profile may legitimately not exist (e.g. orphaned UID) ----
         if profile is None:
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False,
             )
             await asyncio.sleep(1.5)
@@ -436,12 +420,12 @@ class MyProfileView(BaseView):
 
         # ---- Sequential field validation (first failure wins, one banner) ----
         if not name:
-            self._set_error(self._name_error, "שדה השם הוא חובה")
+            set_field_error(self._name_error, "שדה השם הוא חובה")
             return
 
         gender_key = self._gender_dropdown.value
         if not gender_key:
-            self._set_error(self._gender_error, "אנא בחר/י מין")
+            set_field_error(self._gender_error, "אנא בחר/י מין")
             return
 
         birth = self._validated_birth_date()
@@ -449,12 +433,12 @@ class MyProfileView(BaseView):
             return  # the helper already pinned the birth-date error label
 
         if not city:
-            self._set_error(self._city_error, "שדה העיר הוא חובה")
+            set_field_error(self._city_error, "שדה העיר הוא חובה")
             return
 
         # ---- Defensive: profile must have loaded before we can mutate it ----
         if self._current_profile is None:
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "לא ניתן לשמור — הפרופיל לא נטען. נסה/י לרענן את המסך.",
                 ok=False,
             )
@@ -502,14 +486,14 @@ class MyProfileView(BaseView):
                 "MyProfile: save failed for user=%s",
                 self._current_profile.user_id,
             )
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "שמירת הפרופיל נכשלה. אנא נסה/י שוב.", ok=False,
             )
             return
         loading.hide_loading(self.page)
 
         # Success banner auto-fades so the user can keep editing.
-        await self._show_status(
+        await show_status(self._status_banner, self._status_text,
             "הפרופיל עודכן בהצלחה!", ok=True, auto_hide_sec=3.0,
         )
 
@@ -524,27 +508,27 @@ class MyProfileView(BaseView):
         m = self._dob_month.value
         y = self._dob_year.value
         if not (d and m and y):
-            self._set_error(
+            set_field_error(
                 self._dob_error, "אנא בחר/י תאריך לידה מלא (יום, חודש ושנה)",
             )
             return None
         try:
             birth = date(int(y), int(m), int(d))
         except ValueError:
-            self._set_error(self._dob_error, "התאריך שנבחר אינו קיים בלוח השנה")
+            set_field_error(self._dob_error, "התאריך שנבחר אינו קיים בלוח השנה")
             return None
         today = date.today()
         age = today.year - birth.year - (
             (today.month, today.day) < (birth.month, birth.day)
         )
         if age < _MIN_AGE_YEARS:
-            self._set_error(
+            set_field_error(
                 self._dob_error,
                 f"הגיל המינימלי לשימוש באפליקציה הוא {_MIN_AGE_YEARS}",
             )
             return None
         if age > _MAX_AGE_YEARS:
-            self._set_error(self._dob_error, "אנא בדוק/י את שנת הלידה שנבחרה")
+            set_field_error(self._dob_error, "אנא בדוק/י את שנת הלידה שנבחרה")
             return None
         return birth
 
@@ -641,13 +625,13 @@ class MyProfileView(BaseView):
         bundled default template). A save failure rolls back and deletes the
         just-written orphan."""
         if self._current_profile is None:
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "לא ניתן לעדכן תמונה — הפרופיל לא נטען. נסה/י לרענן את המסך.",
                 ok=False,
             )
             return
         if self._file_picker is None:   # defensive: build() always sets it
-            await self._show_status("בורר הקבצים אינו זמין כעת.", ok=False)
+            await show_status(self._status_banner, self._status_text,"בורר הקבצים אינו זמין כעת.", ok=False)
             return
 
         # In Flet 0.84 `pick_files` is awaitable and returns the selection
@@ -661,13 +645,13 @@ class MyProfileView(BaseView):
             )
         except Exception:
             log.exception("MyProfile: file picker failed")
-            await self._show_status("פתיחת בורר הקבצים נכשלה. אנא נסה/י שוב.", ok=False)
+            await show_status(self._status_banner, self._status_text,"פתיחת בורר הקבצים נכשלה. אנא נסה/י שוב.", ok=False)
             return
         if not files:            # user cancelled the dialog
             return
         data = files[0].bytes
         if not data:
-            await self._show_status("טעינת התמונה נכשלה. נסה/י קובץ אחר.", ok=False)
+            await show_status(self._status_banner, self._status_text,"טעינת התמונה נכשלה. נסה/י קובץ אחר.", ok=False)
             return
 
         old_main = self._photo_urls[0] if self._photo_urls else None
@@ -695,7 +679,7 @@ class MyProfileView(BaseView):
             self._current_profile.photo_urls = tuple(self._photo_urls)
             if stored_path:
                 await asyncio.to_thread(self.storage.delete_file, stored_path)
-            await self._show_status("עדכון תמונת הפרופיל נכשל. אנא נסה/י שוב.", ok=False)
+            await show_status(self._status_banner, self._status_text,"עדכון תמונת הפרופיל נכשל. אנא נסה/י שוב.", ok=False)
             return
         loading.hide_loading(self.page)
 
@@ -709,7 +693,7 @@ class MyProfileView(BaseView):
             await asyncio.to_thread(self.storage.delete_file, old_main)
 
         self._refresh_main_photo()
-        await self._show_status("תמונת הפרופיל עודכנה בהצלחה!", ok=True, auto_hide_sec=3.0)
+        await show_status(self._status_banner, self._status_text,"תמונת הפרופיל עודכנה בהצלחה!", ok=True, auto_hide_sec=3.0)
 
     # ============================================================
     #  Error / status helpers
@@ -736,55 +720,12 @@ class MyProfileView(BaseView):
             text_size=TextSizes.INPUT,
         )
 
-    @staticmethod
-    def _make_error_label() -> ft.Text:
-        """Hidden, high-visibility, RTL error label sized for seniors."""
-        return ft.Text(
-            value="",
-            size=TextSizes.INPUT,
-            color=ft.Colors.RED_ACCENT_700,
-            weight=ft.FontWeight.W_500,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-            visible=False,
-            selectable=False,
-        )
-
-    def _set_error(self, label: ft.Text, message: str) -> None:
-        label.value = message
-        label.visible = bool(message)
-        label.update()
-
     def _clear_errors(self) -> None:
-        for label in (
+        clear_field_errors(
             self._name_error,
             self._gender_error,
             self._dob_error,
             self._city_error,
             self._bio_error,
-        ):
-            label.value = ""
-            label.visible = False
+        )
         self.page.update()
-
-    async def _show_status(
-        self,
-        message: str,
-        *,
-        ok: bool,
-        auto_hide_sec: float = 0.0,
-    ) -> None:
-        """Show the inline status banner. Set auto_hide_sec > 0 to hide
-        it after that many seconds (used for the success → fade UX)."""
-        self._status_text.value = message
-        self._status_banner.bgcolor = ThemeColors.SUCCESS if ok else ThemeColors.DANGER
-        self._status_banner.visible = True
-        self._status_banner.update()
-
-        if auto_hide_sec > 0:
-            await asyncio.sleep(auto_hide_sec)
-            self._status_banner.visible = False
-            try:
-                self._status_banner.update()
-            except Exception:
-                pass

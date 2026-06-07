@@ -53,6 +53,7 @@ from views.common.photos import (
     extra_photo_urls,
 )
 from components import loading
+from components.typography import create_screen_heading
 from services.I_Profile_Repository import IProfileRepository
 from models.user_profile import UserProfile
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
@@ -97,11 +98,7 @@ class PeerPhotosView(BaseView):
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # _photos_column owns the scroll
 
     def get_body(self) -> ft.Control:
-        self._heading = ft.Text(
-            "תמונות נוספות",
-            size=TextSizes.H1, weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN, rtl=True, text_align=ft.TextAlign.RIGHT,
-        )
+        self._heading = create_screen_heading("תמונות נוספות")
         # The album tiles land here on load. STRETCH so each tile spans the card
         # width; the column owns the single bounded scroll region.
         self._photos_column = ft.Column(

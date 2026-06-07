@@ -146,8 +146,9 @@ class BaseView:
         if self._hub_card is None:
             return
         try:
-            self._prev_on_resized = self.page.on_resized
-            self.page.on_resized = self._on_resized
+            # Flet 0.84 exposes the page resize event as `on_resize`.
+            self._prev_on_resized = self.page.on_resize
+            self.page.on_resize = self._on_resized
             self._apply_responsive()
         except Exception:  # noqa: BLE001 — responsiveness is best-effort
             log.exception("%s: failed to attach resize handler", type(self).__name__)
@@ -157,8 +158,8 @@ class BaseView:
         if self._hub_card is None:
             return
         try:
-            if self.page.on_resized is self._on_resized:
-                self.page.on_resized = self._prev_on_resized
+            if self.page.on_resize is self._on_resized:
+                self.page.on_resize = self._prev_on_resized
         except Exception:  # noqa: BLE001
             log.exception("%s: failed to detach resize handler", type(self).__name__)
 

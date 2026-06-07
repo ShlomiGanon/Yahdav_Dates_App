@@ -32,9 +32,10 @@ view = background_screen(self.ROUTE, <layout-containing-card>)       # full-blee
   One definition, tuned in one place.
 - **Photo tiles** reuse `views/common/photos.py::photo_thumb(src, size=…)` — the
   single rounded/clipped image tile with a broken-image `error_content` fallback.
-- **Auth screens use the same shell.** `views/auth/widgets/auth_card.py::auth_modal`
-  is a thin wrapper over the shared `hub_screen` primitive (§1.5) — it is NOT a
-  bespoke modal/scrim. Login & Signup look identical to every other hub screen.
+- **Auth screens use the same shell.** Login, Signup and Welcome are ordinary
+  `ScreenType.HUB` `BaseView`s (§1.5) — there is NO bespoke auth modal/scrim. They
+  declare `SCREEN_TYPE = ScreenType.HUB` and provide `get_body`/`get_actions`, so
+  they render the identical centered card as every other hub screen.
 
 **Enforcement:** a view that constructs a raw `ft.View` with its own `bgcolor`, or
 hardcodes `padding=…` on a top-level container, fails review.
@@ -151,11 +152,11 @@ unified `ScreenShell` — the HUB branch.** Welcome, Main Menu, Login, Signup, t
 (via the `hub_screen(...)` back-compat shim) all render ONE translucent card,
 centred both axes, every control (buttons included) INSIDE the card. No
 scroll/action-bar split, no custom backgrounds or top-level padding, and
-no hand-rolled `background_screen(translucent_card(…))` assembly anywhere
-(`auth_modal` is now a thin wrapper over `hub_screen`). The centring + card
-geometry is defined once in `screen.py`. **Login and Signup are visually
-identical to Welcome** (the design baseline): same `hub_screen` frame, same H1,
-same `ELEMENT_SPACING`, same 400×70 buttons and 50%-white card.
+no hand-rolled `background_screen(translucent_card(…))` assembly anywhere. The
+centring + card geometry is defined once in `screen.py`. **Login and Signup are
+visually identical to Welcome** (the design baseline): same hub frame, same H1
+(`create_screen_heading`), same `ELEMENT_SPACING`, same 400×70 buttons and
+50%-white card.
 
 ## 1.6 Fault tolerance — the Error Component & the backstop
 
@@ -238,6 +239,28 @@ free-text for the 50+ audience — nothing to mistype. Use `MyProfileView._make_
 (oversized label + `text_size=TextSizes.INPUT`, fixed width). Birth date is three
 dropdowns, never a calendar grid.
 
+### 2.1 Shared content primitives (`src/components/`)
+
+Beyond buttons and inputs, recurring UI atoms live in `components/` so a view
+COMPOSES them and never hand-rolls the styling. Using the primitive IS complying.
+
+| Primitive | Module | Use |
+|---|---|---|
+| `create_screen_heading(text, *, center=False)` | `typography.py` | the screen H1. `center=True` for HUB/auth screens; default RIGHT for content screens. **Never inline an `ft.Text(size=TextSizes.H1, …)` heading in a view.** |
+| `create_section_heading(text, *, center=False)` | `typography.py` | an H2 subsection heading (parity with the screen heading). |
+| `create_field_error_label()` / `set_field_error(label, msg)` / `clear_field_errors(*labels)` | `feedback.py` | per-field validation error labels (colour `ThemeColors.FIELD_ERROR`). Replaces every view-local `_make_error_label`/`_set_error`. |
+| `create_status_banner(*, width=None)` → `(container, text)` / `show_status(banner, text, msg, *, ok, auto_hide_sec=0.0)` | `feedback.py` | the inline status banner + its async show/hide helper. Replaces every view-local status `Container` and `_show_status`. |
+| `create_chat_bubble(text, *, mine)` | `chat.py` | a single chat bubble with the RTL-immune absolute side-anchoring. |
+| `create_initial_avatar(name, *, diameter, online=None)` / `create_photo_avatar(src, name, *, diameter)` / `create_unread_badge(count)` | `avatars.py` | initials/photo avatars and the unread-count badge (Discover, Matches, peer profile). |
+| `create_tile_card(content, *, on_click, height=None)` | `cards.py` | the full-width tappable member-row card (Discover feed, Matches threads). |
+| `create_candidate_tile(name, meta, *, online, on_click)` | `discover.py` | a complete Discover candidate row (composes avatar + tile card). |
+| `create_profile_field(label, value)` | `profile_fields.py` | a read-only label/value block (peer profile). |
+
+All geometry these atoms use (`STATUS_BANNER_PADDING`, `BUBBLE_PADDING`,
+`BUBBLE_RADIUS`, `LIST_TILE_PADDING`, the `CONTENT_*`/`ACTION_BAR_*` frame tokens)
+is defined ONCE in `UIConstants` (`utils/constants.py`); `screen.py` re-exports the
+frame tokens it shares with views (e.g. `CONTENT_BODY_SPACING`).
+
 ---
 
 ## 3. The RTL Right-Alignment Formula (the inversion trap)
@@ -297,14 +320,17 @@ always one tap away no matter how far the form has scrolled.
 
 ## 5. Status & feedback
 
-Screens surface state through an **inline status banner** (a colored
-`translucent`-adjacent `Container` with a `ThemeColors.SUCCESS` green or
-`ThemeColors.DANGER` red fill), never `page.snack_bar` (unreliable across Flet
-versions). Per-field validation uses a hidden, RTL, red error label adjacent to
-each field, shown one-at-a-time (first failure wins, so a senior isn't overwhelmed).
-Success banners auto-fade (`auto_hide_sec`); error banners persist until the next
-action. Empty states ("עדיין אין שיחות", "עדיין אין פרופילים להצגה") are a *state*,
-shown calmly in the banner — not an error.
+Screens surface state through an **inline status banner** built by
+`components/feedback.py::create_status_banner()` (a `ThemeColors.SUCCESS` green or
+`ThemeColors.DANGER` red fill), driven by the shared async
+`show_status(banner, text, msg, *, ok, auto_hide_sec=0.0)` — never `page.snack_bar`
+(unreliable across Flet versions) and never a hand-rolled per-view banner/helper.
+Per-field validation uses `create_field_error_label()` (a hidden, RTL,
+`ThemeColors.FIELD_ERROR` label) adjacent to each field, set via
+`set_field_error`/`clear_field_errors`, shown one-at-a-time (first failure wins,
+so a senior isn't overwhelmed). Success banners auto-fade (`auto_hide_sec`); error
+banners persist until the next action. Empty states ("עדיין אין שיחות", "עדיין אין
+פרופילים להצגה") are a *state*, shown calmly in the banner — not an error.
 
 ---
 
@@ -361,14 +387,19 @@ and failing that, a bare last-resort view — never a black page.
    - [ ] Back goes via `back_button`/`go_back` (stack-aware), not `page.go(HARDCODED_PARENT)`.
    - [ ] Screen wrapped in `background_screen(translucent_card(...))`; no custom BG/padding.
    - [ ] All inputs via `create_hebrew_text_field`; text sizes ∈ {H1, H2, BUTTON, INPUT} for primary content.
+   - [ ] Screen title via `create_screen_heading`; field errors via `create_field_error_label`/`set_field_error`; status via `create_status_banner` + `show_status` — no inline H1, error label, or status `Container` in the view.
    - [ ] Columns `STRETCH`; Text `text_align=RIGHT` + `rtl=True`; Row anchors first; chat bubbles use absolute `ft.Alignment(±1,0)`.
    - [ ] Buttons via the two button primitives; constructive = red, exit/nav = blue-grey, separated by a divider.
    - [ ] No raw hex; no raw `ft.TextField` / `ft.View`; colors from `ThemeColors`.
    - [ ] Untrusted/feed data read via `_safe_*`; list rows built in isolated try/except; main picture via `resolve_main_photo`.
    - [ ] Status via the inline banner (SUCCESS/DANGER), not `page.snack_bar`.
-3. **Audit grep** — these should return nothing in `src/views/`:
+3. **Audit grep** — these should return nothing in `src/views/` (except `_base.py`):
    - `ft.TextField(` (use the primitive) · `CrossAxisAlignment.END` · `MainAxisAlignment.END`
      · `rtl=False` · raw `#` hex color literals · `bgcolor=` on a top-level view container.
+   - `def build(` (only `_base.py` defines it) · `size=TextSizes.H1` (use `create_screen_heading`)
+     · `_make_error_label` / `_show_status` (use the `feedback.py` primitives) · `padding=14`
+     (use `UIConstants.STATUS_BANNER_PADDING`) · `ft.Colors.RED_ACCENT` (use `ThemeColors.FIELD_ERROR`)
+     · `auth_modal` / `auth_card` (deleted — Login is a plain HUB `BaseView`).
 4. **Status quo:** auth, menu, profile, additional-photos, discover, chat, matches,
    the read-only peer profile, the cold-boot spinner, and the router error view all
    comply and share the single shell.

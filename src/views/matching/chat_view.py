@@ -31,8 +31,11 @@ from views.common.navigation import go_back
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
+from components.typography import create_screen_heading
+from components.feedback import create_status_banner, show_status
+from components.chat import create_chat_bubble
 from services.I_Messaging_Service import IMessagingService
-from utils.constants import MessageType, ChatConfig, TextSizes, UIConstants, ThemeColors
+from utils.constants import MessageType, ChatConfig, ThemeColors
 
 log = logging.getLogger(__name__)
 
@@ -80,14 +83,7 @@ class ChatView(BaseView):
         # contract — the title is a generic, senior-readable "שיחה". STRETCH so
         # each bubble's wrapper spans the full width (the absolute-alignment
         # bubble logic relies on it).
-        heading = ft.Text(
-            "שיחה",
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
+        heading = create_screen_heading("שיחה")
         self._messages_list = ft.ListView(
             expand=True,
             spacing=10,
@@ -125,22 +121,7 @@ class ChatView(BaseView):
         return [send_bar, divider, back_btn]
 
     def get_status_banner(self) -> ft.Control:
-        self._status_text = ft.Text(
-            value="",
-            size=TextSizes.INPUT,
-            color=ft.Colors.WHITE,
-            weight=ft.FontWeight.W_600,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
-        self._status_banner = ft.Container(
-            content=self._status_text,
-            bgcolor=ThemeColors.DANGER,
-            padding=14,
-            border_radius=UIConstants.CORNER_RADIUS,
-            visible=False,
-            alignment=ft.Alignment(0, 0),
-        )
+        self._status_banner, self._status_text = create_status_banner()
         return self._status_banner
 
     def on_mount(self) -> None:
@@ -158,12 +139,12 @@ class ChatView(BaseView):
         # user. Missing/mismatched ⇒ banner + bounce to login. ----
         current = self.page.session.store.get(self.SESSION_USER_ID_KEY)
         if not current or not self.self_id or current != self.self_id:
-            await self._show_status("אירעה שגיאת זיהוי. אנא התחבר/י מחדש.", ok=False)
+            await show_status(self._status_banner, self._status_text,"אירעה שגיאת זיהוי. אנא התחבר/י מחדש.", ok=False)
             await asyncio.sleep(1.5)
             self._safe_go("/auth/login")
             return
         if not self.peer_id:
-            await self._show_status("לא נבחר/ה משתמש/ת לשיחה.", ok=False)
+            await show_status(self._status_banner, self._status_text,"לא נבחר/ה משתמש/ת לשיחה.", ok=False)
             await asyncio.sleep(1.5)
             self._safe_go(self._DISCOVER_ROUTE)
             return
@@ -182,7 +163,7 @@ class ChatView(BaseView):
             loading.hide_loading(self.page)
             log.exception("Chat: history load failed self=%s peer=%s",
                           self.self_id, self.peer_id)
-            await self._show_status("טעינת השיחה נכשלה. אנא נסה/י שוב.", ok=False)
+            await show_status(self._status_banner, self._status_text,"טעינת השיחה נכשלה. אנא נסה/י שוב.", ok=False)
             return
         loading.hide_loading(self.page)
         if self._closing:
@@ -248,7 +229,7 @@ class ChatView(BaseView):
         except Exception:
             log.exception("Chat: send failed self=%s peer=%s",
                           self.self_id, self.peer_id)
-            await self._show_status("שליחת ההודעה נכשלה. אנא נסה/י שוב.", ok=False)
+            await show_status(self._status_banner, self._status_text,"שליחת ההודעה נכשלה. אנא נסה/י שוב.", ok=False)
             return
         await self._reload_messages()
 
@@ -257,37 +238,18 @@ class ChatView(BaseView):
     # ============================================================
 
     def _bubble(self, m: dict) -> ft.Control:
-        """A single chat bubble, side-anchored by ABSOLUTE alignment.
+        """A single chat bubble — the styling + RTL-immune side-anchoring lives
+        in `create_chat_bubble`; this method only reads the message dict.
 
-        The wrapper Container fills the list width; `ft.Alignment(±1, 0)` then
-        pins the content-sized bubble to the right (mine) or left (peer) — an
-        absolute coordinate, so it is unaffected by the RTL flip.
+        Defensive dict access: never assume the message dict's shape. A missing
+        sender_id degrades to a peer bubble; a missing/NULL/non-str content
+        (e.g. an AUDIO/IMAGE row whose content is a reference, or junk) degrades
+        to an empty string — `ft.Text(None)` would otherwise be a render-time risk.
         """
-        # Defensive dict access: never assume the message dict's shape. A
-        # missing sender_id degrades to a peer bubble; a missing/NULL/non-str
-        # content (e.g. an AUDIO/IMAGE row whose content is a reference, or junk)
-        # degrades to an empty string — `ft.Text(None)` would otherwise be a
-        # render-time risk.
         mine = m.get("sender_id") == self.self_id
         content = m.get("content")
         content = content if isinstance(content, str) else ""
-        bubble = ft.Container(
-            content=ft.Text(
-                content,
-                size=TextSizes.INPUT,
-                color=ThemeColors.TEXT_MAIN,
-                rtl=True,
-                text_align=ft.TextAlign.RIGHT,
-                selectable=True,
-            ),
-            padding=12,
-            border_radius=16,
-            bgcolor=ThemeColors.BUBBLE_SELF if mine else ThemeColors.BUBBLE_PEER,
-        )
-        return ft.Container(
-            content=bubble,
-            alignment=ft.Alignment(1, 0) if mine else ft.Alignment(-1, 0),
-        )
+        return create_chat_bubble(content, mine=mine)
 
     def _on_back(self, e: ft.ControlEvent) -> None:
         # Mark closing FIRST so any in-flight task skips its page updates, then
@@ -310,15 +272,4 @@ class ChatView(BaseView):
         try:
             self.page.update()
         except Exception:  # noqa: BLE001 — stale view after navigation
-            pass
-
-    async def _show_status(self, message: str, *, ok: bool) -> None:
-        self._status_text.value = message
-        self._status_banner.bgcolor = (
-            ThemeColors.SUCCESS if ok else ThemeColors.DANGER
-        )
-        self._status_banner.visible = True
-        try:
-            self._status_banner.update()
-        except Exception:  # noqa: BLE001
             pass

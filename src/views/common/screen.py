@@ -107,15 +107,16 @@ def translucent_card(
 # the design system's "scrollable card + sticky bottom action bar" contract.
 # Hub / auth screens keep their own centred-card pattern and do NOT use this.
 
-# Single source of the content-screen geometry (tuned here, nowhere else).
-CONTENT_CARD_MARGIN = ft.Margin.only(left=12, top=12, right=12, bottom=8)
-CONTENT_CARD_PADDING = ft.Padding(20, 20, 20, 16)
-# A taller top padding for screens whose heading must clear the BG's top logo
-# (the read-only peer profile and the peer photo album).
-CONTENT_CARD_PADDING_TALL = ft.Padding(20, 40, 20, 16)
-CONTENT_BODY_SPACING = 14
-ACTION_BAR_PADDING = ft.Padding(24, 12, 24, 20)
-ACTION_BAR_SPACING = 10
+# Content-screen geometry — the single source of truth now lives in
+# `UIConstants` (utils/constants.py) so ALL spacing/sizing tokens have one home.
+# These module-level names are thin re-exports kept for screen.py's own use AND
+# for the views that import `CONTENT_BODY_SPACING` from here.
+CONTENT_CARD_MARGIN = UIConstants.CONTENT_CARD_MARGIN
+CONTENT_CARD_PADDING = UIConstants.CONTENT_CARD_PADDING
+CONTENT_CARD_PADDING_TALL = UIConstants.CONTENT_CARD_PADDING_TALL
+CONTENT_BODY_SPACING = UIConstants.CONTENT_BODY_SPACING
+ACTION_BAR_PADDING = UIConstants.ACTION_BAR_PADDING
+ACTION_BAR_SPACING = UIConstants.ACTION_BAR_SPACING
 
 # The Buttons Area is a single persistent container whose explicit height is
 # animated. `DEFAULT_ACTION_HEIGHT` is the per-row fallback when an action does

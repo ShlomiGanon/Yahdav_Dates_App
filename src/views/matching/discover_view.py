@@ -37,6 +37,9 @@ from views.common.screen import CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
+from components.typography import create_screen_heading
+from components.feedback import create_status_banner, show_status
+from components.discover import create_candidate_tile
 from services.I_Profile_Repository import IProfileRepository
 from models.user_profile import UserProfile, Gender, AccountStatus
 from utils.constants import TextSizes, UIConstants, ThemeColors, MatchConfig
@@ -60,12 +63,6 @@ class DiscoverView(BaseView):
     _VIEW_PROFILE_ROUTE = "/discover/profile"   # view another member's profile
     _CHAT_ROUTE         = "/chat/new"           # start a chat with them
 
-    # Tap-target geometry. The card clears BUTTON_HEIGHT (70px) with headroom
-    # for a two-line name+meta stack — the 50+ audience needs generous targets.
-    _CARD_HEIGHT: int = UIConstants.BUTTON_HEIGHT + 16   # 86px
-    _AVATAR_DIAMETER: int = 52
-    _ONLINE_DOT_DIAMETER: int = 16
-
     def __init__(self, page: ft.Page, profile_repo: IProfileRepository) -> None:
         super().__init__(page)
         self.profile_repo = profile_repo
@@ -78,14 +75,7 @@ class DiscoverView(BaseView):
     # ============================================================
 
     def get_body(self) -> ft.Control:
-        heading = ft.Text(
-            "אנשים שתרצו להכיר",
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
+        heading = create_screen_heading("אנשים שתרצו להכיר")
         # The profile list — tiles are added on load. STRETCH makes each card
         # fill the full panel width (so a card can never float left); the card's
         # own content is right-aligned internally (see _candidate_tile).
@@ -107,22 +97,7 @@ class DiscoverView(BaseView):
         # Defensive auth / empty / error states. Lives in the sticky bar (not the
         # scroll region), so an empty/error state stays visible however far the
         # feed has scrolled.
-        self._status_text = ft.Text(
-            value="",
-            size=TextSizes.INPUT,                 # 25px — senior-readable
-            color=ft.Colors.WHITE,
-            weight=ft.FontWeight.W_600,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
-        self._status_banner = ft.Container(
-            content=self._status_text,
-            bgcolor=ThemeColors.DANGER,
-            padding=14,
-            border_radius=UIConstants.CORNER_RADIUS,
-            visible=False,
-            alignment=ft.Alignment(0, 0),
-        )
+        self._status_banner, self._status_text = create_status_banner()
         return self._status_banner
 
     def on_mount(self) -> None:
@@ -141,7 +116,7 @@ class DiscoverView(BaseView):
 
         # ---- 2. Defensive: missing/orphaned token → banner + bounce. ----
         if not current_user_id:
-            await self._show_status("אנא התחבר/י תחילה", ok=False)
+            await show_status(self._status_banner, self._status_text,"אנא התחבר/י תחילה", ok=False)
             await asyncio.sleep(1.5)
             # Route Liveness Check: if the viewer already left during the 1.5s
             # banner, don't yank them back to the login screen.
@@ -163,7 +138,7 @@ class DiscoverView(BaseView):
             # senior's screen. (Overlay teardown happens in the finally below.)
             log.exception("Discover: feed load failed for viewer=%s", current_user_id)
             if self._is_live():
-                await self._show_status("טעינת האנשים נכשלה. אנא נסה/י שוב מאוחר יותר.", ok=False)
+                await show_status(self._status_banner, self._status_text,"טעינת האנשים נכשלה. אנא נסה/י שוב מאוחר יותר.", ok=False)
             return
         finally:
             # ALWAYS tear down the overlay — even if the fetch is abandoned by a
@@ -180,7 +155,7 @@ class DiscoverView(BaseView):
         # ---- 4. Render. Empty feed is a state, not an error. ----
         self._candidates = candidates
         if not candidates:
-            await self._show_status(
+            await show_status(self._status_banner, self._status_text,
                 "עדיין אין פרופילים להצגה. חזרו מאוחר יותר 🙂", ok=False,
             )
             self._feed_column.controls = []
@@ -209,100 +184,16 @@ class DiscoverView(BaseView):
     def _candidate_tile(self, profile: UserProfile) -> ft.Control:
         """A single tappable member row — name, meta line, presence dot.
 
-        The whole card is the tap target (`ink=True`, height ≥ BUTTON_HEIGHT)
-        so a senior never has to aim at a small control.
+        Pure composition: the styling lives in `create_candidate_tile`; this
+        method only resolves the profile's data and the tap handler.
         """
         name = profile.display_name.for_gender(profile.gender) or ""
         online = profile.status is AccountStatus.ACTIVE
-
-        name_text = ft.Text(
+        return create_candidate_tile(
             name,
-            size=TextSizes.INPUT,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-            max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS,
-        )
-        meta_text = ft.Text(
             self._meta_line(profile),
-            size=TextSizes.BODY,
-            color=ThemeColors.SECONDARY,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-            max_lines=1,
-            overflow=ft.TextOverflow.ELLIPSIS,
-        )
-
-        # Details fill the space to the LEFT of the avatar (`expand=True`).
-        # STRETCH makes the two text lines span that width, and the absolute
-        # `text_align=RIGHT` on each Text pins them to the right edge — i.e.
-        # immediately left of the avatar. text_align is direction-independent,
-        # so it is immune to the RTL flip that broke the alignment-based attempts.
-        details = ft.Column(
-            controls=[name_text, meta_text],
-            spacing=2,
-            alignment=ft.MainAxisAlignment.CENTER,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            expand=True,
-        )
-
-        # Avatar FIRST: under the app's page-level RTL the first child of a Row
-        # renders on the RIGHT, so the avatar lands on the FAR RIGHT and the
-        # details column (expand) fills the rest immediately to its left, with a
-        # small fixed 12px gap. `expand` leaves no free space, so no
-        # MainAxisAlignment is needed — sidestepping the END/START flip entirely.
-        row = ft.Row(
-            controls=[self._avatar(name, online), details],
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=12,
-        )
-
-        # Full-width card (fills the STRETCH feed column) so it can NEVER float
-        # left: the white bar spans the panel with its content grouped on the
-        # right. Matches MyProfileView's full-width field blocks.
-        return ft.Container(
-            content=row,
-            height=self._CARD_HEIGHT,
-            bgcolor=ThemeColors.SURFACE,
-            border_radius=UIConstants.CORNER_RADIUS,
-            padding=ft.Padding(16, 8, 16, 8),
-            ink=True,
+            online=online,
             on_click=lambda _e, p=profile: self._on_candidate_tap(p),
-        )
-
-    def _avatar(self, name: str, online: bool) -> ft.Control:
-        """Initials avatar with a presence dot overlaid bottom-start."""
-        initial = (name.strip()[:1] or "?").upper()
-        circle = ft.Container(
-            width=self._AVATAR_DIAMETER,
-            height=self._AVATAR_DIAMETER,
-            border_radius=self._AVATAR_DIAMETER / 2,
-            bgcolor=ThemeColors.PRIMARY,
-            alignment=ft.Alignment(0, 0),
-            content=ft.Text(
-                initial,
-                size=TextSizes.H2,
-                weight=ft.FontWeight.BOLD,
-                color=ThemeColors.TEXT_ON_PRIMARY,
-            ),
-        )
-        dot = ft.Container(
-            width=self._ONLINE_DOT_DIAMETER,
-            height=self._ONLINE_DOT_DIAMETER,
-            border_radius=self._ONLINE_DOT_DIAMETER / 2,
-            bgcolor=ThemeColors.ONLINE if online else ThemeColors.OFFLINE,
-            # White ring lifts the dot off the avatar regardless of its colour.
-            border=ft.border.all(2, ThemeColors.SURFACE),
-        )
-        return ft.Stack(
-            controls=[
-                circle,
-                ft.Container(content=dot, alignment=ft.Alignment(-1, 1)),
-            ],
-            width=self._AVATAR_DIAMETER,
-            height=self._AVATAR_DIAMETER,
         )
 
     # ============================================================
@@ -442,28 +333,3 @@ class DiscoverView(BaseView):
         if city:
             parts.append(city)
         return "  ·  ".join(parts) if parts else "חבר/ה חדש/ה"
-
-    # ============================================================
-    #  Status banner
-    # ============================================================
-
-    async def _show_status(
-        self,
-        message: str,
-        *,
-        ok: bool,
-        auto_hide_sec: float = 0.0,
-    ) -> None:
-        """Show the inline banner. SUCCESS green or DANGER red, never hardcoded."""
-        self._status_text.value = message
-        self._status_banner.bgcolor = ThemeColors.SUCCESS if ok else ThemeColors.DANGER
-        self._status_banner.visible = True
-        self._status_banner.update()
-
-        if auto_hide_sec > 0:
-            await asyncio.sleep(auto_hide_sec)
-            self._status_banner.visible = False
-            try:
-                self._status_banner.update()
-            except Exception:
-                pass
