@@ -19,10 +19,10 @@ from typing import Callable, cast
 
 import flet as ft
 
-from services.I_Auth_Service import IAuthService
-from services.I_Profile_Repository import IProfileRepository
-from services.I_Messaging_Service import IMessagingService
-from services.I_Storage_Service import IStorageService
+from services.i_auth_service import IAuthService
+from services.i_profile_repository import IProfileRepository
+from services.i_messaging_service import IMessagingService
+from services.i_storage_service import IStorageService
 
 from views.auth.welcome_view import WelcomeView
 from views.auth.login_view import LoginView
@@ -35,7 +35,6 @@ from views.profile.peer_photos_view import PeerPhotosView
 from views.matching.discover_view import DiscoverView
 from views.matching.chat_view import ChatView
 from views.matching.matches_view import MatchesView
-from views.common.placeholder_view import PlaceholderView
 from views.common.screen import hub_screen, error_screen
 from components.buttons import create_secondary_button
 from utils.constants import TextSizes, UIConstants, ThemeColors
@@ -419,6 +418,15 @@ class Router:
             return _DEFAULT_ROUTE
         return route
 
+    def _selected_peer_id(self) -> str:
+        """The target peer id passed view-to-view via `selected_peer_id`.
+
+        This router uses no URL path params; DiscoverView stashes the chosen
+        member here and the peer screens read it. Returns "" when absent or
+        malformed (never raises), so a factory can inject it safely."""
+        raw_peer = self.page.session.store.get(_KEY_SELECTED_PEER)
+        return raw_peer.strip() if isinstance(raw_peer, str) else ""
+
     # ============================================================
     #  Per-route factories — explicit dependency injection
     # ============================================================
@@ -497,11 +505,10 @@ class Router:
         # never confuse it with the logged-in user (`current_user_id`).
         profiles = cast(IProfileRepository,
                         self.page.session.store.get(_KEY_PROFILES))
-        raw_peer = self.page.session.store.get(_KEY_SELECTED_PEER)
-        peer_id = raw_peer.strip() if isinstance(raw_peer, str) else ""
         # Decoupled state: inject the target id DIRECTLY as an immutable
         # constructor parameter (the PRIMARY channel). The view treats the
         # session slot only as a tertiary recovery fallback.
+        peer_id = self._selected_peer_id()
         return UserProfileView(self.page, profiles, target_peer_id=peer_id).build()
 
     def _build_peer_photos(self) -> ft.View:
@@ -513,8 +520,7 @@ class Router:
         # HERE and inject it EXPLICITLY so the view loads the *target* album.
         profiles = cast(IProfileRepository,
                         self.page.session.store.get(_KEY_PROFILES))
-        raw_peer = self.page.session.store.get(_KEY_SELECTED_PEER)
-        peer_id = raw_peer.strip() if isinstance(raw_peer, str) else ""
+        peer_id = self._selected_peer_id()
         return PeerPhotosView(self.page, profiles, peer_id).build()
 
     def _build_chat(self) -> ft.View:

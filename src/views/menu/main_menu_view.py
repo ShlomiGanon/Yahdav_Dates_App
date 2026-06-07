@@ -84,9 +84,10 @@ class MainMenuView(BaseView):
     async def _on_logout_click(self, e: ft.ControlEvent) -> None:
         """Hard logout — purge BOTH persistence spaces, then navigate.
 
-          1. PERSISTENT DISK: clear the device session file (token + uid). This
-             alone breaks the auto-login loop — the next cold boot finds no
-             persisted identity and lands on /auth/welcome.
+          1. DEVICE STORAGE: clear the remember-me token from
+             `page.shared_preferences` (there is no file). This alone breaks the
+             auto-login loop — the next cold boot finds no persisted token and
+             lands on /auth/welcome.
           2. VOLATILE RAM: evict the identity keys (`current_user_id` /
              `current_user_email`) so no view can resolve "who am I" after
              logout. We do NOT wipe session.store wholesale — the service

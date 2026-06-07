@@ -27,7 +27,6 @@ name + details tightly to its left and fully right-aligned. Tapping a member
 opens an RTL selection sheet (view profile / start chat).
 """
 from __future__ import annotations
-import asyncio
 import logging
 
 import flet as ft
@@ -35,12 +34,13 @@ import flet as ft
 from views._base import BaseView
 from views.common.screen import CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button
-from components import loading
+from views.common.render import build_items_safe
+from views.common.load_flow import run_guarded_load, LoadGuard
 from components.buttons import create_primary_button, create_secondary_button
 from components.typography import create_screen_heading
 from components.feedback import create_status_banner, show_status
 from components.discover import create_candidate_tile
-from services.I_Profile_Repository import IProfileRepository
+from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender, AccountStatus
 from utils.constants import TextSizes, UIConstants, ThemeColors, MatchConfig
 
@@ -110,72 +110,51 @@ class DiscoverView(BaseView):
     # ============================================================
 
     async def _load_candidates(self) -> None:
-        # ---- 1. Read identity token. Explicit read (not via a property) so
-        # the auth contract is visible at the call site. ----
+        # Identity read kept explicit at the call site so the auth contract is
+        # visible; the guard/spinner/liveness scaffolding lives in the shared
+        # run_guarded_load (views/common/load_flow.py).
         current_user_id = self.page.session.store.get(self.SESSION_USER_ID_KEY)
 
-        # ---- 2. Defensive: missing/orphaned token → banner + bounce. ----
-        if not current_user_id:
-            await show_status(self._status_banner, self._status_text,"אנא התחבר/י תחילה", ok=False)
-            await asyncio.sleep(1.5)
-            # Route Liveness Check: if the viewer already left during the 1.5s
-            # banner, don't yank them back to the login screen.
-            if not self._is_live():
+        async def _render(candidates: list[UserProfile]) -> None:
+            # Empty feed is a state, not an error.
+            self._candidates = candidates
+            if not candidates:
+                await show_status(self._status_banner, self._status_text,
+                    "עדיין אין פרופילים להצגה. חזרו מאוחר יותר 🙂", ok=False,
+                )
+                self._feed_column.controls = []
+                self.page.update()
                 return
-            self.page.go("/auth/login")
-            return
-
-        # ---- 3. Fetch off the UI thread so the spinner keeps animating. ----
-        loading.show_loading(self.page)
-        try:
-            candidates = await asyncio.to_thread(
-                self.profile_repo.discover_profiles,
-                current_user_id,
-                MatchConfig.DISCOVER_PAGE_SIZE,
+            # Build each tile in isolation so one malformed candidate is SKIPPED
+            # with a log line rather than blanking the whole feed (Peer Layout
+            # Boundary Rule §4; see views/common/render.py).
+            self._feed_column.controls = build_items_safe(
+                candidates,
+                self._candidate_tile,
+                logger=log,
+                error_message="Discover: failed to build candidate tile; skipping",
             )
-        except Exception:                                 # noqa: BLE001 — UI guard
-            # Show a calm banner; the raw error goes to the log, never to the
-            # senior's screen. (Overlay teardown happens in the finally below.)
-            log.exception("Discover: feed load failed for viewer=%s", current_user_id)
-            if self._is_live():
-                await show_status(self._status_banner, self._status_text,"טעינת האנשים נכשלה. אנא נסה/י שוב מאוחר יותר.", ok=False)
-            return
-        finally:
-            # ALWAYS tear down the overlay — even if the fetch is abandoned by a
-            # fast navigation — so the #88000000 scrim can never bleed over the
-            # next screen.
-            loading.hide_loading(self.page)
-
-        # ---- Route Liveness Check: the await yielded control; if the viewer
-        #      navigated away while the feed loaded, abort before mutating a view
-        #      that is no longer on screen. ----
-        if not self._is_live():
-            return
-
-        # ---- 4. Render. Empty feed is a state, not an error. ----
-        self._candidates = candidates
-        if not candidates:
-            await show_status(self._status_banner, self._status_text,
-                "עדיין אין פרופילים להצגה. חזרו מאוחר יותר 🙂", ok=False,
-            )
-            self._feed_column.controls = []
             self.page.update()
-            return
 
-        # Render the feed defensively: build each tile in isolation so a single
-        # malformed candidate (an unexpected value object slipping past the
-        # repository's fail-soft hydration) is SKIPPED with a log line — it can
-        # never blank or freeze the whole feed. This is the render-seam analogue
-        # of the fetch-seam try/except above (the Peer Layout Boundary Rule
-        # applied to a LIST of untrusted records).
-        tiles: list[ft.Control] = []
-        for p in candidates:
-            try:
-                tiles.append(self._candidate_tile(p))
-            except Exception:  # noqa: BLE001 — one bad row must not kill the feed
-                log.exception("Discover: failed to build candidate tile; skipping")
-        self._feed_column.controls = tiles
-        self.page.update()
+        await run_guarded_load(
+            self.page,
+            guards=[LoadGuard(
+                ok=bool(current_user_id),
+                message="אנא התחבר/י תחילה",
+                # Don't yank a viewer who already left during the banner.
+                bounce=lambda: self._is_live() and self.page.go("/auth/login"),
+            )],
+            fetch=lambda: self.profile_repo.discover_profiles(
+                current_user_id, MatchConfig.DISCOVER_PAGE_SIZE,
+            ),
+            on_success=_render,
+            is_stale=lambda: not self._is_live(),
+            status_banner=self._status_banner,
+            status_text=self._status_text,
+            logger=log,
+            fetch_error_message="טעינת האנשים נכשלה. אנא נסה/י שוב מאוחר יותר.",
+            fetch_error_log=f"Discover: feed load failed for viewer={current_user_id}",
+        )
 
     # ============================================================
     #  Candidate tile

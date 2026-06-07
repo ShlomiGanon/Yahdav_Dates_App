@@ -11,7 +11,7 @@ class TextSizes:
     SMALL = 13     # Descriptions or error messages
 
 class UIConstants:
-    CARD_WIDTH = 400 #
+    CARD_WIDTH = 400       # base hub-card width (before padding)
     # Hub-card responsive bounds. The centered hub card (Welcome/Login/Signup/
     # Menu) is width-CAPPED at CARD_MAX_WIDTH so it never stretches on a wide
     # window, and floored at CARD_MIN_WIDTH so it stays usable when narrow; the

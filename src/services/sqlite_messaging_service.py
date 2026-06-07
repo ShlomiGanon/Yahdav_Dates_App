@@ -10,7 +10,7 @@ import sqlite3
 import uuid
 from contextlib import AbstractContextManager
 
-from services.I_Messaging_Service import IMessagingService
+from services.i_messaging_service import IMessagingService
 from services.sqlite_queries import connection, MessagingQueries
 from utils.constants import ChatConfig, MessageType, MessageStatus
 from utils.timeutils import utcnow_naive

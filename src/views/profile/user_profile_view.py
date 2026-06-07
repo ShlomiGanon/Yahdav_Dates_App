@@ -46,7 +46,7 @@ from components.buttons import create_primary_button
 from components.typography import create_screen_heading
 from components.profile_fields import create_profile_field
 from components.avatars import create_photo_avatar
-from services.I_Profile_Repository import IProfileRepository
+from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
 

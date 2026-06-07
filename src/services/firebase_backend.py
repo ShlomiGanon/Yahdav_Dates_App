@@ -1,23 +1,23 @@
-"""Firebase concrete implementation of the three segregated service interfaces.
+"""Firebase STUB for the three segregated service interfaces (future backend).
 
-Plug-and-play: this class is interchangeable with SQLiteBackEndService. The
-view layer doesn't care which one is wired — it only sees the role-interfaces
-(IAuthService, IProfileRepository, IMessagingService).
+Left as-is for a future cloud backend: every method raises `NotImplementedError`,
+with the intended Firestore / Admin-SDK calls sketched in comments. The view layer
+only ever sees the role-interfaces (`IAuthService`, `IProfileRepository`,
+`IMessagingService`), so swapping a backend is confined to the composition root in
+`src/app.py` — re-point the four service constructions, leave router/views/models
+untouched.
 
-    # src/app.py — swap the backend with a one-line change:
-    #
-    #   backend = SQLiteBackEndService(db_path=DBConfig.DB_PATH)
-    #                       ↑↓
-    #   backend = FirebaseBackEndService()
-    #
-    # Everything else (router, views, models) is untouched.
+NOTE: unlike the live SQLite layer (three DECOUPLED classes — `SqliteAuthService`,
+`SqliteProfileRepository`, `SqliteMessagingService`), this stub still bundles all
+three roles in one class. If it is ever built out it should be split to mirror that
+decoupling (engineering contract: "no god object"). Tracked as technical debt.
 """
 from __future__ import annotations
 import logging
 
-from services.I_Auth_Service import IAuthService
-from services.I_Profile_Repository import IProfileRepository
-from services.I_Messaging_Service import IMessagingService
+from services.i_auth_service import IAuthService
+from services.i_profile_repository import IProfileRepository
+from services.i_messaging_service import IMessagingService
 
 from utils.constants import FirebaseConfig, AuthConfig, MessageType
 from utils.validation import validate_email, validate_password

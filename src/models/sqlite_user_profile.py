@@ -19,6 +19,16 @@ from models.user_profile import (
 log = logging.getLogger(__name__)
 
 
+def _ensure_type(value: object, expected: type, message: str) -> object:
+    """Return `value` if it is an instance of `expected`, else raise TypeError.
+
+    Centralises the typed-setter guard so every property setter below reads as a
+    single line while keeping its own, field-specific error message verbatim."""
+    if not isinstance(value, expected):
+        raise TypeError(message)
+    return value
+
+
 @dataclass
 class SQLiteUserProfile(UserProfile):
     _user_id: str
@@ -61,39 +71,32 @@ class SQLiteUserProfile(UserProfile):
     def display_name(self) -> LocalizedText: return self._display_name
     @display_name.setter
     def display_name(self, value: LocalizedText) -> None:
-        if not isinstance(value, LocalizedText):
-            raise TypeError("display_name must be a LocalizedText")
-        self._display_name = value
+        self._display_name = _ensure_type(
+            value, LocalizedText, "display_name must be a LocalizedText")
     @property
     def gender(self) -> Gender: return self._gender
     @gender.setter
     def gender(self, value: Gender) -> None:
-        if not isinstance(value, Gender):
-            raise TypeError("gender must be a Gender enum member")
-        self._gender = value
+        self._gender = _ensure_type(
+            value, Gender, "gender must be a Gender enum member")
     @property
     def date_of_birth(self) -> date: return self._date_of_birth
     @date_of_birth.setter
     def date_of_birth(self, value: date) -> None:
-        if not isinstance(value, date):
-            raise TypeError("date_of_birth must be a datetime.date")
-        self._date_of_birth = value
+        self._date_of_birth = _ensure_type(
+            value, date, "date_of_birth must be a datetime.date")
     @property
     def location(self) -> Location: return self._location
     @location.setter
     def location(self, value: Location) -> None:
-        if not isinstance(value, Location):
-            raise TypeError("location must be a Location")
-        self._location = value
+        self._location = _ensure_type(value, Location, "location must be a Location")
     @property
     def lifestyle(self) -> Lifestyle: return self._lifestyle
     @property
     def bio(self) -> LocalizedText: return self._bio
     @bio.setter
     def bio(self, value: LocalizedText) -> None:
-        if not isinstance(value, LocalizedText):
-            raise TypeError("bio must be a LocalizedText")
-        self._bio = value
+        self._bio = _ensure_type(value, LocalizedText, "bio must be a LocalizedText")
     @property
     def looking_for(self) -> LocalizedText: return self._looking_for
     @property

@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import os
 import shutil
 import sqlite3
@@ -68,10 +69,10 @@ from services.sqlite_auth_service import SqliteAuthService
 from services.sqlite_messaging_service import SqliteMessagingService
 from services.local_disk_storage_service import LocalDiskStorageService
 from services.sqlite_queries import ProfileQueries
-from services.I_Auth_Service import IAuthService
-from services.I_Profile_Repository import IProfileRepository
-from services.I_Messaging_Service import IMessagingService
-from services.I_Storage_Service import IStorageService
+from services.i_auth_service import IAuthService
+from services.i_profile_repository import IProfileRepository
+from services.i_messaging_service import IMessagingService
+from services.i_storage_service import IStorageService
 from utils.constants import MessageType, AssetPaths
 from utils import local_storage
 from utils.router import Router, _DEFAULT_ROUTE
@@ -79,7 +80,10 @@ from views.menu.main_menu_view import MainMenuView
 from views.profile.user_profile_view import UserProfileView
 from views.common.navigation import go_back
 from views.common.screen import content_screen, hub_screen
+from views.common.photo_ops import save_photo_urls_or_rollback
+from views.common.load_flow import run_guarded_load, LoadGuard
 from components import loading
+from components.feedback import create_status_banner
 
 import flet as ft
 from datetime import date, datetime
@@ -357,6 +361,164 @@ class TestProfileStorageIntegration(_BackendMixin, unittest.IsolatedAsyncioTestC
         Path(outside).write_text("keep me")
         self.assertFalse(await asyncio.to_thread(self.storage.delete_file, outside))
         self.assertTrue(os.path.exists(outside))
+
+
+# ============================================================================
+#  2b. Photo-write durability kernel (views/common/photo_ops.py)
+# ============================================================================
+
+class TestPhotoWriteRollbackKernel(_BackendMixin, unittest.IsolatedAsyncioTestCase):
+    """The shared photo-write transaction (`save_photo_urls_or_rollback`) is the
+    one home of Persistence invariant #5. A SUCCESS persists via the repository's
+    UPSERT (so linked credentials/sessions survive — no REPLACE cascade); a
+    FAILURE rolls the in-memory entity back to its previous list AND deletes the
+    just-uploaded orphan file, then re-raises."""
+
+    _PNG = TestProfileStorageIntegration._PNG   # reuse the 1×1 png fixture
+
+    def setUp(self) -> None:
+        self._build_backend()
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    async def test_success_persists_and_does_not_cascade(self):
+        uid = self._signup("pat", "pat@example.com")
+        token = self.auth.generate_remember_me_token(uid)
+        stored = await asyncio.to_thread(self.storage.upload_file, self._PNG, "m.png")
+
+        profile = await asyncio.to_thread(self.profiles.get_profile, uid)
+        await save_photo_urls_or_rollback(
+            self.profiles, profile, [stored],
+            previous_photo_urls=list(profile.photo_urls),
+            storage=self.storage, orphan_path=stored,
+        )
+
+        reloaded = await asyncio.to_thread(self.profiles.get_profile, uid)
+        self.assertEqual(reloaded.photo_urls, (stored,))
+        # UPSERT (not REPLACE) → linked credentials / remember-me session survive.
+        self.assertEqual(self.auth.login_user("pat", _TEST_PASSWORD), uid)
+        self.assertEqual(self.auth.validate_remember_me_token(token), uid)
+
+    async def test_failure_rolls_back_entity_and_deletes_orphan(self):
+        uid = self._signup("quinn", "quinn@example.com")
+        profile = await asyncio.to_thread(self.profiles.get_profile, uid)
+        previous = list(profile.photo_urls)
+        orphan = await asyncio.to_thread(
+            self.storage.upload_file, self._PNG, "orphan.png",
+        )
+        self.assertTrue(os.path.exists(orphan))
+
+        class _FailingRepo:
+            """Stand-in repository whose save always fails mid-transaction."""
+            def save_profile(self, _profile):
+                raise RuntimeError("simulated save failure")
+
+        with self.assertRaises(RuntimeError):
+            await save_photo_urls_or_rollback(
+                _FailingRepo(), profile, previous + [orphan],
+                previous_photo_urls=previous,
+                storage=self.storage, orphan_path=orphan,
+            )
+
+        # Entity rolled back to its previous list, and the orphan reclaimed.
+        self.assertEqual(profile.photo_urls, tuple(previous))
+        self.assertFalse(os.path.exists(orphan))
+
+
+# ============================================================================
+#  2c. Guarded load-flow orchestrator (views/common/load_flow.py)
+# ============================================================================
+
+class TestGuardedLoadFlow(unittest.IsolatedAsyncioTestCase):
+    """`run_guarded_load` is the shared mount-load sequence for the user-scoped
+    screens. It must: bounce (and skip the fetch) on a failed guard; render on
+    success; show a calm banner on a fetch error; skip the render if the view
+    went stale during the await — always leaving the loading overlay balanced."""
+
+    def setUp(self) -> None:
+        loading._active_loaders = 0
+        self.page = FakePage()
+        if loading._loading_overlay in self.page.overlay:
+            self.page.overlay.remove(loading._loading_overlay)
+        self.banner, self.text = create_status_banner()
+        self.log = logging.getLogger("test.load_flow")
+
+    def _recorder(self, sink: list):
+        async def _on_success(result) -> None:
+            sink.append(result)
+        return _on_success
+
+    async def test_failed_guard_bounces_and_skips_fetch(self):
+        fetched, rendered, bounced = [], [], []
+        await run_guarded_load(
+            self.page,
+            guards=[LoadGuard(
+                ok=False, message="אנא התחבר/י תחילה",
+                bounce=lambda: bounced.append(True),
+            )],
+            fetch=lambda: fetched.append("FETCHED"),
+            on_success=self._recorder(rendered),
+            is_stale=lambda: False,
+            status_banner=self.banner, status_text=self.text,
+            logger=self.log,
+            fetch_error_message="err", fetch_error_log="log",
+            guard_pause_sec=0,            # don't really sleep 1.5s in a test
+        )
+        self.assertEqual(bounced, [True])
+        self.assertEqual(fetched, [], "fetch must not run when a guard fails")
+        self.assertEqual(rendered, [])
+        self.assertEqual(self.text.value, "אנא התחבר/י תחילה")
+        self.assertEqual(loading._active_loaders, 0)
+
+    async def test_success_renders_and_balances_overlay(self):
+        rendered = []
+        await run_guarded_load(
+            self.page,
+            guards=[LoadGuard(ok=True, message="", bounce=lambda: None)],
+            fetch=lambda: "DATA",
+            on_success=self._recorder(rendered),
+            is_stale=lambda: False,
+            status_banner=self.banner, status_text=self.text,
+            logger=self.log,
+            fetch_error_message="err", fetch_error_log="log",
+        )
+        self.assertEqual(rendered, ["DATA"])
+        self.assertEqual(loading._active_loaders, 0)
+        self.assertNotIn(loading._loading_overlay, self.page.overlay)
+
+    async def test_fetch_error_shows_banner_and_skips_render(self):
+        rendered = []
+
+        def boom():
+            raise RuntimeError("db down")
+
+        await run_guarded_load(
+            self.page, guards=[],
+            fetch=boom,
+            on_success=self._recorder(rendered),
+            is_stale=lambda: False,
+            status_banner=self.banner, status_text=self.text,
+            logger=self.log,
+            fetch_error_message="טעינה נכשלה", fetch_error_log="boom",
+        )
+        self.assertEqual(rendered, [], "render must not run after a fetch error")
+        self.assertEqual(self.text.value, "טעינה נכשלה")
+        self.assertEqual(loading._active_loaders, 0, "overlay must be balanced")
+
+    async def test_stale_after_fetch_skips_render(self):
+        rendered = []
+        await run_guarded_load(
+            self.page, guards=[],
+            fetch=lambda: "DATA",
+            on_success=self._recorder(rendered),
+            is_stale=lambda: True,          # navigated away during the fetch
+            status_banner=self.banner, status_text=self.text,
+            logger=self.log,
+            fetch_error_message="err", fetch_error_log="log",
+        )
+        self.assertEqual(rendered, [], "stale view must not be mutated")
+        self.assertEqual(loading._active_loaders, 0)
 
 
 # ============================================================================

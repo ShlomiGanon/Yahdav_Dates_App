@@ -26,12 +26,14 @@ from views._base import BaseView
 from views.common.screen import CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button, back_button
 from views.common.photos import DEFAULT_PROFILE_IMAGE, extra_photo_urls, photo_thumb
+from views.common.photo_ops import save_photo_urls_or_rollback
+from views.common.load_flow import run_guarded_load, LoadGuard
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
 from components.typography import create_screen_heading
 from components.feedback import create_status_banner, show_status
-from services.I_Profile_Repository import IProfileRepository
-from services.I_Storage_Service import IStorageService
+from services.i_profile_repository import IProfileRepository
+from services.i_storage_service import IStorageService
 from models.user_profile import UserProfile
 from utils.constants import TextSizes, UIConstants, ThemeColors, StorageConfig
 
@@ -119,43 +121,37 @@ class AdditionalPhotosView(BaseView):
     # ============================================================
 
     async def _load_profile_data(self) -> None:
+        # Identity read kept explicit; the guard/spinner/liveness scaffolding is
+        # the shared run_guarded_load (views/common/load_flow.py).
         current_user = self.page.session.store.get(self.SESSION_USER_ID_KEY)
-        if not current_user:
-            await show_status(self._status_banner, self._status_text,"אנא התחבר/י תחילה.", ok=False)
-            await asyncio.sleep(1.5)
-            # Route Liveness Check: don't bounce a user who already left.
-            if not self._is_live():
+
+        async def _populate(profile: UserProfile | None) -> None:
+            if profile is None:
+                await show_status(self._status_banner, self._status_text,"לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False)
+                await asyncio.sleep(1.5)
+                self.page.go("/auth/login")
                 return
-            self.page.go("/auth/login")
-            return
+            self._current_profile = profile
+            self._photo_urls = list(profile.photo_urls)[:StorageConfig.MAX_PROFILE_PHOTOS]
+            self._refresh_photos()
+            self.page.update()
 
-        loading.show_loading(self.page)
-        try:
-            profile = await asyncio.to_thread(
-                self.profile_repo.get_profile, current_user,
-            )
-        except Exception:
-            loading.hide_loading(self.page)
-            log.exception("AdditionalPhotos: load failed user=%s", current_user)
-            await show_status(self._status_banner, self._status_text,"טעינת התמונות נכשלה. אנא נסה/י שוב.", ok=False)
-            return
-        loading.hide_loading(self.page)
-
-        # Route Liveness Check: the fetch await yielded control; if the user
-        # navigated away, abort before any navigation or page.update().
-        if not self._is_live():
-            return
-
-        if profile is None:
-            await show_status(self._status_banner, self._status_text,"לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False)
-            await asyncio.sleep(1.5)
-            self.page.go("/auth/login")
-            return
-
-        self._current_profile = profile
-        self._photo_urls = list(profile.photo_urls)[:StorageConfig.MAX_PROFILE_PHOTOS]
-        self._refresh_photos()
-        self.page.update()
+        await run_guarded_load(
+            self.page,
+            guards=[LoadGuard(
+                ok=bool(current_user),
+                message="אנא התחבר/י תחילה.",
+                bounce=lambda: self._is_live() and self.page.go("/auth/login"),
+            )],
+            fetch=lambda: self.profile_repo.get_profile(current_user),
+            on_success=_populate,
+            is_stale=lambda: not self._is_live(),
+            status_banner=self._status_banner,
+            status_text=self._status_text,
+            logger=log,
+            fetch_error_message="טעינת התמונות נכשלה. אנא נסה/י שוב.",
+            fetch_error_log=f"AdditionalPhotos: load failed user={current_user}",
+        )
 
     # ============================================================
     #  Rendering
@@ -260,17 +256,17 @@ class AdditionalPhotosView(BaseView):
             # seed the default template so this extra lands at index >= 1.
             base = list(self._photo_urls) or [DEFAULT_PROFILE_IMAGE]
             new_list = base + [stored_path]
-            self._current_profile.photo_urls = tuple(new_list)
-            await asyncio.to_thread(
-                self.profile_repo.save_profile, self._current_profile,
+            # Shared durability kernel: UPSERT the new list, rolling the entity
+            # back and deleting the just-uploaded orphan if the save fails.
+            await save_photo_urls_or_rollback(
+                self.profile_repo, self._current_profile, new_list,
+                previous_photo_urls=self._photo_urls,
+                storage=self.storage, orphan_path=stored_path,
             )
         except Exception:
             loading.hide_loading(self.page)
             log.exception("AdditionalPhotos: add failed user=%s",
                           self._current_profile.user_id)
-            self._current_profile.photo_urls = tuple(self._photo_urls)
-            if stored_path:
-                await asyncio.to_thread(self.storage.delete_file, stored_path)
             await show_status(self._status_banner, self._status_text,"שמירת התמונה נכשלה. אנא נסה/י שוב.", ok=False)
             return
         loading.hide_loading(self.page)
@@ -290,15 +286,16 @@ class AdditionalPhotosView(BaseView):
 
         loading.show_loading(self.page)
         try:
-            self._current_profile.photo_urls = tuple(new_list)
-            await asyncio.to_thread(
-                self.profile_repo.save_profile, self._current_profile,
+            # Shared durability kernel (no upload here, so no orphan to reclaim):
+            # UPSERT the shortened list, rolling the entity back if the save fails.
+            await save_photo_urls_or_rollback(
+                self.profile_repo, self._current_profile, new_list,
+                previous_photo_urls=self._photo_urls,
             )
         except Exception:
             loading.hide_loading(self.page)
             log.exception("AdditionalPhotos: remove failed user=%s",
                           self._current_profile.user_id)
-            self._current_profile.photo_urls = tuple(self._photo_urls)
             await show_status(self._status_banner, self._status_text,"מחיקת התמונה נכשלה. אנא נסה/י שוב.", ok=False)
             return
         # DB no longer references the file → delete it (best-effort, off-thread).

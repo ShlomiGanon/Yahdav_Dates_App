@@ -44,7 +44,7 @@ editing only the composition root.
 | **Media / File Storage** | Local disk (`data/uploads/`) | Behind `IStorageService`; an object store can replace it with one constructor line |
 | **Authentication** | scrypt password hashing · token-based "Remember Me" | Device holds only an opaque token (in `page.shared_preferences`); the DB stores its SHA-256 hash |
 | **Device storage** | `page.shared_preferences` (async) | Holds the raw remember-me token **only** — no JSON file, no `client_storage` |
-| **Cloud / Hosting** | Local-first desktop app | No always-on server today; `Firebase_Backend.py` is a left-as-is stub for a future cloud backend |
+| **Cloud / Hosting** | Local-first desktop app | No always-on server today; `firebase_backend.py` is a left-as-is stub for a future cloud backend |
 
 ---
 

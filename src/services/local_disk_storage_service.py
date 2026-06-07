@@ -16,7 +16,7 @@ import logging
 import uuid
 from pathlib import Path
 
-from services.I_Storage_Service import IStorageService
+from services.i_storage_service import IStorageService
 from utils.constants import StorageConfig
 
 log = logging.getLogger(__name__)

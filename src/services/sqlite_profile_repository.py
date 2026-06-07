@@ -13,7 +13,7 @@ import sqlite3
 from contextlib import AbstractContextManager
 from datetime import date, datetime
 
-from services.I_Profile_Repository import IProfileRepository
+from services.i_profile_repository import IProfileRepository
 from services.sqlite_queries import connection, transaction, ProfileQueries
 from utils.constants import MatchConfig, AssetPaths
 from utils.timeutils import utcnow_naive
@@ -272,17 +272,27 @@ class SqliteProfileRepository(IProfileRepository):
     #  IProfileRepository
     # ============================================================
 
+    def _load_by_id(
+        self, c: sqlite3.Connection, user_id: str,
+    ) -> SQLiteUserProfile | None:
+        """Fetch the profile row + the owner's block set on an OPEN connection and
+        hydrate it; return None if the row is absent. Shared by `get_profile` and
+        `find_profile_by_email` so the fetch-row-+-blocks-+-hydrate sequence has a
+        single definition. Hydration is pure in-memory, so running it inside the
+        caller's `with` block is behaviourally identical to doing it after."""
+        row = c.execute(ProfileQueries.SELECT_BY_ID, (user_id,)).fetchone()
+        if row is None:
+            return None
+        blocks = {
+            r["blocked_id"]
+            for r in c.execute(ProfileQueries.SELECT_BLOCKS, (user_id,))
+        }
+        return self._hydrate(row, blocks)
+
     def get_profile(self, user_id: str) -> UserProfile | None:
         try:
             with self._conn() as c:
-                row = c.execute(ProfileQueries.SELECT_BY_ID, (user_id,)).fetchone()
-                if row is None:
-                    return None
-                blocks = {
-                    r["blocked_id"]
-                    for r in c.execute(ProfileQueries.SELECT_BLOCKS, (user_id,))
-                }
-            return self._hydrate(row, blocks)
+                return self._load_by_id(c, user_id)
         except Exception as e:  # noqa: BLE001 — read path is fail-soft; never crash the view
             log.exception("get_profile failed user=%s: %s", user_id, e)
             return None
@@ -305,15 +315,7 @@ class SqliteProfileRepository(IProfileRepository):
                 idrow = c.execute(ProfileQueries.SELECT_ID_BY_EMAIL, (email,)).fetchone()
                 if idrow is None:
                     return None
-                uid = idrow["user_id"]
-                row = c.execute(ProfileQueries.SELECT_BY_ID, (uid,)).fetchone()
-                if row is None:
-                    return None
-                blocks = {
-                    r["blocked_id"]
-                    for r in c.execute(ProfileQueries.SELECT_BLOCKS, (uid,))
-                }
-            return self._hydrate(row, blocks)
+                return self._load_by_id(c, idrow["user_id"])
         except Exception as e:  # noqa: BLE001 — read path is fail-soft; never crash the view
             log.exception("find_profile_by_email failed: %s", e)
             return None

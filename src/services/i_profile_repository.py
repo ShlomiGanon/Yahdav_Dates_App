@@ -19,8 +19,10 @@ class IProfileRepository(ABC):
 
     @abstractmethod
     def save_profile(self, profile: UserProfile) -> None:
-        """Insert-or-replace the profile. Raises ValueError on uniqueness
-        violations (duplicate email/phone)."""
+        """Insert-or-update (UPSERT) the profile in place — never a destructive
+        INSERT OR REPLACE, which would cascade-delete the user's credentials and
+        sessions. Raises ValueError on uniqueness violations (duplicate
+        email/phone)."""
         pass
 
     @abstractmethod

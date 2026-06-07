@@ -25,7 +25,7 @@ from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
 from components.typography import create_screen_heading
 from components.feedback import create_field_error_label, set_field_error, clear_field_errors
-from services.I_Auth_Service import IAuthService
+from services.i_auth_service import IAuthService
 from utils import local_storage
 from utils.constants import TextSizes, ThemeColors, UIConstants
 
@@ -211,9 +211,6 @@ class LoginView(BaseView):
     # ============================================================
     #  Error-label helpers
     # ============================================================
-
-    def _set_error(self, label: ft.Text, message: str) -> None:
-        set_field_error(label, message)
 
     def _clear_errors(self) -> None:
         clear_field_errors(self._email_error, self._password_error)

@@ -21,7 +21,6 @@ columns, RTL-native child order (first Row child renders rightmost), an
 `expand` middle column, and absolute `text_align=RIGHT`.
 """
 from __future__ import annotations
-import asyncio
 import logging
 
 import flet as ft
@@ -29,13 +28,14 @@ import flet as ft
 from views._base import BaseView
 from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button
-from components import loading
+from views.common.render import build_items_safe
+from views.common.load_flow import run_guarded_load, LoadGuard
 from components.typography import create_screen_heading
 from components.feedback import create_status_banner, show_status
 from components.avatars import create_initial_avatar, create_unread_badge
 from components.cards import create_tile_card
-from services.I_Messaging_Service import IMessagingService
-from services.I_Profile_Repository import IProfileRepository
+from services.i_messaging_service import IMessagingService
+from services.i_profile_repository import IProfileRepository
 from utils.constants import TextSizes, UIConstants, ThemeColors
 
 log = logging.getLogger(__name__)
@@ -107,51 +107,46 @@ class MatchesView(BaseView):
     # ============================================================
 
     async def _load(self) -> None:
-        # ---- Identity check: missing → bounce to login immediately ----
+        # Identity read kept explicit; the guard/spinner/liveness scaffolding is
+        # the shared run_guarded_load (views/common/load_flow.py). The liveness
+        # predicate folds in this view's _closing flag so a fetch that resolves
+        # after navigate-away (system back / router redirect) is dropped.
         current = self.page.session.store.get(self.SESSION_USER_ID_KEY)
-        if not current:
-            await show_status(self._status_banner, self._status_text,"אנא התחבר/י תחילה.", ok=False)
-            await asyncio.sleep(1.5)
-            self._safe_go("/auth/login")
-            return
 
-        # ---- Assemble threads off the UI thread (one hop, all DB work) ----
-        loading.show_loading(self.page)
-        try:
-            threads = await asyncio.to_thread(self._assemble_threads, current)
-        except Exception:
-            loading.hide_loading(self.page)
-            log.exception("Matches: load failed user=%s", current)
-            await show_status(self._status_banner, self._status_text,
-                "טעינת השיחות נכשלה. אנא נסה/י שוב מאוחר יותר.", ok=False,
+        async def _render(threads: list[dict]) -> None:
+            # Empty state is a state, not an error.
+            if not threads:
+                await show_status(self._status_banner, self._status_text,
+                    "עדיין אין שיחות. התחילו שיחה ממסך הגילוי 🙂", ok=False,
+                )
+                self._feed_list.controls = []
+                self._safe_update()
+                return
+            # One malformed thread is skipped (logged), never aborting the list.
+            self._feed_list.controls = build_items_safe(
+                threads,
+                lambda t: self._thread_row(current, t),
+                logger=log,
+                error_message="Matches: failed to build thread row; skipping",
             )
-            return
-        loading.hide_loading(self.page)
-        # Route Liveness Check — complements the _closing flag: abort if this
-        # view is no longer the active route after the awaited fetch (catches
-        # navigations that bypass _on_back, e.g. system back / router redirect).
-        if self._closing or not self._is_live():
-            return
-
-        # ---- Empty state is a state, not an error ----
-        if not threads:
-            await show_status(self._status_banner, self._status_text,
-                "עדיין אין שיחות. התחילו שיחה ממסך הגילוי 🙂", ok=False,
-            )
-            self._feed_list.controls = []
             self._safe_update()
-            return
 
-        # Build each row in isolation so one malformed thread is skipped (logged)
-        # rather than aborting the whole list behind a dismissed spinner.
-        rows: list[ft.Control] = []
-        for t in threads:
-            try:
-                rows.append(self._thread_row(current, t))
-            except Exception:  # noqa: BLE001 — one bad row must not kill the list
-                log.exception("Matches: failed to build thread row; skipping")
-        self._feed_list.controls = rows
-        self._safe_update()
+        await run_guarded_load(
+            self.page,
+            guards=[LoadGuard(
+                ok=bool(current),
+                message="אנא התחבר/י תחילה.",
+                bounce=lambda: self._safe_go("/auth/login"),
+            )],
+            fetch=lambda: self._assemble_threads(current),
+            on_success=_render,
+            is_stale=lambda: self._closing or not self._is_live(),
+            status_banner=self._status_banner,
+            status_text=self._status_text,
+            logger=log,
+            fetch_error_message="טעינת השיחות נכשלה. אנא נסה/י שוב מאוחר יותר.",
+            fetch_error_log=f"Matches: load failed user={current}",
+        )
 
     def _assemble_threads(self, user_id: str) -> list[dict]:
         """Blocking: combine conversations + unread counts + peer names.

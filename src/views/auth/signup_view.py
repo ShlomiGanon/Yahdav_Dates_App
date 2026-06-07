@@ -19,7 +19,7 @@ from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
 from components.typography import create_screen_heading
 from components.feedback import create_field_error_label, set_field_error, clear_field_errors
-from services.I_Auth_Service import IAuthService
+from services.i_auth_service import IAuthService
 from utils.constants import UIConstants
 
 

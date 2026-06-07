@@ -19,10 +19,10 @@ from utils.constants import AssetPaths, UIConstants, ThemeColors, TextSizes
 
 log = logging.getLogger(__name__)
 
-# A control OR a zero-arg builder of one. The Shell runs builders inside a
-# try/except (see `guard`) so a body/action that fails to construct degrades to
-# the shared Error Component instead of crashing the screen.
-ControlOrBuilder = "ft.Control | Callable[[], ft.Control]"
+# Throughout this module a "control-or-builder" is either a built `ft.Control` or
+# a zero-arg callable returning one. The Shell runs builders inside a try/except
+# (see `guard`) so a body/action that fails to construct degrades to the shared
+# Error Component instead of crashing the screen.
 
 
 def background_screen(route: str, content: ft.Control) -> ft.View:

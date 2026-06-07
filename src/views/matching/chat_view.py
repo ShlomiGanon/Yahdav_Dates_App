@@ -28,13 +28,14 @@ import flet as ft
 from views._base import BaseView
 from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
 from views.common.navigation import go_back
-from components import loading
+from views.common.render import build_items_safe
+from views.common.load_flow import run_guarded_load, LoadGuard
 from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
 from components.typography import create_screen_heading
 from components.feedback import create_status_banner, show_status
 from components.chat import create_chat_bubble
-from services.I_Messaging_Service import IMessagingService
+from services.i_messaging_service import IMessagingService
 from utils.constants import MessageType, ChatConfig, ThemeColors
 
 log = logging.getLogger(__name__)
@@ -135,49 +136,53 @@ class ChatView(BaseView):
     # ============================================================
 
     async def _load_history(self) -> None:
-        # ---- Identity integrity: the injected self_id MUST match the logged-in
-        # user. Missing/mismatched ⇒ banner + bounce to login. ----
+        # Identity integrity: the injected self_id MUST match the logged-in user,
+        # and a peer must be selected. Both are precondition guards for the shared
+        # run_guarded_load (views/common/load_flow.py); the liveness predicate is
+        # this view's _closing flag.
         current = self.page.session.store.get(self.SESSION_USER_ID_KEY)
-        if not current or not self.self_id or current != self.self_id:
-            await show_status(self._status_banner, self._status_text,"אירעה שגיאת זיהוי. אנא התחבר/י מחדש.", ok=False)
-            await asyncio.sleep(1.5)
-            self._safe_go("/auth/login")
-            return
-        if not self.peer_id:
-            await show_status(self._status_banner, self._status_text,"לא נבחר/ה משתמש/ת לשיחה.", ok=False)
-            await asyncio.sleep(1.5)
-            self._safe_go(self._DISCOVER_ROUTE)
-            return
+        identity_ok = bool(current) and bool(self.self_id) and current == self.self_id
 
-        # ---- Fetch the page of history off the UI thread ----
-        loading.show_loading(self.page)
-        try:
+        async def _on_loaded(msgs: list[dict]) -> None:
+            self._render(msgs)
+            # Mark the peer's messages to me as READ (best-effort).
+            try:
+                await asyncio.to_thread(
+                    self.messaging.mark_messages_as_read,
+                    self.self_id, self.peer_id,
+                )
+            except Exception:  # noqa: BLE001 — non-critical
+                log.warning("Chat: mark-as-read failed", exc_info=True)
+
+        await run_guarded_load(
+            self.page,
+            guards=[
+                LoadGuard(
+                    ok=identity_ok,
+                    message="אירעה שגיאת זיהוי. אנא התחבר/י מחדש.",
+                    bounce=lambda: self._safe_go("/auth/login"),
+                ),
+                LoadGuard(
+                    ok=bool(self.peer_id),
+                    message="לא נבחר/ה משתמש/ת לשיחה.",
+                    bounce=lambda: self._safe_go(self._DISCOVER_ROUTE),
+                ),
+            ],
             # Newest page (no cursor); back-paging would pass the oldest loaded
             # message's created_at as the cursor.
-            msgs = await asyncio.to_thread(
-                self.messaging.get_chat_history,
-                self.self_id, self.peer_id,
-                ChatConfig.DEFAULT_PAGE_SIZE,
-            )
-        except Exception:
-            loading.hide_loading(self.page)
-            log.exception("Chat: history load failed self=%s peer=%s",
-                          self.self_id, self.peer_id)
-            await show_status(self._status_banner, self._status_text,"טעינת השיחה נכשלה. אנא נסה/י שוב.", ok=False)
-            return
-        loading.hide_loading(self.page)
-        if self._closing:
-            return
-
-        self._render(msgs)
-
-        # ---- Mark the peer's messages to me as READ (best-effort) ----
-        try:
-            await asyncio.to_thread(
-                self.messaging.mark_messages_as_read, self.self_id, self.peer_id,
-            )
-        except Exception:  # noqa: BLE001 — non-critical
-            log.warning("Chat: mark-as-read failed", exc_info=True)
+            fetch=lambda: self.messaging.get_chat_history(
+                self.self_id, self.peer_id, ChatConfig.DEFAULT_PAGE_SIZE,
+            ),
+            on_success=_on_loaded,
+            is_stale=lambda: self._closing,
+            status_banner=self._status_banner,
+            status_text=self._status_text,
+            logger=log,
+            fetch_error_message="טעינת השיחה נכשלה. אנא נסה/י שוב.",
+            fetch_error_log=(
+                f"Chat: history load failed self={self.self_id} peer={self.peer_id}"
+            ),
+        )
 
     async def _reload_messages(self) -> None:
         """Re-fetch + re-render the history without the full-screen spinner
@@ -200,14 +205,14 @@ class ChatView(BaseView):
         # Build each bubble in isolation: a single malformed message dict
         # (missing/renamed key, a NULL content on a non-text message) is skipped
         # with a log line rather than aborting the whole render and leaving the
-        # chat stuck behind a dismissed spinner.
-        bubbles: list[ft.Control] = []
-        for m in msgs:
-            try:
-                bubbles.append(self._bubble(m))
-            except Exception:  # noqa: BLE001 — one bad message must not kill the thread
-                log.exception("Chat: failed to build bubble; skipping")
-        self._messages_list.controls = bubbles
+        # chat stuck behind a dismissed spinner (shared render-seam helper;
+        # see views/common/render.py).
+        self._messages_list.controls = build_items_safe(
+            msgs,
+            self._bubble,
+            logger=log,
+            error_message="Chat: failed to build bubble; skipping",
+        )
         self._safe_update()
 
     # ============================================================

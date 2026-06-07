@@ -52,9 +52,10 @@ from views.common.photos import (
     resolve_main_photo,
     extra_photo_urls,
 )
+from views.common.render import build_items_safe
 from components import loading
 from components.typography import create_screen_heading
-from services.I_Profile_Repository import IProfileRepository
+from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
 
@@ -281,13 +282,14 @@ class PeerPhotosView(BaseView):
         self._heading.value = f"התמונות של {name}" if name else "תמונות נוספות"
 
         # Build each tile in isolation: a single malformed src is skipped (logged)
-        # rather than aborting the whole album behind a dismissed spinner.
-        tiles: list[ft.Control] = []
-        for src in self._collect_srcs(profile):
-            try:
-                tiles.append(self._photo_tile(src))
-            except Exception:  # noqa: BLE001 — one bad tile must not kill the album
-                log.exception("PeerPhotos: failed to build a photo tile; skipping")
+        # rather than aborting the whole album (shared render-seam helper; see
+        # views/common/render.py).
+        tiles = build_items_safe(
+            self._collect_srcs(profile),
+            self._photo_tile,
+            logger=log,
+            error_message="PeerPhotos: failed to build a photo tile; skipping",
+        )
 
         if not tiles:
             self._show_error("אין תמונות להצגה.")

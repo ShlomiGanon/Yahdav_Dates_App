@@ -40,8 +40,8 @@ class IAuthService(ABC):
         Generates a cryptographically-secure random token, persists a HASH of
         it (never the raw token) against `user_id` with an expiry derived from
         `AuthConfig.REMEMBER_ME_DAYS`, and returns the RAW token for the caller
-        to persist on the device (via the `utils.local_storage` seam — a small,
-        fsync'd JSON file alongside the SQLite DB).
+        to persist on the device (via the `utils.local_storage` seam, which writes
+        it to `page.shared_preferences` — there is NO JSON file).
 
         The raw token lives only on the device; the server keeps just its hash,
         so a database leak cannot be replayed as a login.

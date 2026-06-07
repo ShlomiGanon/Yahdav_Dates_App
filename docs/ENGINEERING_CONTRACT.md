@@ -100,16 +100,16 @@ src/
 │   └── sqlite_user_profile.py          SQLiteUserProfile concrete dataclass (data carrier; typed setters).
 │
 ├── services/                           Four role-interfaces + concrete backends + ledger.
-│   ├── I_Auth_Service.py               IAuthService          (ABC)
-│   ├── I_Profile_Repository.py         IProfileRepository    (ABC)
-│   ├── I_Messaging_Service.py          IMessagingService     (ABC)
-│   ├── I_Storage_Service.py            IStorageService       (ABC)
+│   ├── i_auth_service.py               IAuthService          (ABC)
+│   ├── i_profile_repository.py         IProfileRepository    (ABC)
+│   ├── i_messaging_service.py          IMessagingService     (ABC)
+│   ├── i_storage_service.py            IStorageService       (ABC)
 │   ├── sqlite_queries.py               Query ledger: ALL SQL + connection/transaction wrappers + pragmas.
 │   ├── sqlite_auth_service.py          SqliteAuthService(IAuthService)
 │   ├── sqlite_profile_repository.py    SqliteProfileRepository(IProfileRepository) — fail-soft JSON (de)serialization.
 │   ├── sqlite_messaging_service.py     SqliteMessagingService(IMessagingService)
 │   ├── local_disk_storage_service.py   LocalDiskStorageService(IStorageService) — media under data/uploads/.
-│   └── Firebase_Backend.py             Monolith stub — left as-is for a future cloud backend.
+│   └── firebase_backend.py             Monolith stub — left as-is for a future cloud backend.
 │
 ├── utils/                              constants, validation, router, device storage, time.
 │   ├── constants.py                    TextSizes, UIConstants, ThemeColors, AssetPaths, DBConfig, StorageConfig,
@@ -407,7 +407,7 @@ small and documented:
 Photos are a first-class subsystem behind `IStorageService`, isolated from
 `IProfileRepository` (the profile repo is **not** bloated with file I/O).
 
-- **Interface** (`I_Storage_Service.py`): `upload_file(file_bytes, destination_filename) → str`
+- **Interface** (`i_storage_service.py`): `upload_file(file_bytes, destination_filename) → str`
   returns a stable reference (a local absolute path today, a URI on a future
   backend); `delete_file(file_path) → bool` is fail-soft. Both are **blocking** —
   callers MUST wrap them in `asyncio.to_thread`.

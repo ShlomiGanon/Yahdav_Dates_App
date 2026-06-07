@@ -59,6 +59,8 @@ from views._base import BaseView
 from views.common.screen import CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button
 from views.common.photos import resolve_main_photo
+from views.common.photo_ops import save_photo_urls_or_rollback
+from views.common.load_flow import run_guarded_load, LoadGuard
 from components import loading
 from components.buttons import create_primary_button
 from components.inputs import create_hebrew_text_field
@@ -67,8 +69,8 @@ from components.feedback import (
     create_field_error_label, set_field_error, clear_field_errors,
     create_status_banner, show_status,
 )
-from services.I_Profile_Repository import IProfileRepository
-from services.I_Storage_Service import IStorageService
+from services.i_profile_repository import IProfileRepository
+from services.i_storage_service import IStorageService
 from models.user_profile import UserProfile, LocalizedText, Gender, Location
 from utils.constants import (
     TextSizes, UIConstants, ThemeColors, StorageConfig, AssetPaths,
@@ -288,75 +290,49 @@ class MyProfileView(BaseView):
     # ============================================================
 
     async def _load_profile_data(self) -> None:
-        # ---- 1. Read the identity token from session.store ----
-        # Explicit read (not via property) so the contract is visible at the
-        # call site for new developers tracing the auth flow.
+        # Identity read kept explicit at the call site so the auth contract is
+        # visible; the guard/spinner/liveness scaffolding lives in the shared
+        # run_guarded_load (views/common/load_flow.py). The fetch is a pure,
+        # WRITE-FREE read — the lazy photo-heal is dispatched separately in
+        # _populate so the critical load never triggers a WAL UPDATE.
         current_user = self.page.session.store.get(self.SESSION_USER_ID_KEY)
 
-        # ---- 2. Defensive: not logged in → bounce to login ----
-        if not current_user:
-            await show_status(self._status_banner, self._status_text,
-                "אנא התחבר/י תחילה כדי לראות את הפרופיל שלך.",
-                ok=False,
-            )
-            # Auto-redirect after the banner is shown briefly. The user sees
-            # WHY they're being bounced rather than a silent navigation.
-            await asyncio.sleep(1.5)
-            # Route Liveness Check: don't bounce a user who already left during
-            # the banner.
-            if not self._is_live():
+        async def _populate(profile: UserProfile | None) -> None:
+            # Profile may legitimately not exist (e.g. orphaned UID).
+            if profile is None:
+                await show_status(self._status_banner, self._status_text,
+                    "לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False,
+                )
+                await asyncio.sleep(1.5)
+                self.page.go("/auth/login")
                 return
-            self.page.go("/auth/login")
-            return
 
-        # ---- 3. Fetch profile off the UI thread (WRITE-FREE read path) ----
-        # The fetch is a pure read: no lazy-migration UPDATE is chained in here,
-        # so the critical load can never block on — or be stalled by — a WAL
-        # write. A pre-feature account with no stored photo still renders
-        # correctly because the repository resolves the main picture to the
-        # UNDEFINED_PROFILE.png template in-memory; persisting that default is a
-        # separate background concern, scheduled in step 6 below.
-        loading.show_loading(self.page)
-        try:
-            profile = await asyncio.to_thread(
-                self.profile_repo.get_profile, current_user,
-            )
-        except Exception:
-            # Any backend failure must revert the spinner and surface a calm,
-            # senior-friendly banner — never crash the view or leak raw error
-            # text. The technical detail goes to the log, not the screen.
-            loading.hide_loading(self.page)
-            log.exception("MyProfile: profile load failed for user=%s", current_user)
-            await show_status(self._status_banner, self._status_text,
-                "טעינת הפרופיל נכשלה. אנא נסה/י שוב מאוחר יותר.", ok=False,
-            )
-            return
-        loading.hide_loading(self.page)
+            # Lazy migration — fully DECOUPLED, fire-and-forget AFTER the read.
+            self._schedule_photo_heal(current_user)
 
-        # ---- Route Liveness Check: the fetch await yielded control; if the user
-        #      navigated away, abort before any navigation or page.update(). ----
-        if not self._is_live():
-            return
+            self._current_profile = profile
+            self._populate_form(profile)
+            self.page.update()
 
-        # ---- 4. Profile may legitimately not exist (e.g. orphaned UID) ----
-        if profile is None:
-            await show_status(self._status_banner, self._status_text,
-                "לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False,
-            )
-            await asyncio.sleep(1.5)
-            self.page.go("/auth/login")
-            return
+        await run_guarded_load(
+            self.page,
+            guards=[LoadGuard(
+                ok=bool(current_user),
+                message="אנא התחבר/י תחילה כדי לראות את הפרופיל שלך.",
+                bounce=lambda: self._is_live() and self.page.go("/auth/login"),
+            )],
+            fetch=lambda: self.profile_repo.get_profile(current_user),
+            on_success=_populate,
+            is_stale=lambda: not self._is_live(),
+            status_banner=self._status_banner,
+            status_text=self._status_text,
+            logger=log,
+            fetch_error_message="טעינת הפרופיל נכשלה. אנא נסה/י שוב מאוחר יותר.",
+            fetch_error_log=f"MyProfile: profile load failed for user={current_user}",
+        )
 
-        # ---- 5. Lazy migration — fully DECOUPLED from the read above ----
-        # Persisting the default main picture for a pre-feature account is an
-        # isolated, fire-and-forget background write. It runs AFTER the load
-        # resolved, so the critical read never triggers a WAL UPDATE and the UI
-        # thread never waits on it. Display is already correct via the in-memory
-        # fallback; this is pure persistence catch-up and may lag or fail freely.
-        self._schedule_photo_heal(current_user)
-
-        # ---- 6. Populate form fields ----
-        self._current_profile = profile
+    def _populate_form(self, profile: UserProfile) -> None:
+        """Fill every form field from the loaded profile (pure UI population)."""
         self._name_field.value = profile.display_name.for_gender(profile.gender)
         self._bio_field.value  = profile.bio.for_gender(profile.gender)
 
@@ -383,8 +359,6 @@ class MyProfileView(BaseView):
         # row carries more.
         self._photo_urls = list(profile.photo_urls)[:StorageConfig.MAX_PROFILE_PHOTOS]
         self._refresh_main_photo()
-
-        self.page.update()
 
     def _schedule_photo_heal(self, user_id: str) -> None:
         """Fire-and-forget the lazy photo migration, off the read path.
@@ -668,17 +642,17 @@ class MyProfileView(BaseView):
                 new_list[0] = stored_path
             else:
                 new_list = [stored_path]
-            self._current_profile.photo_urls = tuple(new_list)
-            await asyncio.to_thread(
-                self.profile_repo.save_profile, self._current_profile,
+            # Shared durability kernel: UPSERT the new list, rolling the entity
+            # back and deleting the just-uploaded orphan if the save fails.
+            await save_photo_urls_or_rollback(
+                self.profile_repo, self._current_profile, new_list,
+                previous_photo_urls=self._photo_urls,
+                storage=self.storage, orphan_path=stored_path,
             )
         except Exception:
             loading.hide_loading(self.page)
             log.exception("MyProfile: change main photo failed for user=%s",
                           self._current_profile.user_id)
-            self._current_profile.photo_urls = tuple(self._photo_urls)
-            if stored_path:
-                await asyncio.to_thread(self.storage.delete_file, stored_path)
             await show_status(self._status_banner, self._status_text,"עדכון תמונת הפרופיל נכשל. אנא נסה/י שוב.", ok=False)
             return
         loading.hide_loading(self.page)
