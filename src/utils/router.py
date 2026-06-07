@@ -36,7 +36,7 @@ from views.matching.discover_view import DiscoverView
 from views.matching.chat_view import ChatView
 from views.matching.matches_view import MatchesView
 from views.common.placeholder_view import PlaceholderView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import hub_screen, error_screen
 from components.buttons import create_secondary_button
 from utils.constants import TextSizes, UIConstants, ThemeColors
 
@@ -282,36 +282,17 @@ class Router:
             self._notify(v, "on_unmount")
 
     def _safe_error_view(self) -> ft.View:
-        """A minimal, dependency-free error screen in the shared shell, shown
-        when a view factory crashes — never a black page."""
+        """Layer-1 error view, shown when a view factory crashes — never a black
+        page. Delegates to the Shell-owned `error_screen` so the failure UI is the
+        SAME Error Component used everywhere (single source), with a stack-aware
+        recovery action back to the Main Menu."""
         back = create_secondary_button(
             "חזרה לתפריט הראשי", lambda _e: self.page.go(MainMenuView.ROUTE),
         )
-        card = translucent_card(
-            ft.Column(
-                controls=[
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=56, color=ThemeColors.DANGER),
-                    ft.Text(
-                        "משהו השתבש בטעינת המסך", size=TextSizes.H2,
-                        weight=ft.FontWeight.BOLD, color=ThemeColors.TEXT_MAIN,
-                        rtl=True, text_align=ft.TextAlign.CENTER,
-                    ),
-                    back,
-                ],
-                spacing=20,
-                tight=True,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            margin=ft.Margin.all(24),
-            padding=ft.Padding(24, 28, 24, 28),
-        )
-        return background_screen(
+        return error_screen(
             "/error",
-            ft.Container(
-                expand=True,
-                alignment=ft.Alignment(0, 0),
-                content=card,
-            ),
+            message="משהו השתבש בטעינת המסך",
+            actions=[back],
         )
 
     # ============================================================
@@ -324,7 +305,10 @@ class Router:
         overlay) keeps the first frame on-brand and black-screen-proof: at boot
         `page.views` is empty, so a translucent overlay alone would sit over an
         unpainted page. The subsequent `page.go` replaces this view in place."""
-        spinner_card = translucent_card(
+        # Calm spinner card in the SHARED centered hub layout — same frame as the
+        # Welcome / error screens, so the very first frame is already on-brand.
+        view = hub_screen(
+            "/boot",
             ft.Column(
                 controls=[
                     ft.ProgressRing(width=48, height=48, color=ThemeColors.PRIMARY),
@@ -338,12 +322,6 @@ class Router:
                 tight=True,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            margin=ft.Margin.all(24),
-            padding=ft.Padding(24, 28, 24, 28),
-        )
-        view = background_screen(
-            "/boot",
-            ft.Container(expand=True, alignment=ft.Alignment(0, 0), content=spinner_card),
         )
         self.page.views.clear()
         self.page.views.append(view)

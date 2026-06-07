@@ -45,14 +45,14 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
+from views.common.navigation import back_button
 from views.common.photos import (
     DEFAULT_PROFILE_IMAGE,
     resolve_main_photo,
     extra_photo_urls,
 )
 from components import loading
-from components.buttons import create_secondary_button
 from services.I_Profile_Repository import IProfileRepository
 from models.user_profile import UserProfile
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
@@ -94,7 +94,9 @@ class PeerPhotosView(BaseView):
     #  Layout (static only — build() must never throw)
     # ============================================================
 
-    def build(self) -> ft.View:
+    BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # _photos_column owns the scroll
+
+    def get_body(self) -> ft.Control:
         self._heading = ft.Text(
             "תמונות נוספות",
             size=TextSizes.H1, weight=ft.FontWeight.BOLD,
@@ -109,40 +111,24 @@ class PeerPhotosView(BaseView):
             expand=True,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-
-        # Back button pinned at the bottom of the card. Centred via GEOMETRIC
-        # alignment (not END), so it is immune to the RTL flip.
-        back_bar = ft.Container(
-            alignment=ft.Alignment(0, 0),
-            padding=ft.Padding(0, 8, 0, 0),
-            content=create_secondary_button(
-                "חזרה", lambda _e: self.page.go(self._PEER_PROFILE_ROUTE),
-            ),
-        )
-
-        # ---- Bounded gallery card: the SHARED shell recipe, expand=True. ----
-        gallery_card = translucent_card(
-            ft.Column(
-                controls=[self._heading, self._photos_column, back_bar],
-                spacing=16,
-                expand=True,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
+        return ft.Column(
+            controls=[self._heading, self._photos_column],
             expand=True,
-            margin=ft.Margin.only(left=12, top=12, right=12, bottom=8),
-            padding=ft.Padding(20, 40, 20, 16),
+            spacing=CONTENT_BODY_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
-        # ---- The fullscreen lightbox layer (hidden until a tile is tapped). ----
+    def get_actions(self) -> list[ft.Control]:
+        # Stack-aware "back" — pops to whatever opened the album (the peer profile).
+        return [back_button(
+            self.page, label="חזרה", fallback=self._PEER_PROFILE_ROUTE,
+        )]
+
+    def get_overlay(self) -> ft.Control:
+        # The fullscreen lightbox (hidden until a tile is tapped). The Shell owns
+        # the Stack, so toggling the lightbox never rebuilds the album.
         self._lightbox = self._build_lightbox()
-
-        # ---- Top-level Stack: album underneath, lightbox overlay on top. ----
-        root = ft.Stack(controls=[gallery_card, self._lightbox], expand=True)
-        view = background_screen(self.ROUTE, root)
-
-        # Bind into the navigation-stack lifecycle (back-ref + did_mount/
-        # will_unmount). The load starts in on_mount; teardown is BaseView's.
-        return self._bind_lifecycle(view)
+        return self._lightbox
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned background load. Cancelled

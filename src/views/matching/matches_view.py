@@ -27,9 +27,9 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
+from views.common.navigation import back_to_menu_button
 from components import loading
-from components.buttons import create_secondary_button
 from services.I_Messaging_Service import IMessagingService
 from services.I_Profile_Repository import IProfileRepository
 from utils.constants import TextSizes, UIConstants, ThemeColors
@@ -70,11 +70,9 @@ class MatchesView(BaseView):
     #  Layout
     # ============================================================
 
-    def build(self) -> ft.View:
-        # ---- Top SECONDARY (blue-grey) back button — navigation colour per the
-        # action hierarchy (was primary red; back/nav must be secondary). ----
-        top_button = create_secondary_button("חזור לתפריט הראשי", self._on_back)
+    BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
+    def get_body(self) -> ft.Control:
         heading = ft.Text(
             "היסטוריית שיחות",
             size=TextSizes.H1,
@@ -83,8 +81,24 @@ class MatchesView(BaseView):
             rtl=True,
             text_align=ft.TextAlign.RIGHT,
         )
+        # The scrolling thread list (cards fill width via the ListView); expand=True
+        # bounds it inside the card.
+        self._feed_list = ft.ListView(
+            expand=True,
+            spacing=UIConstants.ELEMENT_SPACING,
+            padding=ft.Padding(0, 8, 0, 8),
+        )
+        return ft.Column(
+            controls=[heading, self._feed_list],
+            expand=True,
+            spacing=CONTENT_BODY_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
 
-        # ---- Inline status banner (auth / empty / error) ----
+    def get_actions(self) -> list[ft.Control]:
+        return [back_to_menu_button(self.page)]   # shared helper; UNWIND to /menu
+
+    def get_status_banner(self) -> ft.Control:
         self._status_text = ft.Text(
             value="",
             size=TextSizes.INPUT,
@@ -101,36 +115,12 @@ class MatchesView(BaseView):
             visible=False,
             alignment=ft.Alignment(0, 0),
         )
+        return self._status_banner
 
-        # ---- The scrolling thread list (cards fill width via the ListView) ----
-        self._feed_list = ft.ListView(
-            expand=True,
-            spacing=UIConstants.ELEMENT_SPACING,
-            padding=ft.Padding(0, 8, 0, 8),
-        )
-
-        # Top button + heading + banner stay fixed; only the list scrolls.
-        inner = ft.Column(
-            controls=[top_button, heading, self._status_banner, self._feed_list],
-            spacing=14,
-            expand=True,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
-        card = translucent_card(
-            inner,
-            expand=True,
-            margin=ft.Margin.only(left=12, top=12, right=12, bottom=12),
-            padding=24,
-        )
-        view = background_screen(self.ROUTE, card)
-
-        # One-shot load on mount (no background polling → nothing leaks).
-        try:
-            self.page.run_task(self._load)
-        except AttributeError:
-            asyncio.create_task(self._load())
-
-        return view
+    def on_mount(self) -> None:
+        """Mounted into the page tree: start the owned one-shot thread load.
+        Cancelled by BaseView.on_unmount when this view is popped/unmounted."""
+        self._load_task = self.page.run_task(self._load)
 
     # ============================================================
     #  Lifecycle — load threads
@@ -335,10 +325,6 @@ class MatchesView(BaseView):
         self._closing = True
         self.page.session.store.set(self.SELECTED_PEER_ID_KEY, peer_id)
         self.page.go(self._CHAT_ROUTE)
-
-    def _on_back(self, e: ft.ControlEvent) -> None:
-        self._closing = True
-        self.page.go(self._MENU_ROUTE)
 
     # ============================================================
     #  Helpers

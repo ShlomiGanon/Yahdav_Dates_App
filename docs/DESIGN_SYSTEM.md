@@ -33,12 +33,173 @@ view = background_screen(self.ROUTE, <layout-containing-card>)       # full-blee
 - **Photo tiles** reuse `views/common/photos.py::photo_thumb(src, size=…)` — the
   single rounded/clipped image tile with a broken-image `error_content` fallback.
 - **Auth screens use the same shell.** `views/auth/widgets/auth_card.py::auth_modal`
-  is a thin wrapper that centres a `translucent_card` inside `background_screen` —
-  it is NOT a bespoke modal/scrim. Login & Signup look identical to every other
-  screen.
+  is a thin wrapper over the shared `hub_screen` primitive (§1.5) — it is NOT a
+  bespoke modal/scrim. Login & Signup look identical to every other hub screen.
 
 **Enforcement:** a view that constructs a raw `ft.View` with its own `bgcolor`, or
 hardcodes `padding=…` on a top-level container, fails review.
+
+---
+
+## 1.5 The Interface-First screen framework
+
+Every screen is an **Interface-First** `BaseView`: it DECLARES what it is and
+PROVIDES its pieces through fixed methods — it never writes `build()` and never
+touches layout. The framework (`BaseView.build()` + `ScreenShell` in
+`views/common/screen.py`) orchestrates everything: assembly, centering,
+responsiveness, lifecycle binding, and a built-in error catch-all.
+
+A screen DECLARES (class attributes):
+
+- `ROUTE` — its route string.
+- `SCREEN_TYPE` — `ScreenType.HUB` (centered single card; Welcome/Login/Signup/
+  Menu/placeholder) or `ScreenType.CONTENT` (scroll card + sticky animated bar;
+  everything else). Default CONTENT.
+- `BODY_LAYOUT` — `BodyLayout.SCROLLING` (default) or `SELF_SCROLLING` when the
+  body is its own `ft.ListView`.
+
+A screen PROVIDES (override what it needs):
+
+- `get_body() -> ft.Control` — REQUIRED. The content as ONE composed control.
+- `get_actions() -> list[ft.Control]` — buttons (HUB → inside the card; CONTENT →
+  the sticky bar). Default `[]`.
+- `get_status_banner() -> ft.Control | None` — CONTENT inline banner. Default None.
+- `get_overlay() -> ft.Control | None` — CONTENT fullscreen layer (lightbox). Default None.
+- `get_services() -> list` — Flet services (e.g. an `ft.FilePicker`). Default `[]`.
+
+```python
+class MyProfileView(BaseView):
+    ROUTE = "/profile/me"                       # SCREEN_TYPE defaults to CONTENT
+
+    def get_body(self) -> ft.Control:           # the view composes its OWN content
+        ...                                     # (inner arrangement = view's job)
+        return ft.Column([heading, *fields], spacing=CONTENT_BODY_SPACING,
+                         horizontal_alignment=ft.CrossAxisAlignment.CENTER)
+
+    def get_actions(self):  return [save_button, divider, back_to_menu_button(self.page)]
+    def get_status_banner(self): return self._status_banner
+    def get_services(self): return [self._file_picker]
+```
+
+The hard SoC line is **framework = outer frame; view = inner composition** — the
+view arranges its own content; the Shell never reaches in. The four providers are
+handed to `ScreenShell` as builders, so a failure in any of them degrades to the
+shared Error Component (§1.6) instead of crashing.
+
+The Shell exposes **no** layout knobs (`body_alignment`, `actions_alignment`,
+raw `scroll`, `card_padding` are gone from the contract). The one scroll choice
+is expressed by INTENT via `body_layout=BodyLayout.SELF_SCROLLING` (the body is
+an `ft.ListView` that owns its scroll), not a raw flag. The Buttons Area height
+is deterministic (auto-summed from the actions, override via `action_bar_height`)
+and `animate`d, so it expands/contracts smoothly when a mounted view swaps its
+actions via `set_actions(action_bar_of(view), [...])`.
+
+```
+┌──────────────────────────────────────┐
+│  translucent_card (expand=True)       │  ← the ONLY region that scrolls:
+│   title + body                        │     heading + form / feed / messages
+└──────────────────────────────────────┘
+┌──────────────────────────────────────┐
+│  transparent action bar (sticky)      │  ← OUTSIDE the card, never scrolls:
+│   [status banner]  [buttons …]        │     status feedback + ALL buttons
+└──────────────────────────────────────┘
+```
+
+Hard rules, all encoded in the primitive:
+
+- **The content card scrolls; the action bar does not.** Only the card holds
+  `scroll`/an `expand=True` `ListView`; the buttons stay on-screen however far
+  the body scrolls. A back button **inside** the card on a content screen fails
+  review.
+- **All buttons live in the action bar, OUTSIDE the card.** The bar is
+  transparent (`bgcolor=TRANSPARENT`) so the buttons float on the BG.
+- **Status banners belong in the action bar, never in the scroll region** — pass
+  them as `status_banner=…`; the primitive pins them above the buttons so
+  save/error/empty-state feedback is always visible.
+- **Primary (red) vs secondary/navigation (blue-grey) are separated by a
+  divider** (see §4). The geometry — margins, padding, spacing, expand behaviour
+  — is defined ONCE in `screen.py` (`CONTENT_CARD_MARGIN`, `CONTENT_CARD_PADDING`,
+  `CONTENT_CARD_PADDING_TALL`, `ACTION_BAR_PADDING`, …); views never re-invent it.
+- **The Buttons Area animates.** It is a single persistent container with an
+  explicit, action-derived `height` + `animate`; cross-screen heights stay
+  consistent (no jump) and intra-screen action changes tween. A non-button
+  action (divider, send-row) should declare its own `.height` so the auto-sum
+  stays tight.
+- **Canonical top-logo clearance.** The Shell applies one card padding
+  (`CONTENT_CARD_PADDING_TALL`) to EVERY content screen, so no view passes a
+  `card_padding`; the heading clears the BG's top logo uniformly app-wide.
+- **Overlays belong to the Shell.** A fullscreen layer (e.g. the peer album's
+  lightbox) is passed as `overlay=…`; the Shell owns the `ft.Stack`, so no view
+  hand-rolls `background_screen(ft.Stack([...]))`.
+- **Fault tolerance is built in (see §1.6).** `body`, each `action`, and
+  `overlay` may be a control OR a zero-arg builder; the Shell runs builders
+  through `guard`, so a section that fails to construct degrades to the shared
+  **Error Component** instead of crashing the screen.
+- **Responsive hub card.** The HUB card is centred both axes and its width is
+  CLAMPED to `[CARD_MIN_WIDTH, CARD_MAX_WIDTH]` against the window
+  (`BaseView` re-clamps on `page.on_resized`): wide → caps at `CARD_MAX_WIDTH`
+  (never stretches), narrow → shrinks to fit (the STRETCH card content makes the
+  400-px controls flex with it), always centred. The centred column AUTO-scrolls,
+  so a tall form (Login/Signup) scrolls instead of clipping its bottom button.
+- **Internal building blocks:** `content_screen(...)` / `content_layout(...)`
+  remain only as the low-level back-compat helpers (and for the layout tests);
+  no view calls them — every content screen builds through `ScreenShell`.
+
+**Hub / auth / status screens (`SCREEN_TYPE = ScreenType.HUB`) share the SAME
+unified `ScreenShell` — the HUB branch.** Welcome, Main Menu, Login, Signup, the
+"coming soon" placeholder, **and the router's own boot spinner + error view**
+(via the `hub_screen(...)` back-compat shim) all render ONE translucent card,
+centred both axes, every control (buttons included) INSIDE the card. No
+scroll/action-bar split, no custom backgrounds or top-level padding, and
+no hand-rolled `background_screen(translucent_card(…))` assembly anywhere
+(`auth_modal` is now a thin wrapper over `hub_screen`). The centring + card
+geometry is defined once in `screen.py`. **Login and Signup are visually
+identical to Welcome** (the design baseline): same `hub_screen` frame, same H1,
+same `ELEMENT_SPACING`, same 400×70 buttons and 50%-white card.
+
+## 1.6 Fault tolerance — the Error Component & the backstop
+
+The app must never crash to a black/blank screen. Defence is **three layered
+rings**, all funnelling to ONE shared **Error Component** (`error_component()` in
+`screen.py`: a danger icon over the friendly Hebrew line *"אירעה שגיאה, אנא נסו
+שוב"*, styled like every other card heading):
+
+1. **Component ring — `guard(build_fn)`.** Wrap a risky sub-tree (e.g. one
+   derived from fetched data) so its failure renders the Error Component in place
+   instead of bubbling. `ScreenShell` accepts `body` / `actions` / `overlay` as
+   controls OR zero-arg builders and runs builders through `guard` automatically
+   — so "an error in the body or actions" degrades, by construction.
+2. **Screen ring — the router's `_safe_build`.** The factory that builds each
+   view is wrapped; any `build()` that throws falls back to `error_screen(...)` —
+   the SAME Error Component, framed as a full `hub_screen` view with a
+   back-to-menu recovery action. Single source: the router no longer hand-rolls
+   its own error card.
+3. **Route ring — `_bare_fallback`.** If even the styled error view can't mount,
+   a dependency-free bare `ft.View` with one `ft.Text` is shown. After this a
+   blank page is unreachable.
+
+Also: every `build()` assembles only static controls (data loads happen in
+`on_mount`, with inline status banners), and each list row is built in its own
+try/except, so one bad record is skipped — not fatal.
+
+### Stack-aware back navigation
+
+Back must return to the screen that ACTUALLY opened the current one. Since a
+screen can be reached from several places (ChatView opens from both Discover and
+Matches), a hard-coded `page.go(PARENT)` sends the user to the wrong place. Use
+the stack-aware helpers in `views/common/navigation.py`:
+
+- `back_button(page, label=…, fallback=…)` — a SECONDARY (blue-grey) button that
+  pops ONE level off `page.views` (the router turns the implied `page.go` into an
+  UNWIND, preserving the revealed view's state), or routes to `fallback` when the
+  current screen is the stack root.
+- `go_back(page, fallback=…)` — the same logic for views that need their own
+  `on_click` wrapper (e.g. ChatView, which sets a `_closing` guard first).
+- `back_to_menu_button(page)` stays for the explicit "חזור לתפריט הראשי" affordance
+  (an UNWIND/RESET straight to `/menu`), distinct from "back one screen".
+
+Prefer the stack-aware pop over `page.go(HARDCODED_PARENT)` whenever the user
+expects "go back one screen".
 
 ---
 
@@ -189,6 +350,15 @@ and failing that, a bare last-resort view — never a black page.
    `translucent_card`, `photo_thumb`, `resolve_main_photo` / `extra_photo_urls`,
    `back_to_menu_button`. Using them == complying.
 2. **Review checklist** (PR template):
+   - [ ] Screen is an Interface-First `BaseView`: it implements `get_body()`
+         (+ `get_actions`/`get_status_banner`/`get_overlay`/`get_services` as
+         needed) and declares `SCREEN_TYPE`/`BODY_LAYOUT`. It does NOT override
+         `build()`, call `ScreenShell`/`hub_screen`/`content_screen` directly, or
+         hand-roll `background_screen(translucent_card(…))`.
+   - [ ] Risky/data-derived sub-trees fenced with `guard(...)` so a render
+         failure shows the Error Component, never a crash. (`get_*` providers are
+         already guarded by the framework.)
+   - [ ] Back goes via `back_button`/`go_back` (stack-aware), not `page.go(HARDCODED_PARENT)`.
    - [ ] Screen wrapped in `background_screen(translucent_card(...))`; no custom BG/padding.
    - [ ] All inputs via `create_hebrew_text_field`; text sizes ∈ {H1, H2, BUTTON, INPUT} for primary content.
    - [ ] Columns `STRETCH`; Text `text_align=RIGHT` + `rtl=True`; Row anchors first; chat bubbles use absolute `ft.Alignment(±1,0)`.

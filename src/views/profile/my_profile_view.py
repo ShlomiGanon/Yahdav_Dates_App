@@ -56,7 +56,7 @@ from datetime import date
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button
 from views.common.photos import resolve_main_photo
 from components import loading
@@ -141,7 +141,7 @@ class MyProfileView(BaseView):
     #  Layout
     # ============================================================
 
-    def build(self) -> ft.View:
+    def get_body(self) -> ft.Control:
         heading = ft.Text(
             "הפרופיל שלי",
             size=TextSizes.H1,
@@ -238,8 +238,39 @@ class MyProfileView(BaseView):
             width=UIConstants.INPUT_WIDTH,
         )
 
-        # ---- Status banner (success/error, inline; reliable across Flet
-        # versions — no dependency on page.snack_bar / page.show_snack_bar). ----
+        # The scrollable form fields, top → bottom: identity, then demographics,
+        # then the free-text bio (longest, so it sits last). CENTER keeps the
+        # fixed-width fields centred. New field editors drop straight in here.
+        return ft.Column(
+            controls=[
+                heading,
+                photo_section,
+                self._name_field,    self._name_error,
+                self._gender_dropdown, self._gender_error,
+                dob_heading, dob_row, self._dob_error,
+                self._city_field,    self._city_error,
+                self._region_dropdown,
+                self._bio_field,     self._bio_error,
+            ],
+            spacing=CONTENT_BODY_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def get_actions(self) -> list[ft.Control]:
+        # Primary "save" (red) above a divider above the secondary (blue-grey)
+        # "return to menu", so a senior never confuses the two.
+        save_button = create_primary_button("שמור שינויים", self._on_save_click)
+        divider = ft.Container(
+            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
+            width=UIConstants.INPUT_WIDTH,
+            height=28,                       # declared so the Shell sizes the bar
+            padding=ft.Padding(0, 8, 0, 4),
+        )
+        return [save_button, divider, back_to_menu_button(self.page)]
+
+    def get_status_banner(self) -> ft.Control:
+        # Inline success/error feedback (reliable across Flet versions — no
+        # dependency on page.snack_bar). Sits above the buttons in the sticky bar.
         self._status_text = ft.Text(
             value="",
             size=TextSizes.BODY,
@@ -257,117 +288,16 @@ class MyProfileView(BaseView):
             width=UIConstants.INPUT_WIDTH,
             alignment=ft.Alignment(0, 0),
         )
+        return self._status_banner
 
-        # ---- Primary action: save changes ----
-        save_button = create_primary_button("שמור שינויים", self._on_save_click)
+    def get_services(self) -> list[ft.Control]:
+        # The FilePicker mounts + registers with THIS view (discarded on nav).
+        return [self._file_picker]
 
-        # ---- Visual separator so seniors don't confuse the primary "save"
-        # action with the secondary navigation button below it. ----
-        divider = ft.Container(
-            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
-            width=UIConstants.INPUT_WIDTH,
-            padding=ft.Padding(0, 8, 0, 4),
-        )
-
-        # ---- Secondary action: return to the Main Menu. Shared senior-friendly
-        # blue-grey button (distinct from the red "save"). Logout now lives on
-        # the Main Menu, not here. ----
-        return_button = back_to_menu_button(self.page)
-
-        # ============================================================
-        #  Split layout — scrollable form + sticky bottom action bar
-        # ============================================================
-        # Two stacked regions inside one screen-filling Column:
-        #   1. The form region EXPANDS to fill all space above the bar and owns
-        #      the scroll (scroll=AUTO) — as the senior moves through the fields,
-        #      only this region scrolls.
-        #   2. The action bar sits OUTSIDE the scroll region, so "שמור שינויים"
-        #      and "חזור לתפריט הראשי" stay anchored at the bottom of the screen
-        #      and are always one predictable tap away — never scrolled off-view.
-        # New field editors (gender / birth date / location) drop straight into
-        # `form_controls` without ever touching the fixed bar.
-
-        # ---- 1. Scrollable form region ----
-        # All editable fields, top → bottom: identity, then demographics, then
-        # the free-text bio (longest, so it sits last).
-        form_controls: list[ft.Control] = [
-            heading,
-            photo_section,
-            self._name_field,    self._name_error,
-            self._gender_dropdown, self._gender_error,
-            dob_heading, dob_row, self._dob_error,
-            self._city_field,    self._city_error,
-            self._region_dropdown,
-            self._bio_field,     self._bio_error,
-        ]
-        # A translucent SURFACE card (shared `translucent_card` helper) keeps
-        # every label/input readable over the full-screen background image,
-        # while the image still shows in the margin around it. Only this region
-        # scrolls.
-        scroll_region = translucent_card(
-            ft.Column(
-                controls=form_controls,
-                spacing=14,
-                scroll=ft.ScrollMode.AUTO,        # this region — and only this — scrolls
-                expand=True,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            expand=True,                          # claim all height above the bar
-            margin=ft.Margin.only(left=12, top=12, right=12, bottom=8),
-            padding=ft.Padding(20, 20, 20, 16),
-        )
-
-        # ---- 2. Sticky bottom action bar (never scrolls) ----
-        # The status banner lives HERE, just above the buttons, so save
-        # feedback is visible no matter how far the form has been scrolled.
-        action_bar = ft.Container(
-            # Transparent bar (no fill, no top border) so the buttons float
-            # directly on the background image. The buttons and the status
-            # banner carry their own colours, so they stay legible.
-            bgcolor=ft.Colors.TRANSPARENT,
-            padding=ft.Padding(24, 12, 24, 20),
-            content=ft.Column(
-                controls=[
-                    self._status_banner,
-                    save_button,
-                    divider,
-                    return_button,
-                ],
-                tight=True,
-                spacing=10,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-
-        # ---- 3. Full-screen background image with the layout on top ----
-        # `background_screen` (views/common/screen.py) centralises the full-bleed
-        # BG treatment shared by every screen (FILL image, STRETCH width, expand
-        # height) — one definition, identical visual language across views. The
-        # inner Column stays CENTER so the form card remains centred on top.
-        view = background_screen(
-            self.ROUTE,
-            ft.Column(
-                controls=[scroll_region, action_bar],
-                expand=True,
-                spacing=0,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-
-        # Attach the FilePicker service to THIS view so it mounts and registers
-        # with it (and is discarded with it on navigation — no accumulation).
-        view.services.append(self._file_picker)
-
-        # ---- Kick off the async load on mount. ----
-        # Flet runs main() inside an asyncio event loop, so create_task is safe.
-        # page.run_task is preferred when available (newer Flet); we fall back
-        # to asyncio.create_task for older builds.
-        try:
-            self.page.run_task(self._load_profile_data)
-        except AttributeError:
-            asyncio.create_task(self._load_profile_data())
-
-        return view
+    def on_mount(self) -> None:
+        """Mounted into the page tree: start the owned one-shot profile load.
+        Cancelled by BaseView.on_unmount when this view is popped/unmounted."""
+        self._load_task = self.page.run_task(self._load_profile_data)
 
     # ============================================================
     #  Lifecycle — fetch profile on mount and populate the form

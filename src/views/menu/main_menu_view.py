@@ -22,7 +22,7 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import ScreenType
 from views.common.session import safe_remove
 from components.buttons import create_primary_button, create_secondary_button
 from utils import local_storage
@@ -35,6 +35,7 @@ class MainMenuView(BaseView):
     """Senior-friendly selection screen: three large primary buttons + logout."""
 
     ROUTE = "/menu"
+    SCREEN_TYPE = ScreenType.HUB
 
     # Destination routes for the three options. Centralised here so the menu's
     # targets are obvious and editable in one place.
@@ -47,8 +48,8 @@ class MainMenuView(BaseView):
     SESSION_USER_ID_KEY    = "current_user_id"
     SESSION_USER_EMAIL_KEY = "current_user_email"
 
-    def build(self) -> ft.View:
-        heading = ft.Text(
+    def get_body(self) -> ft.Control:
+        return ft.Text(
             "תפריט ראשי",
             size=TextSizes.H1,
             weight=ft.FontWeight.BOLD,
@@ -57,9 +58,15 @@ class MainMenuView(BaseView):
             text_align=ft.TextAlign.CENTER,
         )
 
-        # Three large, accessible primary buttons (standard BUTTON_WIDTH/HEIGHT
-        # and TextSizes.BUTTON via create_primary_button), full RTL.
-        menu_buttons = [
+    def get_actions(self) -> list[ft.Control]:
+        # Three large primary choices, a divider, then the secondary (blue-grey)
+        # logout — all stacked inside the hub card by the framework.
+        divider = ft.Container(
+            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
+            width=UIConstants.INPUT_WIDTH,
+            padding=ft.Padding(0, 8, 0, 4),
+        )
+        return [
             create_primary_button(
                 "עריכת הפרופיל שלי",
                 lambda _e: self.page.go(self._PROFILE_ROUTE),
@@ -72,36 +79,9 @@ class MainMenuView(BaseView):
                 "היסטוריית שיחות",
                 lambda _e: self.page.go(self._CHAT_HISTORY_ROUTE),
             ),
+            divider,
+            create_secondary_button("התנתק מהמערכת", self._on_logout_click),
         ]
-
-        # Visual separator + the secondary (blue-grey) Logout button at the
-        # BOTTOM of the options, distinct from the red primary choices above.
-        divider = ft.Container(
-            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
-            width=UIConstants.INPUT_WIDTH,
-            padding=ft.Padding(0, 8, 0, 4),
-        )
-        logout_button = create_secondary_button(
-            "התנתק מהמערכת", self._on_logout_click,
-        )
-
-        card = translucent_card(
-            ft.Column(
-                controls=[heading, *menu_buttons, divider, logout_button],
-                spacing=UIConstants.ELEMENT_SPACING,
-                tight=True,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=UIConstants.CARD_PADDING,
-        )
-        # Centre the card over the full-screen background.
-        centered = ft.Column(
-            controls=[card],
-            expand=True,
-            alignment=ft.MainAxisAlignment.CENTER,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-        return background_screen(self.ROUTE, centered)
 
     # ============================================================
     #  Logout handler (moved here from MyProfileView)

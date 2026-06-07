@@ -13,74 +13,62 @@ import asyncio
 import flet as ft
 
 from views._base import BaseView
-from views.auth.widgets.auth_card import auth_modal
+from views.common.screen import ScreenType
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
 from services.I_Auth_Service import IAuthService
-from utils.constants import TextSizes, ThemeColors
+from utils.constants import TextSizes, ThemeColors, UIConstants
 
 
 class SignupView(BaseView):
     ROUTE = "/auth/signup"
+    SCREEN_TYPE = ScreenType.HUB
 
     def __init__(self, page: ft.Page, auth: IAuthService) -> None:
         super().__init__(page)
         self.auth = auth
 
     # ============================================================
-    #  Layout
+    #  Layout — the interface the framework renders
     # ============================================================
 
-    def build(self) -> ft.View:
-        # ---- Inputs ----
+    def get_body(self) -> ft.Control:
+        # STRETCH so the fixed-width inputs flex to the (responsive) card width.
         self._email_field = create_hebrew_text_field(
-            "אימייל",
-            on_submit=self._on_signup_click,
+            "אימייל", on_submit=self._on_signup_click,
         )
         self._password_field = create_hebrew_text_field(
-            "סיסמה",
-            password=True,
-            on_submit=self._on_signup_click,
+            "סיסמה", password=True, on_submit=self._on_signup_click,
         )
         self._confirm_password_field = create_hebrew_text_field(
-            "אימות סיסמה",
-            password=True,
-            on_submit=self._on_signup_click,
+            "אימות סיסמה", password=True, on_submit=self._on_signup_click,
         )
-
-        # ---- Adjacent error labels (one per field) ----
         self._email_error            = self._make_error_label()
         self._password_error         = self._make_error_label()
         self._confirm_password_error = self._make_error_label()
-
-        content = ft.Column(
+        return ft.Column(
             controls=[
                 ft.Text(
                     "הרשמה למערכת", size=TextSizes.H1, weight=ft.FontWeight.BOLD,
                     color=ThemeColors.TEXT_MAIN, rtl=True,
                     text_align=ft.TextAlign.CENTER,
                 ),
-
-                self._email_field,
-                self._email_error,
-
-                self._password_field,
-                self._password_error,
-
-                self._confirm_password_field,
-                self._confirm_password_error,
-
-                # Primary (red) = the constructive signup action; secondary
-                # (blue-grey) = cancel/navigation, per the action hierarchy.
-                create_primary_button("הירשם", self._on_signup_click),
-                create_secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
+                self._email_field, self._email_error,
+                self._password_field, self._password_error,
+                self._confirm_password_field, self._confirm_password_error,
             ],
             tight=True,
-            spacing=12,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=UIConstants.ELEMENT_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        return auth_modal(self.page, self.ROUTE, content)
+
+    def get_actions(self) -> list[ft.Control]:
+        # Primary (red) = constructive signup; secondary (blue-grey) = cancel.
+        return [
+            create_primary_button("הירשם", self._on_signup_click),
+            create_secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
+        ]
 
     # ============================================================
     #  Submit handler

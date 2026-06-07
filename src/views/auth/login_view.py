@@ -20,7 +20,7 @@ from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
 from services.I_Auth_Service import IAuthService
 from utils import local_storage
-from utils.constants import TextSizes, ThemeColors
+from utils.constants import TextSizes, ThemeColors, UIConstants
 
 log = logging.getLogger(__name__)
 
@@ -93,10 +93,12 @@ class LoginView(BaseView):
                 create_secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
             ],
             tight=True,
-            spacing=12,
+            spacing=UIConstants.ELEMENT_SPACING,   # match the Welcome baseline
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
-        return auth_modal(self.page, self.ROUTE, content)
+        # auth_modal centers `content` via the shared hub_screen primitive; bind
+        # the View into the navigation-stack lifecycle (system back / _is_live).
+        return self._bind_lifecycle(auth_modal(self.page, self.ROUTE, content))
 
     # ============================================================
     #  Submit handler

@@ -38,10 +38,11 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import CONTENT_BODY_SPACING
+from views.common.navigation import back_button
 from views.common.photos import extra_photo_urls
 from components import loading
-from components.buttons import create_primary_button, create_secondary_button
+from components.buttons import create_primary_button
 from services.I_Profile_Repository import IProfileRepository
 from models.user_profile import UserProfile, Gender
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
@@ -93,85 +94,42 @@ class UserProfileView(BaseView):
     #  Layout (static only — build() must never throw)
     # ============================================================
 
-    def build(self) -> ft.View:
+    def get_body(self) -> ft.Control:
+        # Avatar + heading + fields, STRETCH/RIGHT-aligned so a long bio wraps and
+        # scrolls and can never overflow the render tree.
         self._heading = ft.Text(
             "", size=TextSizes.H1, weight=ft.FontWeight.BOLD,
             color=ThemeColors.TEXT_MAIN, rtl=True, text_align=ft.TextAlign.RIGHT,
         )
-        # Avatar slot — filled on load; lays out before the profile arrives.
         self._avatar_slot = ft.Container(alignment=ft.Alignment(0, 0))
-        # Content slot — holds either the field blocks or an error card.
         self._content = ft.Column(
             controls=[],
             spacing=14,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-
-        # Bounded, scrollable card: one expand=True scroll region, STRETCH
-        # children, RIGHT-aligned text — a long bio wraps and scrolls, it can
-        # never overflow the render tree. (The bumped top padding clears the
-        # background's top logo.)
-        scroll_region = translucent_card(
-            ft.Column(
-                controls=[self._avatar_slot, self._heading, self._content],
-                spacing=16,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
-            expand=True,
-            margin=ft.Margin.only(left=12, top=12, right=12, bottom=8),
-            padding=ft.Padding(20, 40, 20, 16),
-        )
-
         # Primary action — "view more photos". Hidden until load confirms the
-        # peer actually has album extras (set in _render_profile). Centred via
-        # the Column's CENTER alignment, so the fixed-width button is RTL-immune.
+        # peer has album extras (set in _render_profile); created here so the
+        # action list can reference it.
         self._album_button = create_primary_button(
             "להצגת תמונות נוספות",
             self._on_view_album,
             text_size=TextSizes.INPUT,   # the label is long → step down from BUTTON
         )
         self._album_button.visible = False
-
-        # Sticky bottom bar — "חזור" is ALWAYS present, so an error card is never
-        # a dead end (secondary blue-grey: navigation, per the action hierarchy).
-        # The album button sits above it when the peer has extra photos.
-        action_bar = ft.Container(
-            bgcolor=ft.Colors.TRANSPARENT,
-            padding=ft.Padding(24, 12, 24, 20),
-            content=ft.Column(
-                controls=[
-                    self._album_button,
-                    create_secondary_button(
-                        "חזור", lambda _e: self.page.go(self._DISCOVER_ROUTE),
-                    ),
-                ],
-                tight=True,
-                spacing=10,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
+        return ft.Column(
+            controls=[self._avatar_slot, self._heading, self._content],
+            spacing=CONTENT_BODY_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
-        # The whole layout sits in an explicit expand=True container inside the
-        # shared shell — bounded constraints top to bottom.
-        view = background_screen(
-            self.ROUTE,
-            ft.Container(
-                expand=True,
-                content=ft.Column(
-                    controls=[scroll_region, action_bar],
-                    expand=True,
-                    spacing=0,
-                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                ),
-            ),
-        )
-
-        # Bind the View into the navigation-stack lifecycle (back-ref + Flet
-        # did_mount/will_unmount -> our on_mount/on_unmount). The load is started
-        # in on_mount (when the page is attached), NOT here — see on_mount.
-        return self._bind_lifecycle(view)
+    def get_actions(self) -> list[ft.Control]:
+        # The album button (shown only when the peer has extras) above "חזור",
+        # which is ALWAYS present (so an error card is never a dead end) and
+        # STACK-AWARE: it pops one level — to Discover, the only entry point.
+        return [
+            self._album_button,
+            back_button(self.page, label="חזור", fallback=self._DISCOVER_ROUTE),
+        ]
 
     # ============================================================
     #  Lifecycle — load + render, never letting an error blank the page

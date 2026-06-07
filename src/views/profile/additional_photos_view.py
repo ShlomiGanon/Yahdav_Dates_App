@@ -23,8 +23,8 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
-from views.common.navigation import back_to_menu_button
+from views.common.screen import CONTENT_BODY_SPACING
+from views.common.navigation import back_to_menu_button, back_button
 from views.common.photos import DEFAULT_PROFILE_IMAGE, extra_photo_urls, photo_thumb
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
@@ -65,7 +65,7 @@ class AdditionalPhotosView(BaseView):
     #  Layout
     # ============================================================
 
-    def build(self) -> ft.View:
+    def get_body(self) -> ft.Control:
         heading = ft.Text(
             "תמונות נוספות",
             size=TextSizes.H1,
@@ -82,28 +82,29 @@ class AdditionalPhotosView(BaseView):
             rtl=True,
             text_align=ft.TextAlign.RIGHT,
         )
-
         self._file_picker = ft.FilePicker()
         # STRETCH so tiles span the card width and right-align via text_align.
         self._photos_area = ft.Column(
             spacing=12,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-
-        scroll_region = translucent_card(
-            ft.Column(
-                controls=[heading, hint, self._photos_area],
-                spacing=14,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
-            expand=True,
-            margin=ft.Margin.only(left=12, top=12, right=12, bottom=8),
-            padding=ft.Padding(20, 20, 20, 16),
+        return ft.Column(
+            controls=[heading, hint, self._photos_area],
+            spacing=CONTENT_BODY_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
 
-        # ---- Status banner (shared inline pattern) ----
+    def get_actions(self) -> list[ft.Control]:
+        # Stack-aware "back to profile" (profile is the only entry point) + the
+        # menu button (UNWIND to /menu).
+        return [
+            back_button(
+                self.page, label="חזרה לפרופיל", fallback=self._PROFILE_ROUTE,
+            ),
+            back_to_menu_button(self.page),
+        ]
+
+    def get_status_banner(self) -> ft.Control:
         self._status_text = ft.Text(
             value="", size=TextSizes.BODY, color=ft.Colors.WHITE,
             weight=ft.FontWeight.W_600, rtl=True, text_align=ft.TextAlign.RIGHT,
@@ -117,44 +118,16 @@ class AdditionalPhotosView(BaseView):
             width=UIConstants.INPUT_WIDTH,
             alignment=ft.Alignment(0, 0),
         )
+        return self._status_banner
 
-        # ---- Sticky bottom action bar: back to profile + back to menu ----
-        back_to_profile = create_secondary_button(
-            "חזרה לפרופיל",
-            lambda _e: self.page.go(self._PROFILE_ROUTE),
-        )
-        action_bar = ft.Container(
-            bgcolor=ft.Colors.TRANSPARENT,
-            padding=ft.Padding(24, 12, 24, 20),
-            content=ft.Column(
-                controls=[
-                    self._status_banner,
-                    back_to_profile,
-                    back_to_menu_button(self.page),
-                ],
-                tight=True,
-                spacing=10,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
+    def get_services(self) -> list[ft.Control]:
+        # The FilePicker mounts + registers with THIS view (discarded on nav).
+        return [self._file_picker]
 
-        view = background_screen(
-            self.ROUTE,
-            ft.Column(
-                controls=[scroll_region, action_bar],
-                expand=True,
-                spacing=0,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-        # Attach the FilePicker to THIS view (mounts + registers with it).
-        view.services.append(self._file_picker)
-
-        try:
-            self.page.run_task(self._load_profile_data)
-        except AttributeError:
-            asyncio.create_task(self._load_profile_data())
-        return view
+    def on_mount(self) -> None:
+        """Mounted into the page tree: start the owned one-shot profile load.
+        Cancelled by BaseView.on_unmount when this view is popped/unmounted."""
+        self._load_task = self.page.run_task(self._load_profile_data)
 
     # ============================================================
     #  Lifecycle

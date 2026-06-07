@@ -12,6 +12,13 @@ class TextSizes:
 
 class UIConstants:
     CARD_WIDTH = 400 #
+    # Hub-card responsive bounds. The centered hub card (Welcome/Login/Signup/
+    # Menu) is width-CAPPED at CARD_MAX_WIDTH so it never stretches on a wide
+    # window, and floored at CARD_MIN_WIDTH so it stays usable when narrow; the
+    # Shell clamps the live width to (window - 2*HUB_SIDE_MARGIN) between them.
+    CARD_MAX_WIDTH = 460   # = CARD_WIDTH (400) + 2 * CARD_PADDING (30)
+    CARD_MIN_WIDTH = 300
+    HUB_SIDE_MARGIN = 16
     BUTTON_WIDTH = 400 # Buttons width
     BUTTON_HEIGHT = 70 # Buttons height
     INPUT_WIDTH = BUTTON_WIDTH # Inputs width
@@ -19,6 +26,10 @@ class UIConstants:
     CARD_PADDING = 30
     ELEMENT_SPACING = 15
     CORNER_RADIUS = 15
+    # Shared implicit-animation duration (ms). Matches the 300ms button state
+    # animation (components/buttons.py) so layout transitions feel of-a-piece.
+    # Used by the ScreenShell action bar's animate= (views/common/screen.py).
+    ANIM_MS = 300
 
     # --- My Profile view ---
     # Translucency of the form card floating over the full-screen BG image:

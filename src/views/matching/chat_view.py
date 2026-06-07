@@ -26,7 +26,8 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
+from views.common.navigation import go_back
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
@@ -71,16 +72,14 @@ class ChatView(BaseView):
     #  Layout
     # ============================================================
 
-    def build(self) -> ft.View:
-        # The layout mirrors the canonical screen shell used by Discover / My
-        # Profile / Matches: a `background_screen` wrapping a screen-filling
-        # Column of [ scrollable translucent_card , sticky bottom action bar ].
+    BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
-        # ---- H1 heading (every other screen opens with one). ChatView depends
-        # ONLY on IMessagingService by Interface Segregation, so it cannot
-        # resolve the peer's display name without taking on IProfileRepository —
-        # which would widen the contract. The title is therefore a generic,
-        # senior-readable "שיחה" rather than the peer's name. ----
+    def get_body(self) -> ft.Control:
+        # H1 heading. ChatView depends ONLY on IMessagingService (Interface
+        # Segregation), so it can't resolve the peer's name without widening the
+        # contract — the title is a generic, senior-readable "שיחה". STRETCH so
+        # each bubble's wrapper spans the full width (the absolute-alignment
+        # bubble logic relies on it).
         heading = ft.Text(
             "שיחה",
             size=TextSizes.H1,
@@ -89,8 +88,43 @@ class ChatView(BaseView):
             rtl=True,
             text_align=ft.TextAlign.RIGHT,
         )
+        self._messages_list = ft.ListView(
+            expand=True,
+            spacing=10,
+            auto_scroll=True,
+            padding=ft.Padding(0, 8, 0, 8),
+        )
+        return ft.Column(
+            controls=[heading, self._messages_list],
+            expand=True,
+            spacing=CONTENT_BODY_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
 
-        # ---- Inline status banner (identity / load / send errors) ----
+    def get_actions(self) -> list[ft.Control]:
+        # Send bar (field RIGHT, "שלח" LEFT), a divider, then a SECONDARY stack-
+        # aware back button. The Shell stretches the send bar to full width
+        # (composer expands) and auto-centres the fixed-width back button.
+        self._composer = create_hebrew_text_field(
+            "הקלידו הודעה…", hebrew_content=True, on_submit=self._on_send,
+        )
+        self._composer.expand = True                 # fill the bar (minus button)
+        self._composer.width = None
+        send_button = create_primary_button("שלח", self._on_send, width=140)
+        send_bar = ft.Row(
+            controls=[self._composer, send_button],
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            spacing=12,
+        )
+        divider = ft.Container(
+            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
+            height=24,                       # declared so the Shell sizes the bar
+            padding=ft.Padding(0, 8, 0, 4),
+        )
+        back_btn = create_secondary_button("חזור", self._on_back)
+        return [send_bar, divider, back_btn]
+
+    def get_status_banner(self) -> ft.Control:
         self._status_text = ft.Text(
             value="",
             size=TextSizes.INPUT,
@@ -107,99 +141,13 @@ class ChatView(BaseView):
             visible=False,
             alignment=ft.Alignment(0, 0),
         )
+        return self._status_banner
 
-        # ---- The scrolling message list (auto-scrolls to newest) ----
-        self._messages_list = ft.ListView(
-            expand=True,
-            spacing=10,
-            auto_scroll=True,
-            padding=ft.Padding(0, 8, 0, 8),
-        )
-
-        # ---- Scrollable content card — the SAME translucent_card shell as the
-        # other screens (50% white, identical margin/padding). The inner Column
-        # is STRETCH so the heading right-aligns and, crucially, the message list
-        # spans the full card width — the absolute-alignment bubble logic relies
-        # on each bubble's wrapper filling that width to anchor right/left. ----
-        scroll_region = translucent_card(
-            ft.Column(
-                controls=[heading, self._status_banner, self._messages_list],
-                spacing=14,
-                expand=True,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
-            expand=True,
-            margin=ft.Margin.only(left=12, top=12, right=12, bottom=8),
-            padding=ft.Padding(20, 20, 20, 16),
-        )
-
-        # ---- Send bar: text field on the RIGHT, "שלח" button on the LEFT.
-        # Under page-RTL the first Row child renders rightmost, so [field, send]
-        # puts the (expanding) field on the right and the button on the left.
-        # Both are design-system primitives (create_hebrew_text_field /
-        # create_primary_button) — no raw Flet controls. ----
-        self._composer = create_hebrew_text_field(
-            "הקלידו הודעה…", hebrew_content=True, on_submit=self._on_send,
-        )
-        self._composer.expand = True                 # fill the bar (minus button)
-        self._composer.width = None
-        send_button = create_primary_button("שלח", self._on_send, width=140)
-        send_bar = ft.Row(
-            controls=[self._composer, send_button],
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=12,
-        )
-
-        # ---- Divider separating the (primary) compose action from the
-        # (secondary) navigation, mirroring MyProfileView's save/back split so a
-        # senior never confuses the two. ----
-        divider = ft.Container(
-            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
-            padding=ft.Padding(0, 8, 0, 4),
-        )
-
-        # ---- SECONDARY (blue-grey) back button — navigation colour per the
-        # action hierarchy (not the red PRIMARY it used to be). It routes through
-        # the view's own _on_back so the _closing guard still fires; the shared
-        # back_to_menu_button helper would skip that guard. ----
-        back_button = create_secondary_button("חזור", self._on_back)
-
-        # ---- Sticky bottom action bar (never scrolls), same transparent bar the
-        # other screens use so it floats on the background image. STRETCH lets the
-        # send bar span the full width (so the composer can expand); the
-        # fixed-width back button is re-centred in its own wrapper. ----
-        action_bar = ft.Container(
-            bgcolor=ft.Colors.TRANSPARENT,
-            padding=ft.Padding(24, 12, 24, 20),
-            content=ft.Column(
-                controls=[
-                    send_bar,
-                    divider,
-                    ft.Container(content=back_button, alignment=ft.Alignment(0, 0)),
-                ],
-                tight=True,
-                spacing=10,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
-        )
-
-        view = background_screen(
-            self.ROUTE,
-            ft.Column(
-                controls=[scroll_region, action_bar],
-                expand=True,
-                spacing=0,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-
-        # One-shot history load on mount (no background polling → nothing leaks).
-        try:
-            self.page.run_task(self._load_history)
-        except AttributeError:
-            asyncio.create_task(self._load_history())
-
-        return view
+    def on_mount(self) -> None:
+        """Mounted into the page tree: start the owned one-shot history load
+        (no background polling → nothing leaks). Cancelled by BaseView.on_unmount
+        when this view is popped/unmounted."""
+        self._load_task = self.page.run_task(self._load_history)
 
     # ============================================================
     #  Lifecycle — load history, validate identity
@@ -342,9 +290,13 @@ class ChatView(BaseView):
         )
 
     def _on_back(self, e: ft.ControlEvent) -> None:
-        # Mark closing FIRST so any in-flight task skips its page updates.
+        # Mark closing FIRST so any in-flight task skips its page updates, then
+        # pop ONE level off the stack. Chat can be opened from Discover OR from
+        # Matches, so a stack-aware pop returns to whichever screen opened it —
+        # a hard-coded /matching/discover would strand a user who came from
+        # Matches. Falls back to Discover only if chat is somehow the root view.
         self._closing = True
-        self.page.go(self._DISCOVER_ROUTE)
+        go_back(self.page, fallback=self._DISCOVER_ROUTE)
 
     def _safe_go(self, route: str) -> None:
         if not self._closing:

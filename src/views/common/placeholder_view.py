@@ -11,50 +11,47 @@ from __future__ import annotations
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import ScreenType
 from views.common.navigation import back_to_menu_button
-from utils.constants import TextSizes, UIConstants, ThemeColors
+from utils.constants import TextSizes, ThemeColors
 
 
 class PlaceholderView(BaseView):
-    """A titled 'coming soon' screen with a button back to the Main Menu."""
+    """A titled 'coming soon' screen with a button back to the Main Menu.
+
+    A HUB screen; its route is per-instance (the menu target it stands in for),
+    so `__init__` sets `self.ROUTE` for the framework's template `build()`.
+    """
+
+    SCREEN_TYPE = ScreenType.HUB
 
     def __init__(self, page: ft.Page, *, title: str, route: str) -> None:
         super().__init__(page)
         self._title = title
-        self._route = route
+        self.ROUTE = route          # instance route → used by BaseView.build()
 
-    def build(self) -> ft.View:
-        title = ft.Text(
-            self._title,
-            size=TextSizes.H1,
-            weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.CENTER,
-        )
-        message = ft.Text(
-            "התכונה הזו תהיה זמינה בקרוב 🙂",
-            size=TextSizes.INPUT,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.CENTER,
-        )
-        back_button = back_to_menu_button(self.page)
-
-        card = translucent_card(
-            ft.Column(
-                controls=[title, message, back_button],
-                spacing=UIConstants.ELEMENT_SPACING,
-                tight=True,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-            padding=UIConstants.CARD_PADDING,
-        )
-        centered = ft.Column(
-            controls=[card],
-            expand=True,
-            alignment=ft.MainAxisAlignment.CENTER,
+    def get_body(self) -> ft.Control:
+        return ft.Column(
+            controls=[
+                ft.Text(
+                    self._title,
+                    size=TextSizes.H1,
+                    weight=ft.FontWeight.BOLD,
+                    color=ThemeColors.TEXT_MAIN,
+                    rtl=True,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+                ft.Text(
+                    "התכונה הזו תהיה זמינה בקרוב 🙂",
+                    size=TextSizes.INPUT,
+                    color=ThemeColors.TEXT_MAIN,
+                    rtl=True,
+                    text_align=ft.TextAlign.CENTER,
+                ),
+            ],
+            tight=True,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
-        return background_screen(self._route, centered)
+
+    def get_actions(self) -> list[ft.Control]:
+        return [back_to_menu_button(self.page)]

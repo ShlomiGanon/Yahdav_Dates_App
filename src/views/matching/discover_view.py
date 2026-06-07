@@ -33,7 +33,7 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import background_screen, translucent_card
+from views.common.screen import CONTENT_BODY_SPACING
 from views.common.navigation import back_to_menu_button
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
@@ -77,12 +77,7 @@ class DiscoverView(BaseView):
     #  Layout
     # ============================================================
 
-    def build(self) -> ft.View:
-        # Structurally IDENTICAL to MyProfileView: full-screen 'BG' background
-        # (background_screen) → a scrollable translucent card (translucent_card,
-        # same 50% white / margin / padding) holding the Title + profile list →
-        # a sticky transparent bottom bar holding the Back button.
-
+    def get_body(self) -> ft.Control:
         heading = ft.Text(
             "אנשים שתרצו להכיר",
             size=TextSizes.H1,
@@ -91,8 +86,27 @@ class DiscoverView(BaseView):
             rtl=True,
             text_align=ft.TextAlign.RIGHT,
         )
+        # The profile list — tiles are added on load. STRETCH makes each card
+        # fill the full panel width (so a card can never float left); the card's
+        # own content is right-aligned internally (see _candidate_tile).
+        self._feed_column = ft.Column(
+            controls=[],
+            spacing=UIConstants.ELEMENT_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
+        return ft.Column(
+            controls=[heading, self._feed_column],
+            spacing=CONTENT_BODY_SPACING,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
 
-        # Inline status banner (defensive auth / empty / error states).
+    def get_actions(self) -> list[ft.Control]:
+        return [back_to_menu_button(self.page)]
+
+    def get_status_banner(self) -> ft.Control:
+        # Defensive auth / empty / error states. Lives in the sticky bar (not the
+        # scroll region), so an empty/error state stays visible however far the
+        # feed has scrolled.
         self._status_text = ft.Text(
             value="",
             size=TextSizes.INPUT,                 # 25px — senior-readable
@@ -109,70 +123,12 @@ class DiscoverView(BaseView):
             visible=False,
             alignment=ft.Alignment(0, 0),
         )
+        return self._status_banner
 
-        # The profile list — tiles are added on load. STRETCH makes each card
-        # fill the full panel width (so a card can never float left), and the
-        # card's own content is right-aligned internally (see _candidate_tile).
-        self._feed_column = ft.Column(
-            controls=[],
-            spacing=UIConstants.ELEMENT_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
-
-        # ---- Scrollable translucent card — the SAME container as MyProfileView
-        # (shared `translucent_card`: 50% white, identical margin + padding). The
-        # inner Column owns the scroll.
-        # WARNING TO MAINTAINERS: anchor the Title + list with CrossAxisAlignment
-        # .STRETCH — NEVER CrossAxisAlignment.END. Under the app's page-level RTL,
-        # END flips to the VISUAL LEFT in this Flet build (the RTL axis-flip bug),
-        # so an END-aligned column floats its children left instead of right and
-        # can collapse the layout. STRETCH fills the card width and is
-        # direction-neutral; per-Text `text_align=RIGHT` does the right-anchoring. ----
-        scroll_region = translucent_card(
-            ft.Column(
-                controls=[heading, self._status_banner, self._feed_column],
-                spacing=14,
-                scroll=ft.ScrollMode.AUTO,
-                expand=True,
-                # STRETCH makes children fill the card width — direction-neutral,
-                # so the heading (text_align=RIGHT) and the cards both span the
-                # panel instead of floating left under page-RTL.
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
-            expand=True,
-            margin=ft.Margin.only(left=12, top=12, right=12, bottom=8),
-            padding=ft.Padding(20, 20, 20, 16),
-        )
-
-        # ---- Sticky bottom bar with the Back button (same as MyProfileView). ----
-        action_bar = ft.Container(
-            bgcolor=ft.Colors.TRANSPARENT,
-            padding=ft.Padding(24, 12, 24, 20),
-            content=ft.Column(
-                controls=[back_to_menu_button(self.page)],
-                tight=True,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-
-        view = background_screen(
-            self.ROUTE,
-            ft.Column(
-                controls=[scroll_region, action_bar],
-                expand=True,
-                spacing=0,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
-
-        # Kick off the async load on mount (page.run_task on newer Flet,
-        # create_task on older builds) — same pattern as MyProfileView.
-        try:
-            self.page.run_task(self._load_candidates)
-        except AttributeError:
-            asyncio.create_task(self._load_candidates())
-
-        return view
+    def on_mount(self) -> None:
+        """Mounted into the page tree: start the owned one-shot feed load.
+        Cancelled by BaseView.on_unmount when this view is popped/unmounted."""
+        self._load_task = self.page.run_task(self._load_candidates)
 
     # ============================================================
     #  Lifecycle — load the feed

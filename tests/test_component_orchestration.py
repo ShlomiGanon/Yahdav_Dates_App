@@ -77,6 +77,8 @@ from utils import local_storage
 from utils.router import Router, _DEFAULT_ROUTE
 from views.menu.main_menu_view import MainMenuView
 from views.profile.user_profile_view import UserProfileView
+from views.common.navigation import go_back
+from views.common.screen import content_screen, hub_screen
 from components import loading
 
 import flet as ft
@@ -836,6 +838,204 @@ class TestLoadingOverlayRefCount(unittest.TestCase):
         self.assertIn(loading._loading_overlay, self.page.overlay)
         loading.hide_loading(self.page)
         self.assertNotIn(loading._loading_overlay, self.page.overlay)
+
+
+class _RoutingFakePage(FakePage):
+    """A FakePage whose `go` drives the wired router (exactly like the real app
+    wires `page.on_route_change`), so a stack-aware back actually UNWINDS the
+    `page.views` stack instead of merely recording the route."""
+
+    def go(self, route: str) -> None:
+        self.route = route
+        self.go_calls.append(route)
+        if self.on_route_change is not None:
+            self.on_route_change(route)
+
+
+class TestStackAwareBack(_BackendMixin, unittest.TestCase):
+    """`views.common.navigation.go_back` pops ONE level — returning to the screen
+    that actually opened the current one (never a hard-coded parent) — and falls
+    back to a safe route when the current screen is the stack root.
+
+    Uses the real Router + view factories over a routing FakePage; FakePage.update
+    is a no-op so migrated views' on_mount loads never auto-start — this exercises
+    pure stack STRUCTURE, not the async fetch (mirrors TestNavigationStack)."""
+
+    def setUp(self) -> None:
+        self._build_backend()
+        self.page = _RoutingFakePage()
+        self.page.session.store.set("auth", self.auth)
+        self.page.session.store.set("profiles", self.profiles)
+        self.page.session.store.set("messaging", self.messaging)
+        self.page.session.store.set("storage", self.storage)
+        self.page.session.store.set("current_user_id", "viewer-1")
+        self.page.session.store.set("selected_peer_id", "peer-1")
+        self.router = Router(self.page)
+        self.page.on_route_change = self.router.handle_route_change
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    def _routes(self):
+        return [getattr(v, "route", None) for v in self.page.views]
+
+    def _push(self, *routes):
+        for r in routes:
+            self.page.go(r)
+
+    def test_go_back_at_root_uses_fallback(self):
+        self.page.go("/menu")                          # single root view
+        go_back(self.page, fallback="/auth/welcome")
+        self.assertEqual(self.page.route, "/auth/welcome")
+
+    def test_go_back_empty_stack_uses_fallback(self):
+        go_back(self.page)                             # no views at all
+        self.assertEqual(self.page.route, "/menu")     # default fallback
+
+    def test_chat_back_returns_to_matches_not_discover(self):
+        # THE PRIMARY FIX: chat opened from Matches must pop BACK to Matches.
+        self._push("/menu", "/chat/history", "/chat/new")
+        self.assertEqual(self._routes(), ["/menu", "/chat/history", "/chat/new"])
+        go_back(self.page)                             # the ChatView "חזור" action
+        self.assertEqual(self.page.route, "/chat/history")
+        self.assertEqual(self._routes(), ["/menu", "/chat/history"])
+
+    def test_chat_back_from_discover_returns_to_discover(self):
+        # Same button, different entry point: opened from Discover → back to it.
+        self._push("/menu", "/matching/discover", "/chat/new")
+        go_back(self.page)
+        self.assertEqual(self.page.route, "/matching/discover")
+        self.assertEqual(self._routes(), ["/menu", "/matching/discover"])
+
+    def test_deep_album_back_unwinds_one_level_each(self):
+        # menu → discover → profile → peer_photos, back three times → discover…
+        self._push("/menu", "/matching/discover", "/discover/profile",
+                   "/discover/peer_photos")
+        go_back(self.page)
+        self.assertEqual(self.page.route, "/discover/profile")
+        go_back(self.page)
+        self.assertEqual(self.page.route, "/matching/discover")
+        go_back(self.page)
+        self.assertEqual(self.page.route, "/menu")
+        self.assertEqual(self._routes(), ["/menu"])
+
+
+class TestContentScreenLayout(unittest.TestCase):
+    """The shared `content_screen` primitive: a scrollable translucent card on
+    top of a sticky, TRANSPARENT action bar — status banner in the BAR (never in
+    the scroll region), buttons OUTSIDE the card, and no nested scroll."""
+
+    def _build(self, **kw):
+        self.heading = ft.Text("title")
+        self.banner = ft.Container()
+        self.back = ft.Text("חזור")
+        return content_screen(
+            "/x", body=[self.heading], actions=[self.back],
+            status_banner=self.banner, **kw,
+        )
+
+    def _regions(self, view):
+        # background_screen → View(controls=[Container(image, content=Column)]);
+        # that Column holds exactly [scroll card, action bar].
+        root_col = view.controls[0].content
+        self.assertIsInstance(root_col, ft.Column)
+        self.assertEqual(len(root_col.controls), 2)
+        return root_col.controls            # (card, action_bar)
+
+    def test_two_regions_card_then_transparent_action_bar(self):
+        card, action_bar = self._regions(self._build())
+        self.assertTrue(card.expand)                       # the card fills height
+        self.assertEqual(action_bar.bgcolor, ft.Colors.TRANSPARENT)
+
+    def test_status_banner_in_action_bar_not_in_card(self):
+        card, action_bar = self._regions(self._build())
+        bar_controls = action_bar.content.controls
+        self.assertIs(bar_controls[0], self.banner)        # banner ABOVE buttons
+        self.assertIn(self.back, bar_controls)             # button in the BAR
+        card_controls = card.content.controls
+        self.assertIn(self.heading, card_controls)         # body in the CARD
+        self.assertNotIn(self.banner, card_controls)       # NOT in scroll region
+
+    def test_scroll_true_sets_auto_scroll_on_card_column(self):
+        card, _bar = self._regions(self._build(scroll=True))
+        self.assertEqual(card.content.scroll, ft.ScrollMode.AUTO)
+
+    def test_scroll_false_avoids_nested_scroll(self):
+        card, _bar = self._regions(self._build(scroll=False))
+        self.assertIsNone(card.content.scroll)
+
+
+class TestHubScreenLayout(unittest.TestCase):
+    """The shared `hub_screen` primitive: ONE translucent_card centred both axes
+    over the background, with ALL controls (buttons included) inside it — NO
+    scroll region, NO sticky action bar (the documented hub/auth exception)."""
+
+    def test_single_centered_card_holds_the_content(self):
+        content = ft.Column(controls=[ft.Text("hi"), ft.Text("bye")])
+        view = hub_screen("/menu", content)
+        # background_screen → View(controls=[Container(image, content=centered)]).
+        centered = view.controls[0].content
+        self.assertIsInstance(centered, ft.Column)
+        self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
+        self.assertEqual(centered.horizontal_alignment, ft.CrossAxisAlignment.CENTER)
+        self.assertEqual(len(centered.controls), 1)        # ONE card, no action bar
+        # The unified HUB shell wraps the body (+ any actions) in a STRETCH card
+        # column, so `content` is the card column's FIRST child, not the card's
+        # direct content.
+        card = centered.controls[0]
+        self.assertIs(card.content.controls[0], content)   # content IN the card
+        self.assertEqual(view.route, "/menu")
+
+    def test_default_padding_is_the_shared_card_padding(self):
+        from utils.constants import UIConstants
+        view = hub_screen("/x", ft.Text("x"))
+        card = view.controls[0].content.controls[0]
+        self.assertEqual(card.padding, UIConstants.CARD_PADDING)
+
+
+class TestHubScreensUseSharedPrimitive(_BackendMixin, unittest.TestCase):
+    """Every hub / auth screen builds via `hub_screen` (centred single card) AND
+    ends build() with `_bind_lifecycle` (so `view.data` carries the back-ref the
+    router needs for system back / lifecycle / identity-based `_is_live`)."""
+
+    def setUp(self) -> None:
+        self._build_backend()
+        self.page = FakePage()
+        self.page.session.store.set("auth", self.auth)
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    def _assert_hub(self, view, route) -> None:
+        self.assertIsInstance(view, ft.View)
+        self.assertEqual(view.route, route)
+        # _bind_lifecycle sets view.data to the owning BaseView.
+        self.assertIsNotNone(view.data, "build() must end with _bind_lifecycle")
+        centered = view.controls[0].content
+        self.assertIsInstance(centered, ft.Column)
+        self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
+        self.assertEqual(len(centered.controls), 1)        # one centred card
+
+    def test_welcome_view_is_a_hub(self):
+        from views.auth.welcome_view import WelcomeView
+        self._assert_hub(WelcomeView(self.page).build(), "/auth/welcome")
+
+    def test_main_menu_view_is_a_hub(self):
+        from views.menu.main_menu_view import MainMenuView
+        self._assert_hub(MainMenuView(self.page).build(), "/menu")
+
+    def test_placeholder_view_is_a_hub(self):
+        from views.common.placeholder_view import PlaceholderView
+        view = PlaceholderView(self.page, title="בקרוב", route="/soon").build()
+        self._assert_hub(view, "/soon")
+
+    def test_login_view_is_a_hub(self):
+        from views.auth.login_view import LoginView
+        self._assert_hub(LoginView(self.page, self.auth).build(), "/auth/login")
+
+    def test_signup_view_is_a_hub(self):
+        from views.auth.signup_view import SignupView
+        self._assert_hub(SignupView(self.page, self.auth).build(), "/auth/signup")
 
 
 if __name__ == "__main__":
