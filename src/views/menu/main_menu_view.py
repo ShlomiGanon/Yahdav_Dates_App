@@ -22,7 +22,6 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import ScreenType
 from views.common import renderer as ui
 from views.common.session import safe_remove
 from components.dividers import create_action_divider
@@ -36,7 +35,6 @@ class MainMenuView(BaseView):
     """Senior-friendly selection screen: three large primary buttons + logout."""
 
     ROUTE = "/menu"
-    SCREEN_TYPE = ScreenType.HUB
 
     # Destination routes for the three options. Centralised here so the menu's
     # targets are obvious and editable in one place.

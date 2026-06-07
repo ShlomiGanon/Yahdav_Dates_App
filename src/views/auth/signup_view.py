@@ -13,7 +13,6 @@ import asyncio
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import ScreenType
 from views.common import renderer as ui
 from components import loading
 from components.inputs import create_hebrew_text_field
@@ -23,7 +22,6 @@ from services.i_auth_service import IAuthService
 
 class SignupView(BaseView):
     ROUTE = "/auth/signup"
-    SCREEN_TYPE = ScreenType.HUB
 
     def __init__(self, page: ft.Page, auth: IAuthService) -> None:
         super().__init__(page)

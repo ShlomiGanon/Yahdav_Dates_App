@@ -37,7 +37,7 @@ from views.matching.chat_view import ChatView
 from views.matching.matches_view import MatchesView
 from views.common.system_views import boot_view, error_view
 from components.buttons import create_secondary_button
-from utils.constants import TextSizes, UIConstants, ThemeColors
+from utils.constants import TextSizes, ThemeColors
 
 from utils import local_storage
 

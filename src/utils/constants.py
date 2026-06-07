@@ -40,14 +40,11 @@ class UIConstants:
     ANIM_MS = DS.motion.anim_ms
 
     # --- Content-screen frame geometry ---
-    CONTENT_CARD_MARGIN       = DS.pad.content_margin
     CONTENT_CARD_PADDING      = DS.pad.content_card
     # A taller top padding for screens whose heading must clear the BG top logo
     # (the read-only peer profile and the peer photo album).
     CONTENT_CARD_PADDING_TALL = DS.pad.content_card_tall
     CONTENT_BODY_SPACING      = DS.spacing.body   # gap between body controls in the card
-    ACTION_BAR_PADDING        = DS.pad.action_bar  # sticky bar outer padding
-    ACTION_BAR_SPACING        = DS.spacing.bar   # gap between action rows
 
     # --- Inline status banner (components/feedback.py) ---
     STATUS_BANNER_PADDING = DS.pad.status_banner   # interior padding of the success/error banner

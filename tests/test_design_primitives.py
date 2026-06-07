@@ -35,12 +35,15 @@ class TestScreenHeading(unittest.TestCase):
         self.assertEqual(h.color, ThemeColors.TEXT_MAIN)
         self.assertTrue(h.rtl)
 
-    def test_alignment_flips_by_center(self):
+    def test_centres_by_default_and_can_opt_into_right_alignment(self):
+        # Every screen's title centres (the one heading rule) — so that is the
+        # canonical default; `center=False` remains for a right-aligned in-body
+        # heading that is NOT the screen's title.
         self.assertEqual(
-            create_screen_heading("x").text_align, ft.TextAlign.RIGHT,
+            create_screen_heading("x").text_align, ft.TextAlign.CENTER,
         )
         self.assertEqual(
-            create_screen_heading("x", center=True).text_align, ft.TextAlign.CENTER,
+            create_screen_heading("x", center=False).text_align, ft.TextAlign.RIGHT,
         )
 
 

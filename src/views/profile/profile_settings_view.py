@@ -10,7 +10,6 @@ from __future__ import annotations
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import ScreenType
 from views.common import renderer as ui
 from components.inputs import create_input
 from components.profile_fields import create_text
@@ -22,7 +21,6 @@ class ProfileSettingsView(BaseView):
     """Settings screen (your `ProfileSettingsScreen` → `*View` codebase convention)."""
 
     ROUTE = "/profile/settings"
-    SCREEN_TYPE = ScreenType.HUB        # short settings form → centered card (like Login)
 
     _MENU_ROUTE = "/menu"
 

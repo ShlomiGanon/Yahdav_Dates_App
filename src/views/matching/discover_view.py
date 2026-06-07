@@ -32,7 +32,6 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import ScreenType
 from views.common import renderer as ui
 from views.common.navigation import back_to_menu_button
 from views.common.render import build_items_safe
@@ -50,10 +49,6 @@ log = logging.getLogger(__name__)
 
 class DiscoverView(BaseView):
     ROUTE = "/matching/discover"
-    # Owner preference: Discover uses the centered-card HUB look (like the Main
-    # Menu) rather than the full-width CONTENT feed. The hub card AUTO-scrolls the
-    # whole stack (heading + feed + banner + back button); there is no sticky bar.
-    SCREEN_TYPE = ScreenType.HUB
 
     # Identity token written by login_view on success; read here. Centralised
     # so a typo can't silently desync writer and reader.

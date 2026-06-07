@@ -1,19 +1,16 @@
 from views._base import BaseView
-from views.common.screen import ScreenType
 from views.common import renderer as ui
 
 
 class WelcomeView(BaseView):
     """Landing screen. Pure navigation — no service dependencies.
 
-    A HUB screen: it provides a heading (`get_body`) and the two navigation
-    buttons (`get_actions`); the framework (`BaseView` + `ScreenShell`) renders
-    the shared centered, max-width, semi-transparent card — identical to Login,
-    Signup and the Main Menu.
+    It provides a header (`get_header`) and the two navigation buttons
+    (`get_actions`); `BaseView` renders the shared centered, max-width,
+    semi-transparent card — identical to Login, Signup and the Main Menu.
     """
 
     ROUTE = "/auth/welcome"
-    SCREEN_TYPE = ScreenType.HUB
 
     def get_header(self) -> ui.UIComponent:
         return ui.heading("ברוכים הבאים ליחדיו")   # engine centres it (HUB) via the DS

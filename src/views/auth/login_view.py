@@ -8,17 +8,15 @@ On successful authentication, the user's UID is written to
 screens (MyProfileView, ChatView, etc.) can identify "who am I" without
 issuing a second backend call.
 
-A HUB screen: it provides a heading + the form (`get_body`) and the two action
-buttons (`get_actions`); the framework (`BaseView` + `ScreenShell`) renders the
-shared centered, max-width, semi-transparent card — identical to Signup and
-Welcome (the design baseline)."""
+It provides a header (`get_header`), the form (`get_content`) and the two action
+buttons (`get_actions`); `BaseView` renders the shared centered, max-width,
+semi-transparent card — identical to Signup and Welcome (the design baseline)."""
 import asyncio
 import logging
 
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import ScreenType
 from views.common import renderer as ui
 from views.common.session import safe_remove
 from components import loading
@@ -40,7 +38,6 @@ SESSION_USER_EMAIL_KEY = "current_user_email"
 
 class LoginView(BaseView):
     ROUTE = "/auth/login"
-    SCREEN_TYPE = ScreenType.HUB
 
     def __init__(self, page: ft.Page, auth: IAuthService) -> None:
         super().__init__(page)

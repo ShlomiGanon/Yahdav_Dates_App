@@ -213,8 +213,8 @@ solid `bgcolor=ThemeColors.BACKGROUND` behind it as the black-screen guard) and
 in `views/common/navigation.py` (`back_to_menu_button`) and session helpers in
 `views/common/session.py` (`safe_remove`). Photo helpers live in
 `views/common/photos.py`. This shell is shared by **every** screen, including
-auth (Login/Signup/Welcome are plain `ScreenType.HUB` `BaseView`s) and the
-router's own error view.
+auth (Login/Signup/Welcome are plain `BaseView`s, sharing the one card frame
+every screen renders through) and the router's own error view.
 
 ### Rule 4 — Feature isolation
 `views/profile/` must not import from `views/matching/`. Shared widgets →

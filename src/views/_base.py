@@ -1,17 +1,18 @@
 """BaseView — the Template-Method ENGINE: the single home for the structural
 rendering of every screen, plus the navigation-stack lifecycle contract.
 
-`BaseView.build()` is the template method (screens never override it). It owns the
-whole frame — the full-screen background + RTL, the translucent card, the HUB-vs-
-CONTENT layout, the sticky animated action bar, and the overlay Stack — pulling
-every layout value from the Design System (`style/design_system.py`). A screen is
-PURE CONFIGURATION: it provides only *content* via the interface below
-(`get_header`/`get_content`/`get_actions`/…), never layout.
+`BaseView.build()` is the template method (screens never override it). It owns
+the whole frame — the full-screen background + RTL, and the ONE centred,
+translucent card every screen renders inside (Welcome/Login's shape: header,
+then content, then actions, stacked in one column, no separate action bar) —
+pulling every layout value from the Design System (`style/design_system.py`).
+A screen is PURE CONFIGURATION: it provides only *content* via the interface
+below (`get_header`/`get_content`/`get_actions`/…), never layout.
 
 (Absorbed: the structural composition that used to live in `views/common/screen.py`'s
-`ScreenShell`/`_hub_root`/`_content_root`/`_action_region` now lives here as the
-`_compose_frame`/`_hub_root`/`_content_root`/`_action_region` methods. `screen.py`
-keeps only the low-level primitives the engine composes.)
+`ScreenShell`/`_hub_root`/`_content_root`/`_action_region` now lives here, collapsed
+onto the single `_compose_frame`/`_compact_card`/`_expand_card` path. `screen.py`
+keeps only the low-level primitives the engine composes from.)
 
 Navigation-stack lifecycle (unchanged): the router keeps multiple views ALIVE in
 `page.views`, so a view needs a per-instance identity (`INSTANCE_ID`), explicit
@@ -33,10 +34,9 @@ import flet as ft
 
 from views.common import renderer as ui
 from views.common.screen import (
-    ScreenType, BodyLayout,
-    background_screen, translucent_card, responsive_card, responsive_card_of,
-    clamp_hub_width, action_bar_height, _center_fixed_width, ACTION_BAR_ANIM,
-    _BUTTONS_BOX_TAG, guard,
+    BodyLayout,
+    background_screen, responsive_card, responsive_card_of,
+    clamp_hub_width, guard,
 )
 from style.design_system import DS
 
@@ -53,8 +53,14 @@ class BaseView:
 
     # Subclasses override with their own route string (e.g. "/discover/profile").
     ROUTE: str = ""
-    # A screen DECLARES its frame and scroll intent; the engine does the rest.
-    SCREEN_TYPE: ScreenType = ScreenType.CONTENT
+    # A screen DECLARES its sizing and scroll intent; the engine does the rest —
+    # every screen renders inside the SAME card, header→content→actions, no
+    # separate action bar (Welcome/Login's shape).
+    #   EXPAND_BODY = False (default): the card sizes to its content and sits
+    #       centered on the screen — auth/menu/forms/short profile cards.
+    #   EXPAND_BODY = True: the card grows to fill the viewport and the body
+    #       owns its own internal scroll — chat/matches/photo albums/long lists.
+    EXPAND_BODY: bool = False
     BODY_LAYOUT: BodyLayout = BodyLayout.SCROLLING
 
     def __init__(self, page: ft.Page) -> None:
@@ -63,9 +69,9 @@ class BaseView:
         self.INSTANCE_ID: str = uuid.uuid4().hex
         # Owned handle to the background load task (cancelled on teardown).
         self._load_task: Future | None = None
-        # Responsive-hub plumbing: the live card to re-clamp on resize (None for
-        # CONTENT screens) and the prior page resize handler to restore on pop.
-        self._hub_card: ft.Container | None = None
+        # Responsive plumbing: the live card to re-clamp on resize, and the prior
+        # page resize handler to restore on pop.
+        self._card: ft.Container | None = None
         self._prev_on_resized = None
 
     # ============================================================
@@ -74,8 +80,8 @@ class BaseView:
 
     def get_header(self) -> "ui.UIComponent | None":
         """The screen's title CONTENT (e.g. `ui.heading("…")`). The engine styles
-        and positions it (DS heading alignment by SCREEN_TYPE, as the body's first
-        slot). Default: no header."""
+        and positions it — centred, as the body's first slot, the one heading rule
+        for every screen. Default: no header."""
         return None
 
     def get_content(self) -> "list[ui.UIComponent]":
@@ -90,11 +96,13 @@ class BaseView:
         return []
 
     def get_status_banner(self) -> "ui.UIComponent | None":
-        """CONTENT-only inline banner (save/error/empty feedback). Default: none."""
+        """An inline banner stacked at the tail of the card (save/error/empty
+        feedback), above the actions. Default: none."""
         return None
 
     def get_overlay(self) -> "ui.UIComponent | None":
-        """CONTENT-only fullscreen layer (e.g. a lightbox). Default: none."""
+        """A fullscreen layer stacked OVER the whole frame (e.g. a lightbox),
+        via an `ft.Stack` — present on any screen. Default: none."""
         return None
 
     def get_services(self) -> list[ft.Control]:
@@ -114,15 +122,15 @@ class BaseView:
 
     def build(self) -> ft.View:
         """Compose the screen: resolve content → standardized DS-spaced body →
-        the HUB/CONTENT frame → the background+RTL `ft.View`, then attach services,
-        capture the responsive hub card, and bind lifecycle."""
+        the single card frame → the background+RTL `ft.View`, then attach
+        services, capture the responsive card, and bind lifecycle."""
         body, actions, banner, overlay, services = self._resolve_regions()
         root = self._compose_frame(body, actions, banner, overlay)
         view = self._assemble(root)
         for service in services:
             view.services.append(service)
-        # HUB views get a responsive card to re-clamp on resize; CONTENT → None.
-        self._hub_card = responsive_card_of(view)
+        # Every screen's card is responsive — captured here for the resize clamp.
+        self._card = responsive_card_of(view)
         return self._bind_lifecycle(view)
 
     # ---- content resolution (legacy ViewContent OR the new node interface) ----
@@ -175,105 +183,94 @@ class BaseView:
         )
 
     def _render_header(self, node: "ui.UIComponent") -> ft.Control:
-        """Render the header, RE-STAMPING its alignment from the DS by SCREEN_TYPE
-        (HUB centres, CONTENT right-aligns) so the screen never picks it."""
+        """Render the header, RE-STAMPING its alignment from the DS — every
+        screen's heading is centred (the one rule, Welcome/Login's shape), so a
+        screen never picks its own."""
         if node.kind is ui.Kind.HEADING:
-            node = ui.heading(node.text, center=self._heading_centered())
+            node = ui.heading(node.text, center=(DS.body.heading_align is ft.TextAlign.CENTER))
         return _RENDERER.render(node)
-
-    def _heading_centered(self) -> bool:
-        align = (DS.body.hub_heading_align if self.SCREEN_TYPE is ScreenType.HUB
-                 else DS.body.content_heading_align)
-        return align is ft.TextAlign.CENTER
 
     # ============================================================
     #  The FRAME — absorbed structural composition (was ScreenShell)
     # ============================================================
 
     def _compose_frame(self, body, actions, banner, overlay) -> ft.Control:
-        if self.SCREEN_TYPE is ScreenType.HUB:
-            return self._hub_root(body, actions)
-        return self._content_root(body, actions, banner, overlay)
+        """ONE frame for every screen: a single centred, translucent card —
+        sized to its content (`_compact_card`) or to the viewport
+        (`_expand_card`, by `EXPAND_BODY`) — wrapped in an `ft.Stack` with the
+        overlay when a screen has one. Same chrome, same stacking order
+        (header → content → actions), for every screen alike."""
+        card = (self._expand_card(body, actions, banner) if self.EXPAND_BODY
+                else self._compact_card(body, actions))
+        layout = self._wrap_card(card)
+        if overlay is not None:
+            return ft.Stack(controls=[layout, overlay], expand=True)
+        return layout
 
-    def _hub_root(self, body: ft.Control, actions: list[ft.Control]) -> ft.Control:
-        """HUB frame: ONE centered, max-width card with body AND actions stacked
-        inside it — the shared auth/menu baseline. The card column STRETCHes; the
-        centred column AUTO-scrolls so a tall form scrolls instead of clipping."""
+    def _compact_card(self, body: ft.Control, actions: list[ft.Control]) -> ft.Control:
+        """Content-sized card, centered on the screen — Welcome/Login's shape:
+        body then actions stacked inside one column. The card column STRETCHes
+        so its controls flex with the clamped width."""
         card_content = ft.Column(
             controls=[body, *actions],
             tight=True,
             spacing=DS.spacing.element,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        card = responsive_card(card_content)
+        return responsive_card(card_content)
+
+    def _expand_card(self, body, actions, banner) -> ft.Control:
+        """Viewport-filling card — the SAME chrome AND the same width-clamp as
+        `_compact_card` (one centred column, never wider than the app's
+        mobile-width cap), just tall enough to fill the screen and scroll its
+        own content instead of hugging it, for screens whose body is a long
+        list (chat history, photo album, matches feed). Taller top padding
+        clears the BG top logo, since this card's top edge meets the viewport
+        edge (a centered, content-sized card never reaches that high). The body
+        is placed directly when it owns its own scroll (SELF_SCROLLING — an
+        `ft.ListView`, so scrolling never nests); otherwise the engine wraps it
+        in its own AUTO-scroll region."""
+        if self.BODY_LAYOUT is BodyLayout.SELF_SCROLLING:
+            content_area: ft.Control = body
+        else:
+            content_area = ft.Column(
+                controls=[body],
+                expand=True,
+                scroll=ft.ScrollMode.AUTO,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            )
+        card_content_controls = [content_area]
+        if banner is not None:
+            card_content_controls.append(banner)
+        card_content_controls.extend(actions)
+        card_content = ft.Column(
+            controls=card_content_controls,
+            expand=True,
+            spacing=DS.spacing.bar,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
+        return responsive_card(
+            card_content,
+            expand=True,
+            padding=DS.pad.content_card_tall,      # canonical top-logo clearance
+        )
+
+    def _wrap_card(self, card: ft.Control) -> ft.Control:
+        """The outer layout column the card sits in: a compact card is centered
+        with the page AUTO-scrolling around it (so a tall form scrolls instead
+        of clipping); an expand card already fills the viewport on its own."""
+        if self.EXPAND_BODY:
+            return ft.Column(
+                controls=[card],
+                expand=True,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            )
         return ft.Column(
             controls=[card],
             expand=True,
             scroll=ft.ScrollMode.AUTO,
             alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-
-    def _content_root(self, body, actions, banner, overlay) -> ft.Control:
-        """CONTENT frame: a scrollable body card OVER a sticky, animated action bar
-        (+ optional fullscreen overlay)."""
-        if self.BODY_LAYOUT is BodyLayout.SELF_SCROLLING:
-            card_inner: ft.Control = body          # body owns its own scroll (ListView)
-        else:
-            card_inner = ft.Column(
-                controls=[body],
-                expand=True,
-                scroll=ft.ScrollMode.AUTO,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            )
-        card = translucent_card(
-            card_inner,
-            expand=True,
-            margin=DS.pad.content_margin,
-            padding=DS.pad.content_card_tall,      # canonical top-logo clearance
-        )
-        region = self._action_region(actions, banner)
-        layout = ft.Column(
-            controls=[card, region],
-            expand=True,
-            spacing=DS.spacing.none,        # card and action bar sit flush
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
-        if overlay is not None:
-            return ft.Stack(controls=[layout, overlay], expand=True)
-        return layout
-
-    def _action_region(self, actions, banner) -> ft.Container:
-        """The sticky bottom region: an optional auto-sized status banner stacked
-        above the animated Buttons Area, on a transparent bar."""
-        column_controls: list[ft.Control] = []
-        if banner is not None:
-            column_controls.append(banner)
-        column_controls.append(self._animated_buttons_box(actions))
-        return ft.Container(
-            bgcolor=ft.Colors.TRANSPARENT,
-            padding=DS.pad.action_bar,
-            content=ft.Column(
-                controls=column_controls,
-                tight=True,
-                spacing=DS.spacing.bar,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
-        )
-
-    def _animated_buttons_box(self, actions: list[ft.Control]) -> ft.Container:
-        """The persistent, height-animated Buttons Area (so `set_actions` can tween
-        a height change at runtime). Tagged for `action_bar_of`/`set_actions`."""
-        return ft.Container(
-            data=_BUTTONS_BOX_TAG,
-            height=action_bar_height(actions),
-            animate=ACTION_BAR_ANIM,
-            content=ft.Column(
-                controls=[_center_fixed_width(a) for a in actions],
-                tight=True,
-                spacing=DS.spacing.bar,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            ),
         )
 
     def _assemble(self, root: ft.Control) -> ft.View:
@@ -312,13 +309,11 @@ class BaseView:
         self._detach_responsive()
         self.on_unmount()
 
-    # ---- responsiveness (HUB cards only; CONTENT cards are full-bleed) ----
+    # ---- responsiveness (every screen's card is clamped the same way) ----
 
     def _attach_responsive(self) -> None:
-        """Install the page resize handler (saving any prior one so a pop restores
-        the parent's) and apply the initial clamp. No-op for CONTENT."""
-        if self._hub_card is None:
-            return
+        """Install the page resize handler (saving any prior one so a pop
+        restores the parent's) and apply the initial clamp."""
         try:
             self._prev_on_resized = self.page.on_resize
             self.page.on_resize = self._on_resized
@@ -328,8 +323,6 @@ class BaseView:
 
     def _detach_responsive(self) -> None:
         """Restore the previously-installed resize handler (stack-correct)."""
-        if self._hub_card is None:
-            return
         try:
             if self.page.on_resize is self._on_resized:
                 self.page.on_resize = self._prev_on_resized
@@ -337,16 +330,16 @@ class BaseView:
             log.exception("%s: failed to detach resize handler", type(self).__name__)
 
     def _on_resized(self, e: "ft.WindowResizeEvent | None" = None) -> None:
-        """Page resize → re-clamp this view's hub card. Only the live (top) view
+        """Page resize → re-clamp this view's card. Only the live (top) view
         owns the active handler, but guard anyway."""
         if not self._is_live():
             return
         self._apply_responsive()
 
     def _apply_responsive(self) -> None:
-        """Set the hub card width = clamp(window) so it never stretches wide and
+        """Set the card width = clamp(window) so it never stretches wide and
         shrinks gracefully when narrow, then update just that card."""
-        card = self._hub_card
+        card = self._card
         if card is None:
             return
         width = clamp_hub_width(getattr(self.page, "width", None))

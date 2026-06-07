@@ -7,10 +7,10 @@ backend without touching this view.
 
 UX (50+ audience)
 -----------------
-Built from the SAME shell as every other screen: the shared full-screen 'BG'
+Built from the SAME card as every other screen: the shared full-screen 'BG'
 background (BoxFit.FILL) + a 50%-white `translucent_card` (via `background_screen`
-/ `translucent_card`) that holds an H1 heading and the scrolling message list,
-with a sticky bottom action bar carrying the send bar (Hebrew text field on the
+/ `translucent_card`) that stacks an H1 heading, the scrolling message list, then
+the actions inline at the card's tail — the send bar (Hebrew text field on the
 right, "שלח" on the left) and a SECONDARY (blue-grey) "חזור" button — navigation
 colour per the design system, distinct from the red PRIMARY send action.
 
@@ -77,6 +77,7 @@ class ChatView(BaseView):
     #  Layout
     # ============================================================
 
+    EXPAND_BODY = True                        # long history → fill the viewport
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
     def get_header(self) -> ui.UIComponent:

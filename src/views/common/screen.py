@@ -1,13 +1,14 @@
 """Shared screen-layout PRIMITIVES + tokens — the low-level toolkit the engine
 (`BaseView`) composes into the full screen frame.
 
-The structural COMPOSITION (HUB vs CONTENT, the card-over-action-bar layout, the
-centered hub card, the overlay Stack) lives in `views/_base.py` — `BaseView` is the
-single home of structural-layout decisions. This module keeps only the reusable
-primitives it builds from: the full-screen background, the translucent card, the
-shared Error Component + `guard`, the responsive-clamp math, and the runtime
-action-bar helpers. All concrete values come from the Design System (re-exported
-here via `utils.constants` for back-compat).
+The structural COMPOSITION — the single centred, translucent card every screen
+renders inside (Welcome/Login's shape), the overlay Stack — lives in
+`views/_base.py`: `BaseView` is the single home of structural-layout decisions.
+This module keeps only the reusable primitives it builds from: the full-screen
+background, the translucent card, the shared Error Component + `guard`, and the
+responsive-clamp math. All concrete values come from the Design System, read
+directly (via `utils.constants`/`DS`) at the point of use — this module owns no
+re-exported geometry tokens of its own.
 """
 from __future__ import annotations
 
@@ -81,30 +82,6 @@ def translucent_card(
     )
 
 
-# ----------------------------------------------------------------------------
-# Content-screen geometry tokens — re-exported from `UIConstants` (which now
-# pulls from the Design System) for the views/engine that import them by name.
-# ----------------------------------------------------------------------------
-CONTENT_CARD_MARGIN = UIConstants.CONTENT_CARD_MARGIN
-CONTENT_CARD_PADDING = UIConstants.CONTENT_CARD_PADDING
-CONTENT_CARD_PADDING_TALL = UIConstants.CONTENT_CARD_PADDING_TALL
-CONTENT_BODY_SPACING = UIConstants.CONTENT_BODY_SPACING
-ACTION_BAR_PADDING = UIConstants.ACTION_BAR_PADDING
-ACTION_BAR_SPACING = UIConstants.ACTION_BAR_SPACING
-
-# The Buttons Area is a single persistent container whose explicit height is
-# animated. `DEFAULT_ACTION_HEIGHT` is the per-row fallback when an action does
-# not declare its own `.height` (the shared button factories set BUTTON_HEIGHT);
-# `ACTION_BAR_ANIM` is the implicit-animation spec that makes a height change
-# tween instead of snap. The engine (`BaseView`) builds the animated box; this
-# module owns the primitives it reuses (`action_bar_height`, `_center_fixed_width`)
-# and the runtime swap (`set_actions`).
-DEFAULT_ACTION_HEIGHT = UIConstants.BUTTON_HEIGHT
-ACTION_BAR_ANIM = ft.Animation(UIConstants.ANIM_MS, ft.AnimationCurve.EASE_IN_OUT)
-# Identity tag on the animated buttons container, so `action_bar_of()` /
-# `set_actions()` can locate it on a built view without a fragile index walk.
-_BUTTONS_BOX_TAG = "screen_shell_buttons"
-
 # The single, app-wide friendly error message (50+ audience: calm, blame-free,
 # actionable). Every Error Component the engine renders uses this by default.
 DEFAULT_ERROR_MESSAGE = "אירעה שגיאה, אנא נסו שוב"
@@ -166,7 +143,7 @@ def guard(
 
 
 # ----------------------------------------------------------------------------
-# Screen-type / scroll-intent enums — declared by a screen, applied by BaseView
+# Scroll-intent enum — declared by a screen, applied by BaseView
 # ----------------------------------------------------------------------------
 
 
@@ -184,21 +161,7 @@ class BodyLayout(enum.Enum):
     SELF_SCROLLING = "self_scrolling"
 
 
-class ScreenType(enum.Enum):
-    """The single discriminator that decides a screen's whole frame.
-
-    HUB: a centered, max-width, semi-transparent card with the body AND the
-        actions stacked INSIDE it — no sticky action bar. The shared baseline for
-        Welcome / Login / Signup / Main Menu / placeholder / error / boot.
-    CONTENT: a scrollable body card OVER a sticky, animated action bar. Profile,
-        Discover, Chat, Matches, the photo screens, the read-only peer screens.
-    """
-
-    HUB = "hub"
-    CONTENT = "content"
-
-
-# Identity tag on the responsive hub card, so `responsive_card_of()` can locate
+# Identity tag on the responsive card, so `responsive_card_of()` can locate
 # it on a built view (for the live resize clamp) without a fragile index walk.
 _HUB_CARD_TAG = "screen_shell_hub_card"
 
@@ -213,79 +176,46 @@ def clamp_hub_width(page_width: float | None) -> float | None:
     return max(UIConstants.CARD_MIN_WIDTH, min(UIConstants.CARD_MAX_WIDTH, available))
 
 
-def responsive_card(card_content: ft.Control, *, width: float | None = None) -> ft.Container:
-    """A `translucent_card` tagged + (optionally) width-bounded for the hub.
+def responsive_card(
+    card_content: ft.Control,
+    *,
+    width: float | None = None,
+    expand: bool = False,
+    padding: ft.Padding | int | None = None,
+) -> ft.Container:
+    """A `translucent_card` tagged + width-bounded — the ONE card shape every
+    screen renders inside, centred and clamped to the app's mobile-width cap.
 
     Default width is None → content-sized (never wider than its 400-px controls,
     so it never stretches on a wide window). `BaseView` sets an explicit clamped
-    width on resize so the card shrinks gracefully on a narrow window; the hub
-    content column STRETCHes, so the controls flex with the card width."""
-    card = translucent_card(card_content, padding=UIConstants.CARD_PADDING)
+    width on resize so the card shrinks gracefully on a narrow window; the card's
+    content column STRETCHes, so the controls flex with the card width.
+
+    `expand`/`padding` let a screen whose body is a long, internally-scrolling
+    list (`EXPAND_BODY = True`) grow the SAME card to fill the viewport — with
+    the taller top clearance a full-height card needs to clear the BG image's
+    logo — without changing its chrome or its width treatment."""
+    card = translucent_card(
+        card_content,
+        expand=expand,
+        padding=UIConstants.CARD_PADDING if padding is None else padding,
+    )
     card.width = width
     card.data = _HUB_CARD_TAG
     return card
 
 
 def responsive_card_of(view: ft.View) -> ft.Container | None:
-    """Return the responsive hub card of a HUB view (for the live resize clamp),
-    or None for a CONTENT view (whose card is full-bleed)."""
+    """Locate the tagged responsive card on a built view (for the live resize
+    clamp), wherever it sits: the sole child of the outer layout `ft.Column`, or
+    nested one level inside an `ft.Stack` when the screen has an overlay."""
     content = getattr(view.controls[0], "content", None)
-    if isinstance(content, ft.Column):
-        for ctrl in content.controls:
+    layout = content.controls[0] if isinstance(content, ft.Stack) else content
+    if isinstance(layout, ft.Column):
+        for ctrl in layout.controls:
             if getattr(ctrl, "data", None) == _HUB_CARD_TAG:
                 return ctrl
     return None
-
-
-def action_bar_height(actions: list[ft.Control]) -> float:
-    """Deterministic pixel height of the Buttons Area for `actions`.
-
-    Sums each action's explicit `.height` (the shared `create_*_button` factories
-    set `BUTTON_HEIGHT`; a non-button action such as a divider or a send-row
-    should declare its own height) falling back to `DEFAULT_ACTION_HEIGHT`, plus
-    the inter-row spacing. Status banners are NOT included — they sit OUTSIDE the
-    animated box so a banner toggling visibility never clips or jitters buttons.
-    """
-    rows = [(getattr(a, "height", None) or DEFAULT_ACTION_HEIGHT) for a in actions]
-    return sum(rows) + ACTION_BAR_SPACING * max(0, len(rows) - 1)
-
-
-def _center_fixed_width(ctrl: ft.Control) -> ft.Control:
-    """Engine-owned action alignment: a fixed-width action (a 400px button) is
-    re-centred inside a full-width wrapper; an expanding action (a send-row whose
-    composer fills the bar) is left to span. This lets the action column use one
-    canonical STRETCH alignment while every button still looks centred — the view
-    never passes an alignment knob."""
-    if getattr(ctrl, "width", None) is not None and not getattr(ctrl, "expand", False):
-        return ft.Container(content=ctrl, alignment=ft.Alignment(0, 0))
-    return ctrl
-
-
-def action_bar_of(view: ft.View) -> ft.Container:
-    """Return the animated Buttons-Area container of a CONTENT view, so a mounted
-    view can later `set_actions()` on it. Locates it by tag rather than a brittle
-    index walk."""
-    content = view.controls[0].content
-    # With an overlay the content is a Stack([layout, overlay]); without one it
-    # IS the layout Column. Either way the action region is the layout's 2nd child.
-    layout = content.controls[0] if isinstance(content, ft.Stack) else content
-    region = layout.controls[1]
-    for ctrl in region.content.controls:
-        if getattr(ctrl, "data", None) == _BUTTONS_BOX_TAG:
-            return ctrl
-    # Deterministic fallback: the buttons box is always the region's last child.
-    return region.content.controls[-1]
-
-
-def set_actions(buttons_box: ft.Container, actions: list[ft.Control]) -> None:
-    """Replace the Buttons-Area actions at runtime and animate the height change.
-
-    Swaps the box's controls and recomputes its explicit height; the subsequent
-    `update()` lets Flet tween the expand/contract. Call from a mounted view (e.g.
-    once async data resolves and an extra action becomes relevant)."""
-    buttons_box.content.controls = [_center_fixed_width(a) for a in actions]
-    buttons_box.height = action_bar_height(actions)
-    buttons_box.update()
 
 
 # ----------------------------------------------------------------------------

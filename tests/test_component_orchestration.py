@@ -81,10 +81,11 @@ from views.profile.user_profile_view import UserProfileView
 from views.common.navigation import go_back
 from views._base import BaseView
 from views.common import renderer as ui
-from views.common.screen import ScreenType, BodyLayout
+from views.common.screen import BodyLayout
 from views.common.photo_ops import save_photo_urls_or_rollback
 from views.common.load_flow import run_guarded_load, LoadGuard
 from components import loading
+from components.error_card import create_error_card
 from components.feedback import create_status_banner
 
 import flet as ft
@@ -646,9 +647,9 @@ class TestPeerProfileBlackScreenRegression(_BackendMixin, unittest.TestCase):
 
     def test_missing_peer_returns_none_triggering_error_card(self):
         # The view shows its error card when get_profile returns None; here we
-        # assert the trigger (None) and that the error card itself builds.
+        # assert the trigger (None) and that the shared error card builds.
         self.assertIsNone(self.profiles.get_profile("does-not-exist"))
-        self.assertIsInstance(self.view._error_card("משהו השתבש"), ft.Control)
+        self.assertIsInstance(create_error_card("משהו השתבש"), ft.Control)
 
 
 # ============================================================================
@@ -1084,80 +1085,73 @@ class TestStackAwareBack(_BackendMixin, unittest.TestCase):
         self.assertEqual(self._routes(), ["/menu"])
 
 
-class TestContentScreenLayout(unittest.TestCase):
-    """The CONTENT frame (now built by `BaseView`): a scrollable translucent card
-    on top of a sticky, TRANSPARENT action bar — status banner in the BAR (never
-    in the scroll region), buttons in the animated box, and no nested scroll."""
+class TestUnifiedCardLayout(unittest.TestCase):
+    """The single card frame (built by `BaseView`): ONE translucent card holds
+    header → content → status banner → actions in one column — no separate
+    action bar, no HUB/CONTENT split. `EXPAND_BODY` only changes whether that
+    card hugs its content and centres on the screen (compact — Welcome/Login's
+    shape, the default) or fills the viewport and scrolls its own content
+    (expand — chat, matches, photo albums, long forms)."""
 
-    def _build(self, *, self_scroll=False):
+    def _build(self, *, expand_body=False, self_scroll=False):
         self.heading = ft.Text("title")
         self.banner = ft.Container()
         self.back = ft.Text("חזור")
         heading, banner, back = self.heading, self.banner, self.back
 
         class _V(BaseView):
-            ROUTE = "/x"; SCREEN_TYPE = ScreenType.CONTENT
+            ROUTE = "/x"
             def get_content(self): return [ui.raw(heading)]
             def get_status_banner(self): return ui.raw(banner)
             def get_actions(self): return [ui.raw(back)]
+        _V.EXPAND_BODY = expand_body
         _V.BODY_LAYOUT = BodyLayout.SELF_SCROLLING if self_scroll else BodyLayout.SCROLLING
         return _V(FakePage()).build()
 
-    def _regions(self, view):
+    def _card(self, view):
         # background_screen → View(controls=[Container(image, content=Column)]);
-        # that Column holds exactly [scroll card, action bar].
+        # that outer Column holds exactly ONE control: the responsive card.
         root_col = view.controls[0].content
         self.assertIsInstance(root_col, ft.Column)
-        self.assertEqual(len(root_col.controls), 2)
-        return root_col.controls            # (card, action_bar)
+        self.assertEqual(len(root_col.controls), 1)
+        return root_col.controls[0]
 
-    def test_two_regions_card_then_transparent_action_bar(self):
-        card, action_bar = self._regions(self._build())
-        self.assertTrue(card.expand)                       # the card fills height
-        self.assertEqual(action_bar.bgcolor, ft.Colors.TRANSPARENT)
+    def test_expand_card_stacks_content_banner_and_actions_inline(self):
+        card = self._card(self._build(expand_body=True))
+        self.assertTrue(card.expand)                          # fills the viewport
+        content_area, banner, action = card.content.controls
+        self.assertIs(banner, self.banner)                    # banner ABOVE the buttons
+        self.assertIs(action, self.back)                      # button inline at the tail — no bar
+        body_col = content_area.controls[0]
+        self.assertIn(self.heading, body_col.controls)        # body lives in the content area
+        self.assertNotIn(self.banner, body_col.controls)      # banner NOT in the scroll region
 
-    def test_status_banner_in_action_bar_not_in_card(self):
-        card, action_bar = self._regions(self._build())
-        bar_controls = action_bar.content.controls         # [banner, animated box]
-        self.assertIs(bar_controls[0], self.banner)        # banner ABOVE buttons
-        buttons_box = bar_controls[1]
-        self.assertIn(self.back, buttons_box.content.controls)   # button in the BAR
-        body_col = card.content.controls[0]                # scroll col -> body col
-        self.assertIn(self.heading, body_col.controls)     # body in the CARD
-        self.assertNotIn(self.banner, body_col.controls)   # NOT in scroll region
-
-    def test_scroll_true_sets_auto_scroll_on_card_column(self):
-        card, _bar = self._regions(self._build(self_scroll=False))
-        self.assertEqual(card.content.scroll, ft.ScrollMode.AUTO)
+    def test_scrolling_wraps_content_in_one_auto_scroll_region(self):
+        card = self._card(self._build(expand_body=True, self_scroll=False))
+        content_area = card.content.controls[0]
+        self.assertEqual(content_area.scroll, ft.ScrollMode.AUTO)
 
     def test_self_scrolling_avoids_nested_scroll(self):
-        # SELF_SCROLLING places the body column directly (no Shell scroll wrapper).
-        card, _bar = self._regions(self._build(self_scroll=True))
-        self.assertIsNone(card.content.scroll)
+        # SELF_SCROLLING places the body directly — it owns its own scroll
+        # (an ft.ListView), so the engine never wraps it in a second region.
+        card = self._card(self._build(expand_body=True, self_scroll=True))
+        content_area = card.content.controls[0]
+        self.assertIsNone(getattr(content_area, "scroll", None))
 
-
-class TestHubScreenLayout(unittest.TestCase):
-    """The HUB frame (now built by `BaseView`): ONE translucent_card centred both
-    axes over the background, with ALL controls (buttons included) inside it — NO
-    scroll region OUTSIDE the card, NO sticky action bar (the auth/menu baseline)."""
-
-    def _hub(self, controls):
-        class _V(BaseView):
-            ROUTE = "/menu"; SCREEN_TYPE = ScreenType.HUB
-            def get_content(self): return [ui.raw(c) for c in controls]
-        return _V(FakePage()).build()
-
-    def test_single_centered_card_holds_the_content(self):
+    def test_compact_card_centres_and_stacks_body_then_actions_no_bar(self):
         t1, t2 = ft.Text("hi"), ft.Text("bye")
-        view = self._hub([t1, t2])
-        centered = view.controls[0].content
-        self.assertIsInstance(centered, ft.Column)
-        self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
-        self.assertEqual(centered.horizontal_alignment, ft.CrossAxisAlignment.CENTER)
-        self.assertEqual(len(centered.controls), 1)        # ONE card, no action bar
-        # The HUB frame wraps the content in a standardized body column inside the
-        # card, so the content controls live in the card column's first child.
-        card = centered.controls[0]
+
+        class _V(BaseView):
+            ROUTE = "/menu"
+            def get_content(self): return [ui.raw(c) for c in (t1, t2)]
+        view = _V(FakePage()).build()
+
+        wrap = view.controls[0].content
+        self.assertIsInstance(wrap, ft.Column)
+        self.assertEqual(wrap.alignment, ft.MainAxisAlignment.CENTER)
+        self.assertEqual(wrap.horizontal_alignment, ft.CrossAxisAlignment.CENTER)
+        self.assertEqual(len(wrap.controls), 1)               # ONE card, no action bar
+        card = wrap.controls[0]
         body_col = card.content.controls[0]
         self.assertIn(t1, body_col.controls)
         self.assertIn(t2, body_col.controls)
@@ -1165,13 +1159,17 @@ class TestHubScreenLayout(unittest.TestCase):
 
     def test_default_padding_is_the_shared_card_padding(self):
         from utils.constants import UIConstants
-        view = self._hub([ft.Text("x")])
-        card = view.controls[0].content.controls[0]
+
+        class _V(BaseView):
+            ROUTE = "/x"
+            def get_content(self): return [ui.raw(ft.Text("x"))]
+        card = self._card(_V(FakePage()).build())
         self.assertEqual(card.padding, UIConstants.CARD_PADDING)
 
 
-class TestHubScreensUseSharedPrimitive(_BackendMixin, unittest.TestCase):
-    """Every hub / auth screen builds via `hub_screen` (centred single card) AND
+class TestAuthAndMenuScreensUseTheCompactCardFrame(_BackendMixin, unittest.TestCase):
+    """Every auth/menu screen renders via the compact single-card frame
+    (`EXPAND_BODY = False`, the default — Welcome/Login's centred shape) AND
     ends build() with `_bind_lifecycle` (so `view.data` carries the back-ref the
     router needs for system back / lifecycle / identity-based `_is_live`)."""
 
@@ -1183,7 +1181,7 @@ class TestHubScreensUseSharedPrimitive(_BackendMixin, unittest.TestCase):
     def tearDown(self) -> None:
         self._teardown_backend()
 
-    def _assert_hub(self, view, route) -> None:
+    def _assert_compact_card(self, view, route) -> None:
         self.assertIsInstance(view, ft.View)
         self.assertEqual(view.route, route)
         # _bind_lifecycle sets view.data to the owning BaseView.
@@ -1193,26 +1191,26 @@ class TestHubScreensUseSharedPrimitive(_BackendMixin, unittest.TestCase):
         self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
         self.assertEqual(len(centered.controls), 1)        # one centred card
 
-    def test_welcome_view_is_a_hub(self):
+    def test_welcome_view_uses_the_compact_card(self):
         from views.auth.welcome_view import WelcomeView
-        self._assert_hub(WelcomeView(self.page).build(), "/auth/welcome")
+        self._assert_compact_card(WelcomeView(self.page).build(), "/auth/welcome")
 
-    def test_main_menu_view_is_a_hub(self):
+    def test_main_menu_view_uses_the_compact_card(self):
         from views.menu.main_menu_view import MainMenuView
-        self._assert_hub(MainMenuView(self.page).build(), "/menu")
+        self._assert_compact_card(MainMenuView(self.page).build(), "/menu")
 
-    def test_placeholder_view_is_a_hub(self):
+    def test_placeholder_view_uses_the_compact_card(self):
         from views.common.placeholder_view import PlaceholderView
         view = PlaceholderView(self.page, title="בקרוב", route="/soon").build()
-        self._assert_hub(view, "/soon")
+        self._assert_compact_card(view, "/soon")
 
-    def test_login_view_is_a_hub(self):
+    def test_login_view_uses_the_compact_card(self):
         from views.auth.login_view import LoginView
-        self._assert_hub(LoginView(self.page, self.auth).build(), "/auth/login")
+        self._assert_compact_card(LoginView(self.page, self.auth).build(), "/auth/login")
 
-    def test_signup_view_is_a_hub(self):
+    def test_signup_view_uses_the_compact_card(self):
         from views.auth.signup_view import SignupView
-        self._assert_hub(SignupView(self.page, self.auth).build(), "/auth/signup")
+        self._assert_compact_card(SignupView(self.page, self.auth).build(), "/auth/signup")
 
 
 if __name__ == "__main__":

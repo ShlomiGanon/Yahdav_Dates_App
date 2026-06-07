@@ -50,7 +50,7 @@ from components.avatars import create_photo_avatar
 from components.error_card import create_error_card
 from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender
-from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
+from utils.constants import TextSizes, AssetPaths
 
 log = logging.getLogger(__name__)
 
@@ -100,10 +100,12 @@ class UserProfileView(BaseView):
     # ============================================================
 
     def get_content(self) -> list[ui.UIComponent]:
-        # Static skeleton only — build() must never throw. Avatar + heading +
-        # fields are STRETCH/RIGHT-aligned so a long bio wraps and scrolls and can
-        # never overflow the render tree. Every region control is mutated at
-        # runtime by _render_profile / _show_error_card, so each is PRE-BUILT and
+        # Static skeleton only — build() must never throw. The heading centres
+        # (create_screen_heading's default — matches the engine's universal
+        # "every header centres" rule); the avatar + fields below it are
+        # STRETCH/RIGHT-aligned so a long bio wraps and scrolls and can never
+        # overflow the render tree. Every region control is mutated at runtime
+        # by _render_profile / _show_error_card, so each is PRE-BUILT and
         # embedded via raw() (no get_header: the title is the dynamic peer name).
         self._heading = create_screen_heading("")
         self._avatar_slot = ft.Container(alignment=ft.Alignment(0, 0))
@@ -238,7 +240,7 @@ class UserProfileView(BaseView):
         try:
             self._heading.value = ""
             self._avatar_slot.content = None
-            self._content.controls = [self._error_card(message)]
+            self._content.controls = [create_error_card(message)]
             self.page.update()
         except Exception:  # noqa: BLE001 — even the fallback must never raise
             log.exception("UserProfile: failed to show error card")
@@ -291,11 +293,6 @@ class UserProfileView(BaseView):
             self._safe_name(profile),
             diameter=self._AVATAR_DIAMETER,
         )
-
-    @staticmethod
-    def _error_card(message: str) -> ft.Control:
-        """A styled, RTL error card shown inside the translucent shell (shared)."""
-        return create_error_card(message)
 
     # ============================================================
     #  Safe accessors — TOTAL (never raise); the heart of the fix

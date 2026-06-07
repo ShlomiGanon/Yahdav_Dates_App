@@ -11,7 +11,6 @@ from __future__ import annotations
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import ScreenType
 from views.common import renderer as ui
 from views.common.navigation import back_to_menu_button
 from utils.constants import TextSizes, ThemeColors
@@ -20,11 +19,9 @@ from utils.constants import TextSizes, ThemeColors
 class PlaceholderView(BaseView):
     """A titled 'coming soon' screen with a button back to the Main Menu.
 
-    A HUB screen; its route is per-instance (the menu target it stands in for),
-    so `__init__` sets `self.ROUTE` for the framework's template `build()`.
+    Its route is per-instance (the menu target it stands in for), so `__init__`
+    sets `self.ROUTE` for the framework's template `build()`.
     """
-
-    SCREEN_TYPE = ScreenType.HUB
 
     def __init__(self, page: ft.Page, *, title: str, route: str) -> None:
         super().__init__(page)

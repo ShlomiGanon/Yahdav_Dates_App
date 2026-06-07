@@ -35,13 +35,15 @@ from components.feedback import create_status_banner, show_status
 from services.i_profile_repository import IProfileRepository
 from services.i_storage_service import IStorageService
 from models.user_profile import UserProfile
-from utils.constants import TextSizes, UIConstants, ThemeColors, StorageConfig
+from utils.constants import TextSizes, ThemeColors, StorageConfig
 
 log = logging.getLogger(__name__)
 
 
 class AdditionalPhotosView(BaseView):
     ROUTE = "/profile/photos"
+
+    EXPAND_BODY = True   # long photo grid → fill the viewport, scroll internally
 
     SESSION_USER_ID_KEY = "current_user_id"
     _PROFILE_ROUTE = "/profile/me"

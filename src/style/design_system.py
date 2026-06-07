@@ -149,10 +149,6 @@ class Pad:
     list_v: ft.Padding = field(default_factory=lambda: ft.Padding(0, 8, 0, 8))  # feed/chat ListView
     content_card: ft.Padding = field(default_factory=lambda: ft.Padding(20, 20, 20, 16))
     content_card_tall: ft.Padding = field(default_factory=lambda: ft.Padding(20, 40, 20, 16))
-    content_margin: ft.Margin = field(
-        default_factory=lambda: ft.Margin.only(left=12, top=12, right=12, bottom=8)
-    )
-    action_bar: ft.Padding = field(default_factory=lambda: ft.Padding(24, 12, 24, 20))
     list_tile: ft.Padding = field(default_factory=lambda: ft.Padding(16, 8, 16, 8))
 
 
@@ -186,9 +182,8 @@ class BodyTemplate:
 
     spacing: int = 14                                            # body gap for ALL screens
     cross_align: ft.CrossAxisAlignment = ft.CrossAxisAlignment.STRETCH
-    # Per-role heading alignment (one home; HUB centres its title, CONTENT right-aligns).
-    hub_heading_align: ft.TextAlign = ft.TextAlign.CENTER
-    content_heading_align: ft.TextAlign = ft.TextAlign.RIGHT
+    # Every screen's heading is centred — the one rule, Welcome/Login's shape.
+    heading_align: ft.TextAlign = ft.TextAlign.CENTER
 
 
 @dataclass(frozen=True)

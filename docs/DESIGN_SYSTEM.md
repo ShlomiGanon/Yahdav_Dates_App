@@ -33,9 +33,9 @@ view = background_screen(self.ROUTE, <layout-containing-card>)       # full-blee
 - **Photo tiles** reuse `views/common/photos.py::photo_thumb(src, size=…)` — the
   single rounded/clipped image tile with a broken-image `error_content` fallback.
 - **Auth screens use the same shell.** Login, Signup and Welcome are ordinary
-  `ScreenType.HUB` `BaseView`s (§1.5) — there is NO bespoke auth modal/scrim. They
-  declare `SCREEN_TYPE = ScreenType.HUB` and provide `get_body`/`get_actions`, so
-  they render the identical centered card as every other hub screen.
+  `BaseView`s (§1.5) — there is NO bespoke auth modal/scrim. They provide
+  `get_header`/`get_content`/`get_actions` like every other screen, so they
+  render the identical centered card everyone else does.
 
 **Enforcement:** a view that constructs a raw `ft.View` with its own `bgcolor`, or
 hardcodes `padding=…` on a top-level container, fails review.
@@ -46,117 +46,143 @@ hardcodes `padding=…` on a top-level container, fails review.
 
 Every screen is an **Interface-First** `BaseView`: it DECLARES what it is and
 PROVIDES its pieces through fixed methods — it never writes `build()` and never
-touches layout. The framework (`BaseView.build()` + `ScreenShell` in
-`views/common/screen.py`) orchestrates everything: assembly, centering,
-responsiveness, lifecycle binding, and a built-in error catch-all.
+touches layout. The engine (`BaseView.build()` in `views/_base.py`, composing the
+shared primitives in `views/common/screen.py`) orchestrates everything:
+assembly, centering, responsiveness, lifecycle binding, and a built-in error
+catch-all.
+
+**Every screen renders inside the SAME single card** — Welcome/Login's shape:
+one centred, translucent, width-clamped card holding header → content → status
+banner → actions, stacked in one DS-spaced column. There is no second frame, no
+HUB/CONTENT split, and no separate action bar to keep in sync — "looks like
+Welcome" is not a convention to remember, it is the only thing the engine knows
+how to draw.
 
 A screen DECLARES (class attributes):
 
 - `ROUTE` — its route string.
-- `SCREEN_TYPE` — `ScreenType.HUB` (centered single card; Welcome/Login/Signup/
-  Menu/placeholder) or `ScreenType.CONTENT` (scroll card + sticky animated bar;
-  everything else). Default CONTENT.
-- `BODY_LAYOUT` — `BodyLayout.SCROLLING` (default) or `SELF_SCROLLING` when the
-  body is its own `ft.ListView`.
+- `EXPAND_BODY` — `False` (the default — Welcome/Login/Signup/Menu/Settings/
+  Placeholder/UserProfile/Discover): the card sizes to its content and sits
+  centred on the screen, like a dialog. `True` (Chat/Matches/MyProfile/the photo
+  screens — anything with a long, internally-scrolling body): the SAME card
+  instead grows to fill the viewport and scrolls its own content, like a tall
+  dialog. Either way it is the identical card — chrome, width-clamp, centring,
+  corner radius, translucency, header→content→actions order — just sized
+  differently.
+- `BODY_LAYOUT` — `BodyLayout.SCROLLING` (default; the engine wraps the body in
+  its own AUTO-scroll region) or `SELF_SCROLLING` when the body already owns its
+  scroll (an `ft.ListView`/`ft.Column(expand=True, scroll=...)`), so the engine
+  places it directly and scrolling never nests.
 
-A screen PROVIDES (override what it needs):
+A screen PROVIDES (override what it needs — each returns `ui.UIComponent`(s),
+the declarative schema rendered by `views/common/renderer.py`; see §1.5.1):
 
-- `get_body() -> ft.Control` — REQUIRED. The content as ONE composed control.
-- `get_actions() -> list[ft.Control]` — buttons (HUB → inside the card; CONTENT →
-  the sticky bar). Default `[]`.
-- `get_status_banner() -> ft.Control | None` — CONTENT inline banner. Default None.
-- `get_overlay() -> ft.Control | None` — CONTENT fullscreen layer (lightbox). Default None.
-- `get_services() -> list` — Flet services (e.g. an `ft.FilePicker`). Default `[]`.
+- `get_header() -> ui.UIComponent | None` — the screen's H1. Rendered as the
+  body's first slot and RE-STAMPED centred by the engine — a screen never picks
+  its own heading alignment. Default `None`.
+- `get_content() -> list[ui.UIComponent]` — REQUIRED in spirit (default `[]`).
+  The body's remaining content nodes, stacked with one DS spacing.
+- `get_actions() -> list[ui.UIComponent]` — buttons, rendered inline at the
+  card's tail (after the body and any status banner) — exactly like
+  `WelcomeView.get_actions()`. Default `[]`.
+- `get_status_banner() -> ui.UIComponent | None` — an inline banner stacked
+  between the content and the actions — never inside the scroll region. Default
+  `None`.
+- `get_overlay() -> ui.UIComponent | None` — a fullscreen layer (e.g. a
+  lightbox), stacked OVER the whole card frame by the engine. Default `None`.
+- `get_services() -> list[ft.Control]` — Flet services (e.g. an `ft.FilePicker`)
+  mounted alongside the view. Default `[]`.
 
 ```python
-class MyProfileView(BaseView):
-    ROUTE = "/profile/me"                       # SCREEN_TYPE defaults to CONTENT
+class ChatView(BaseView):
+    ROUTE = "/matching/chat"
+    EXPAND_BODY = True                         # long message history → fill the viewport
+    BODY_LAYOUT = BodyLayout.SELF_SCROLLING     # the message ListView owns its scroll
 
-    def get_body(self) -> ft.Control:           # the view composes its OWN content
-        ...                                     # (inner arrangement = view's job)
-        return ft.Column([heading, *fields], spacing=CONTENT_BODY_SPACING,
-                         horizontal_alignment=ft.CrossAxisAlignment.CENTER)
-
-    def get_actions(self):  return [save_button, divider, back_to_menu_button(self.page)]
-    def get_status_banner(self): return self._status_banner
-    def get_services(self): return [self._file_picker]
+    def get_header(self) -> ui.UIComponent: return ui.raw(self._heading)         # dynamic peer name
+    def get_content(self) -> list[ui.UIComponent]: return [ui.raw(self._messages)]
+    def get_actions(self):       return [ui.raw(self._send_row), ui.raw(back_button(self.page, ...))]
+    def get_status_banner(self): return ui.raw(self._status_banner)
+    def get_services(self):      return [self._file_picker]
 ```
 
-The hard SoC line is **framework = outer frame; view = inner composition** — the
-view arranges its own content; the Shell never reaches in. The four providers are
-handed to `ScreenShell` as builders, so a failure in any of them degrades to the
-shared Error Component (§1.6) instead of crashing.
-
-The Shell exposes **no** layout knobs (`body_alignment`, `actions_alignment`,
-raw `scroll`, `card_padding` are gone from the contract). The one scroll choice
-is expressed by INTENT via `body_layout=BodyLayout.SELF_SCROLLING` (the body is
-an `ft.ListView` that owns its scroll), not a raw flag. The Buttons Area height
-is deterministic (auto-summed from the actions, override via `action_bar_height`)
-and `animate`d, so it expands/contracts smoothly when a mounted view swaps its
-actions via `set_actions(action_bar_of(view), [...])`.
+The hard SoC line is **engine = card frame; view = what fills its slots** — the
+view never arranges its own chrome, the engine never reaches into the view's
+content. Every provider is rendered through `guard`, so a failure in any one of
+them degrades to the shared Error Component (§1.6) instead of crashing the
+screen.
 
 ```
-┌──────────────────────────────────────┐
-│  translucent_card (expand=True)       │  ← the ONLY region that scrolls:
-│   title + body                        │     heading + form / feed / messages
-└──────────────────────────────────────┘
-┌──────────────────────────────────────┐
-│  transparent action bar (sticky)      │  ← OUTSIDE the card, never scrolls:
-│   [status banner]  [buttons …]        │     status feedback + ALL buttons
-└──────────────────────────────────────┘
+┌────────────────────────────────────────┐
+│   responsive_card (centred, clamped)    │
+│  ┌───────────────────────────────────┐  │
+│  │  header                            │  │  ← the body's first slot,
+│  │  content … (scrolls if EXPAND_BODY)│  │     always centred
+│  │  [status banner]                   │  │  ← inline, between content & actions
+│  │  [action] [action] …               │  │  ← inline, at the card's tail
+│  └───────────────────────────────────┘  │
+└────────────────────────────────────────┘
 ```
 
-Hard rules, all encoded in the primitive:
+Hard rules, all encoded in the engine:
 
-- **The content card scrolls; the action bar does not.** Only the card holds
-  `scroll`/an `expand=True` `ListView`; the buttons stay on-screen however far
-  the body scrolls. A back button **inside** the card on a content screen fails
-  review.
-- **All buttons live in the action bar, OUTSIDE the card.** The bar is
-  transparent (`bgcolor=TRANSPARENT`) so the buttons float on the BG.
-- **Status banners belong in the action bar, never in the scroll region** — pass
-  them as `status_banner=…`; the primitive pins them above the buttons so
-  save/error/empty-state feedback is always visible.
+- **One card, one stacking order, for every screen.** Header → content → status
+  banner → actions, top to bottom, inside the SAME translucent card — never a
+  separate region, bar, or hand-rolled assembly. A screen that needs its back
+  button to "stay on screen while the form scrolls" gets that for free: when
+  `EXPAND_BODY = True`, only the *content* scrolls (or self-scrolls); the
+  header, banner and actions stay pinned at the card's edges.
+- **`EXPAND_BODY` is a sizing knob, not a different look.** `False` → the card
+  hugs its content and centres like a dialog (Welcome's shape — the default).
+  `True` → the identical card grows to fill the viewport and scrolls its own
+  content internally (a "tall dialog" — chat/matches/photos/long forms). Same
+  chrome, same width-clamp, same spacing/colors/corner-radius either way.
+- **One heading rule.** Every screen's `get_header()` renders centred — the DS
+  rule (`DS.body.heading_align`), re-stamped by the engine regardless of what
+  the screen returns. A screen never overrides heading alignment.
+- **Status banners sit inline, at the card's tail — never inside the scroll
+  region.** Returned via `get_status_banner()`, the engine places them between
+  the content and the actions, so save/error/empty-state feedback is always
+  visible without competing with the scrolling body for space.
 - **Primary (red) vs secondary/navigation (blue-grey) are separated by a
-  divider** (see §4). The geometry — margins, padding, spacing, expand behaviour
-  — is defined ONCE in `screen.py` (`CONTENT_CARD_MARGIN`, `CONTENT_CARD_PADDING`,
-  `CONTENT_CARD_PADDING_TALL`, `ACTION_BAR_PADDING`, …); views never re-invent it.
-- **The Buttons Area animates.** It is a single persistent container with an
-  explicit, action-derived `height` + `animate`; cross-screen heights stay
-  consistent (no jump) and intra-screen action changes tween. A non-button
-  action (divider, send-row) should declare its own `.height` so the auto-sum
-  stays tight.
-- **Canonical top-logo clearance.** The Shell applies one card padding
-  (`CONTENT_CARD_PADDING_TALL`) to EVERY content screen, so no view passes a
-  `card_padding`; the heading clears the BG's top logo uniformly app-wide.
-- **Overlays belong to the Shell.** A fullscreen layer (e.g. the peer album's
-  lightbox) is passed as `overlay=…`; the Shell owns the `ft.Stack`, so no view
-  hand-rolls `background_screen(ft.Stack([...]))`.
-- **Fault tolerance is built in (see §1.6).** `body`, each `action`, and
-  `overlay` may be a control OR a zero-arg builder; the Shell runs builders
-  through `guard`, so a section that fails to construct degrades to the shared
-  **Error Component** instead of crashing the screen.
-- **Responsive hub card.** The HUB card is centred both axes and its width is
-  CLAMPED to `[CARD_MIN_WIDTH, CARD_MAX_WIDTH]` against the window
-  (`BaseView` re-clamps on `page.on_resized`): wide → caps at `CARD_MAX_WIDTH`
-  (never stretches), narrow → shrinks to fit (the STRETCH card content makes the
-  400-px controls flex with it), always centred. The centred column AUTO-scrolls,
-  so a tall form (Login/Signup) scrolls instead of clipping its bottom button.
-- **Internal building blocks:** `content_screen(...)` / `content_layout(...)`
-  remain only as the low-level back-compat helpers (and for the layout tests);
-  no view calls them — every content screen builds through `ScreenShell`.
+  divider** (see §4). The geometry — card padding, spacing, width-clamp,
+  corner-radius, translucency — is defined ONCE in the Design System
+  (`DS.pad.*`, `DS.spacing.*`, `DS.sizing.*`) and read directly by `BaseView`;
+  views never re-invent it.
+- **Canonical top-logo clearance.** An `EXPAND_BODY` card — the only shape whose
+  top edge can reach the viewport's top edge — gets one taller padding
+  (`DS.pad.content_card_tall` / `CONTENT_CARD_PADDING_TALL`) so its heading
+  clears the BG's top logo uniformly app-wide; no view passes its own padding.
+- **Overlays belong to the engine.** A fullscreen layer (e.g. the peer album's
+  lightbox) is returned from `get_overlay()`; `BaseView` owns the `ft.Stack`
+  that lays it over the card frame, so no view hand-rolls
+  `background_screen(ft.Stack([...]))`.
+- **Fault tolerance is built in (see §1.6).** Every provider is rendered through
+  `guard`, so a failure in the header, content, actions, banner, overlay, or
+  services degrades to the shared **Error Component** instead of crashing.
+- **The card is always responsive.** Every card — compact or expanding alike —
+  is centred and its width is CLAMPED to `[CARD_MIN_WIDTH, CARD_MAX_WIDTH]`
+  against the window (`BaseView` re-clamps on `page.on_resized`): wide → caps at
+  `CARD_MAX_WIDTH` (never stretches), narrow → shrinks to fit (the STRETCH card
+  content makes the 400-px controls flex with it), always centred. A compact
+  card's outer column AUTO-scrolls, so a tall form (Login/Signup) scrolls
+  instead of clipping its bottom button.
 
-**Hub / auth / status screens (`SCREEN_TYPE = ScreenType.HUB`) share the SAME
-unified `ScreenShell` — the HUB branch.** Welcome, Main Menu, Login, Signup, the
-"coming soon" placeholder, **and the router's own boot spinner + error view**
-(via the `hub_screen(...)` back-compat shim) all render ONE translucent card,
-centred both axes, every control (buttons included) INSIDE the card. No
-scroll/action-bar split, no custom backgrounds or top-level padding, and
-no hand-rolled `background_screen(translucent_card(…))` assembly anywhere. The
-centring + card geometry is defined once in `screen.py`. **Login and Signup are
-visually identical to Welcome** (the design baseline): same hub frame, same H1
-(`create_screen_heading`), same `ELEMENT_SPACING`, same 400×70 buttons and
-50%-white card.
+**Login and Signup are visually identical to Welcome** (the design baseline):
+same card frame, same H1 (`create_screen_heading`/`ui.heading`), same
+`ELEMENT_SPACING`, same 400×70 buttons and 50%-white card. So is every other
+screen in the app — `EXPAND_BODY` only changes whether that shared card hugs its
+content or fills the screen and scrolls.
+
+### 1.5.1 The declarative `ui` schema (`views/common/renderer.py`)
+
+Providers return `ui.UIComponent` nodes — a small declarative vocabulary
+(`ui.heading`, `ui.text`, `ui.primary_button`, `ui.secondary_button`, `ui.raw`,
+…) — not raw `ft.Control`s. `ViewRenderer` turns them into the live Flet tree.
+`ui.raw(control)` is a pure identity pass-through for stateful, pre-built
+controls a view needs to keep a live reference to (inputs, image controls,
+file pickers, mutable columns refreshed at runtime) — it changes nothing about
+how the control renders, it just lets the declarative schema carry it.
 
 ## 1.6 Fault tolerance — the Error Component & the backstop
 
@@ -167,14 +193,15 @@ rings**, all funnelling to ONE shared **Error Component** (`error_component()` i
 
 1. **Component ring — `guard(build_fn)`.** Wrap a risky sub-tree (e.g. one
    derived from fetched data) so its failure renders the Error Component in place
-   instead of bubbling. `ScreenShell` accepts `body` / `actions` / `overlay` as
-   controls OR zero-arg builders and runs builders through `guard` automatically
-   — so "an error in the body or actions" degrades, by construction.
+   instead of bubbling. `BaseView` runs every provider (`get_header`/
+   `get_content`/`get_actions`/`get_status_banner`/`get_overlay`/`get_services`)
+   through `guard` automatically — so "an error in any region" degrades, by
+   construction, instead of crashing the screen.
 2. **Screen ring — the router's `_safe_build`.** The factory that builds each
-   view is wrapped; any `build()` that throws falls back to `error_screen(...)` —
-   the SAME Error Component, framed as a full `hub_screen` view with a
-   back-to-menu recovery action. Single source: the router no longer hand-rolls
-   its own error card.
+   view is wrapped; any `build()` that throws falls back to `error_view(...)` —
+   the SAME Error Component, framed in the identical `SystemHubView` card (the
+   one every screen renders inside) with a back-to-menu recovery action. Single
+   source: the router no longer hand-rolls its own error card.
 3. **Route ring — `_bare_fallback`.** If even the styled error view can't mount,
    a dependency-free bare `ft.View` with one `ft.Text` is shown. After this a
    blank page is unreachable.
@@ -246,7 +273,7 @@ COMPOSES them and never hand-rolls the styling. Using the primitive IS complying
 
 | Primitive | Module | Use |
 |---|---|---|
-| `create_screen_heading(text, *, center=False)` | `typography.py` | the screen H1. `center=True` for HUB/auth screens; default RIGHT for content screens. **Never inline an `ft.Text(size=TextSizes.H1, …)` heading in a view.** |
+| `create_screen_heading(text, *, center=True)` | `typography.py` | the screen H1 — centres by default (the one heading rule, every screen alike); pass `center=False` only for a right-aligned in-body heading that is NOT the screen's title. **Never inline an `ft.Text(size=TextSizes.H1, …)` heading in a view.** |
 | `create_section_heading(text, *, center=False)` | `typography.py` | an H2 subsection heading (parity with the screen heading). |
 | `create_field_error_label()` / `set_field_error(label, msg)` / `clear_field_errors(*labels)` | `feedback.py` | per-field validation error labels (colour `ThemeColors.FIELD_ERROR`). Replaces every view-local `_make_error_label`/`_set_error`. |
 | `create_status_banner(*, width=None)` → `(container, text)` / `show_status(banner, text, msg, *, ok, auto_hide_sec=0.0)` | `feedback.py` | the inline status banner + its async show/hide helper. Replaces every view-local status `Container` and `_show_status`. |
@@ -257,9 +284,11 @@ COMPOSES them and never hand-rolls the styling. Using the primitive IS complying
 | `create_profile_field(label, value)` | `profile_fields.py` | a read-only label/value block (peer profile). |
 
 All geometry these atoms use (`STATUS_BANNER_PADDING`, `BUBBLE_PADDING`,
-`BUBBLE_RADIUS`, `LIST_TILE_PADDING`, the `CONTENT_*`/`ACTION_BAR_*` frame tokens)
-is defined ONCE in `UIConstants` (`utils/constants.py`); `screen.py` re-exports the
-frame tokens it shares with views (e.g. `CONTENT_BODY_SPACING`).
+`BUBBLE_RADIUS`, `LIST_TILE_PADDING`, the card-frame tokens like
+`CONTENT_CARD_PADDING_TALL`) is defined ONCE in the Design System
+(`DS.pad.*`/`DS.spacing.*`, exposed via `UIConstants` in `utils/constants.py`);
+`screen.py` owns no re-exported geometry of its own — `BaseView` and the
+components read the tokens directly.
 
 ---
 
@@ -312,9 +341,11 @@ Color carries meaning; it is never decorative. Two button primitives, two roles:
   `SUCCESS`; `OFFLINE` = `GREY_400`) and the chat bubbles (`BUBBLE_SELF` =
   `GREEN_100`, `BUBBLE_PEER` = `GREY_200`).
 
-The standard screen footer is a **sticky bottom action bar** (transparent, sits
-outside the scroll region) so the primary action and its status feedback are
-always one tap away no matter how far the form has scrolled.
+Buttons render inline at the card's tail — the same single column as the header
+and content (§1.5), never a separate bar. On an `EXPAND_BODY` screen, only the
+*content* scrolls (or self-scrolls); the actions stay pinned at the card's
+bottom edge, so the primary action and its status feedback are always one tap
+away no matter how far the form has scrolled.
 
 ---
 
@@ -376,11 +407,12 @@ and failing that, a bare last-resort view — never a black page.
    `translucent_card`, `photo_thumb`, `resolve_main_photo` / `extra_photo_urls`,
    `back_to_menu_button`. Using them == complying.
 2. **Review checklist** (PR template):
-   - [ ] Screen is an Interface-First `BaseView`: it implements `get_body()`
-         (+ `get_actions`/`get_status_banner`/`get_overlay`/`get_services` as
-         needed) and declares `SCREEN_TYPE`/`BODY_LAYOUT`. It does NOT override
-         `build()`, call `ScreenShell`/`hub_screen`/`content_screen` directly, or
-         hand-roll `background_screen(translucent_card(…))`.
+   - [ ] Screen is an Interface-First `BaseView`: it implements
+         `get_header`/`get_content` (+ `get_actions`/`get_status_banner`/
+         `get_overlay`/`get_services` as needed) and declares `EXPAND_BODY`/
+         `BODY_LAYOUT` only when it deviates from the compact-card default. It
+         does NOT override `build()`, construct `SystemHubView`/`background_screen`/
+         `translucent_card` directly, or hand-roll its own card assembly.
    - [ ] Risky/data-derived sub-trees fenced with `guard(...)` so a render
          failure shows the Error Component, never a crash. (`get_*` providers are
          already guarded by the framework.)
@@ -399,7 +431,7 @@ and failing that, a bare last-resort view — never a black page.
    - `def build(` (only `_base.py` defines it) · `size=TextSizes.H1` (use `create_screen_heading`)
      · `_make_error_label` / `_show_status` (use the `feedback.py` primitives) · `padding=14`
      (use `UIConstants.STATUS_BANNER_PADDING`) · `ft.Colors.RED_ACCENT` (use `ThemeColors.FIELD_ERROR`)
-     · `auth_modal` / `auth_card` (deleted — Login is a plain HUB `BaseView`).
+     · `auth_modal` / `auth_card` (deleted — Login is a plain `BaseView`, the same as Welcome).
 4. **Status quo:** auth, menu, profile, additional-photos, discover, chat, matches,
    the read-only peer profile, the cold-boot spinner, and the router error view all
-   comply and share the single shell.
+   comply and share the single card frame.

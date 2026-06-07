@@ -60,7 +60,7 @@ from components.typography import create_screen_heading
 from components.error_card import create_error_card
 from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile
-from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
+from utils.constants import UIConstants, ThemeColors, AssetPaths
 
 log = logging.getLogger(__name__)
 
@@ -99,14 +99,17 @@ class PeerPhotosView(BaseView):
     #  Layout (static only — build() must never throw)
     # ============================================================
 
+    EXPAND_BODY = True                        # long photo album → fill the viewport
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # _photos_column owns the scroll
 
     def get_content(self) -> list[ui.UIComponent]:
         # Static skeleton only — build() must never throw. The heading and the
         # album column are mutated at runtime (_render_album / _show_error), so
         # both are PRE-BUILT and embedded via raw() (no get_header: the title is
-        # the dynamic peer name). STRETCH so each tile spans the card width; the
-        # column owns the single bounded scroll region (SELF_SCROLLING).
+        # the dynamic peer name — `create_screen_heading` already centres by
+        # default, matching the engine's universal "every header centres" rule).
+        # STRETCH so each tile spans the card width; the column owns the single
+        # bounded scroll region (SELF_SCROLLING).
         self._heading = create_screen_heading("תמונות נוספות")
         self._photos_column = ft.Column(
             controls=[],
@@ -303,7 +306,7 @@ class PeerPhotosView(BaseView):
         Defensive everywhere — the last line against a black screen."""
         try:
             self._heading.value = "תמונות נוספות"
-            self._photos_column.controls = [self._error_card(message)]
+            self._photos_column.controls = [create_error_card(message)]
             self.page.update()
         except Exception:  # noqa: BLE001 — even the fallback must never raise
             log.exception("PeerPhotos: failed to show error card")
@@ -335,11 +338,6 @@ class PeerPhotosView(BaseView):
                 ),
             ),
         )
-
-    @staticmethod
-    def _error_card(message: str) -> ft.Control:
-        """A styled, RTL error card shown inside the translucent shell (shared)."""
-        return create_error_card(message)
 
     # ============================================================
     #  Safe accessors — TOTAL (never raise)

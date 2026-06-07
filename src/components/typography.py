@@ -6,15 +6,21 @@ import flet as ft
 from utils.constants import TextSizes, ThemeColors
 
 
-def create_screen_heading(text: str, *, center: bool = False) -> ft.Text:
-    """The canonical screen title (H1).
+def create_screen_heading(text: str, *, center: bool = True) -> ft.Text:
+    """The canonical screen title (H1) — every screen's title centres (the one
+    heading rule, §1.5 of the Design System), so that is the default here too.
 
     Returns a plain `ft.Text` so callers that keep a reference and mutate its
-    `.value` later (the read-only peer screens) keep working unchanged.
+    `.value` later (the read-only peer screens, whose title is the dynamic peer
+    name and so is built directly rather than via `get_header`) keep working
+    unchanged — `BaseView` only re-stamps headers returned from `get_header()`,
+    so a raw-embedded title relies on this default to stay consistent.
 
     Args:
-        center: HUB / auth screens (Welcome, Login, Signup, Menu, placeholder)
-            centre the title; CONTENT screens use the RTL default — RIGHT.
+        center: pass `False` only for a right-aligned in-body heading that is
+            NOT the screen's title (e.g. an `ft.Text(size=TextSizes.H1, …)`
+            standing in for one inside a sub-section) — prefer
+            `create_section_heading` for that.
     """
     return ft.Text(
         text,

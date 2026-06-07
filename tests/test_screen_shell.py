@@ -4,10 +4,12 @@ Covers the three guarantees the engine makes, headlessly (no window):
 
   1. Fault tolerance — a failing `get_content`/`get_actions`/overlay degrades to
      the shared Error Component (or is dropped) instead of crashing the screen.
-  2. Responsiveness — the hub card width is centred + clamped to
+  2. Responsiveness — every screen's card width is centred + clamped to
      [CARD_MIN_WIDTH, CARD_MAX_WIDTH] (never stretches wide, fits when narrow).
-  3. Structure — HUB vs CONTENT produce their documented frames, and `BaseView`
-     wires the live resize clamp for HUB screens only.
+  3. Structure — every screen renders inside the SAME single card (Welcome/
+     Login's shape: header → content → actions, no separate action bar);
+     `EXPAND_BODY` only changes whether that card hugs its content or fills
+     the viewport and scrolls internally.
 
 These used to drive the now-absorbed `ScreenShell`; they now drive `BaseView`
 directly (the structural engine), asserting the SAME invariants.
@@ -30,8 +32,8 @@ from views._base import BaseView
 from views.common import renderer as ui
 from views.common.system_views import error_view
 from views.common.screen import (
-    ScreenType, BodyLayout, error_component, guard,
-    responsive_card_of, action_bar_of, clamp_hub_width, stress_report,
+    BodyLayout, error_component, guard,
+    responsive_card_of, clamp_hub_width, stress_report,
     DEFAULT_ERROR_MESSAGE,
 )
 from utils.constants import UIConstants
@@ -68,7 +70,7 @@ def _is_error_component(ctrl) -> bool:
 def _make_view(
     page,
     *,
-    screen_type=ScreenType.CONTENT,
+    expand_body=False,
     body=None,
     actions=(),
     banner=None,
@@ -93,7 +95,7 @@ def _make_view(
             return ui.raw(banner) if banner is not None else None
         def get_overlay(self):
             return ui.raw(overlay) if overlay is not None else None
-    _V.SCREEN_TYPE = screen_type
+    _V.EXPAND_BODY = expand_body
     _V.BODY_LAYOUT = body_layout
     return _V(page).build()
 
@@ -107,15 +109,16 @@ class TestFaultTolerance(unittest.TestCase):
         self.assertTrue(_is_error_component(guard(boom)))
 
     def test_failing_body_renders_error_component(self):
-        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT, fail_content=True)
+        view = _make_view(FakePage(), fail_content=True)
         card = view.controls[0].content.controls[0]
         self.assertTrue(_is_error_component(card.content.controls[0]))
 
     def test_failing_actions_degrade_to_none(self):
-        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT,
-                          body=ft.Text("ok"), fail_actions=True)
-        box = action_bar_of(view)
-        self.assertEqual(box.content.controls, [])
+        view = _make_view(FakePage(), body=ft.Text("ok"), fail_actions=True)
+        card = responsive_card_of(view)
+        # actions render inline at the card's tail — a failure degrades to []
+        # and the body is the card's only content control.
+        self.assertEqual(len(card.content.controls), 1)
 
     def test_baseview_get_content_failure_returns_error_view(self):
         class Broken(BaseView):
@@ -125,7 +128,7 @@ class TestFaultTolerance(unittest.TestCase):
         card = view.controls[0].content.controls[0]
         self.assertTrue(_is_error_component(card.content.controls[0]))
 
-    def test_error_view_is_a_hub_view(self):
+    def test_error_view_is_centred_in_the_compact_frame(self):
         view = error_view(FakePage(), route="/error")
         self.assertEqual(view.route, "/error")
         centered = view.controls[0].content
@@ -147,43 +150,50 @@ class TestResponsiveness(unittest.TestCase):
             self.assertTrue(row["fits"], row)           # never wider than window
             self.assertTrue(row["centered"], row)
 
-    def test_baseview_applies_clamp_to_hub_card(self):
-        class Hub(BaseView):
-            ROUTE = "/hub"; SCREEN_TYPE = ScreenType.HUB
+    def test_baseview_applies_clamp_to_card(self):
+        class V(BaseView):
+            ROUTE = "/v"
             def get_content(self): return [ui.raw(ft.Text("t"))]
         page = FakePage(width=320)
-        view_obj = Hub(page)
+        view_obj = V(page)
         view_obj.build()                      # captures the responsive card
         view_obj._apply_responsive()          # clamp against width=320
-        self.assertEqual(view_obj._hub_card.width, clamp_hub_width(320))
+        self.assertEqual(view_obj._card.width, clamp_hub_width(320))
         page.width = 1440
         view_obj._apply_responsive()
-        self.assertEqual(view_obj._hub_card.width, UIConstants.CARD_MAX_WIDTH)
+        self.assertEqual(view_obj._card.width, UIConstants.CARD_MAX_WIDTH)
 
 
 # --------------------------------------------------------------------------
-# 3. Structure — HUB vs CONTENT
+# 3. Structure — ONE card for every screen, sized by EXPAND_BODY
 # --------------------------------------------------------------------------
-class TestScreenTypeStructure(unittest.TestCase):
-    def test_hub_stacks_body_and_actions_in_one_card(self):
-        view = _make_view(FakePage(), screen_type=ScreenType.HUB,
-                          body=ft.Text("title"),
+class TestCardFrameStructure(unittest.TestCase):
+    """`EXPAND_BODY` only changes whether the SAME card hugs its content
+    (compact, centred — Welcome/Login's shape) or fills the viewport and
+    scrolls internally (expand — chat/matches/photo albums). Either way:
+    one card, header → content → actions stacked inline, no separate bar."""
+
+    def test_compact_card_stacks_body_and_actions_inline(self):
+        view = _make_view(FakePage(), body=ft.Text("title"),
                           actions=[ft.Container(width=400, height=70)])
         card = responsive_card_of(view)
-        self.assertIsNotNone(card)                       # HUB has a responsive card
-        self.assertEqual(len(card.content.controls), 2)  # body column + 1 action
+        self.assertIsNotNone(card)                       # has a responsive card
+        self.assertEqual(len(card.content.controls), 2)  # body + 1 action, no bar
         self.assertEqual(view.controls[0].content.scroll, ft.ScrollMode.AUTO)
 
-    def test_content_has_action_bar_and_no_hub_card(self):
-        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT,
-                          body=ft.Text("b"),
-                          actions=[ft.Container(width=400, height=70)])
-        self.assertIsNone(responsive_card_of(view))      # CONTENT card is full-bleed
-        self.assertIsNotNone(action_bar_of(view))        # sticky animated bar exists
+    def test_expand_card_is_responsive_too_and_actions_render_inline(self):
+        action = ft.Container(width=400, height=70)
+        view = _make_view(FakePage(), expand_body=True,
+                          body=ft.ListView(expand=True), actions=[action],
+                          body_layout=BodyLayout.SELF_SCROLLING)
+        card = responsive_card_of(view)
+        self.assertIsNotNone(card)            # the resize clamp now applies universally
+        self.assertTrue(card.expand)          # fills the viewport, unlike a compact card
+        self.assertIn(action, card.content.controls)   # inline at the tail — no separate bar
 
-    def test_content_overlay_is_stacked(self):
+    def test_overlay_is_stacked_over_the_whole_frame(self):
         lightbox = ft.Container(visible=False)
-        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT,
+        view = _make_view(FakePage(), expand_body=True,
                           body=ft.ListView(expand=True), overlay=lightbox,
                           body_layout=BodyLayout.SELF_SCROLLING)
         content = view.controls[0].content

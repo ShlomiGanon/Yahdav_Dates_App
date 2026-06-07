@@ -105,6 +105,8 @@ _MAX_AGE_YEARS = 100
 class MyProfileView(BaseView):
     ROUTE = "/profile/me"
 
+    EXPAND_BODY = True   # long profile form → fill the viewport, scroll internally
+
     # Session-store keys holding the currently logged-in user's identity.
     # Written by login_view on success; read here; cleared on logout.
     # Centralising the strings avoids silent typo drift across files.
@@ -150,7 +152,7 @@ class MyProfileView(BaseView):
     # ============================================================
 
     def get_header(self) -> ui.UIComponent:
-        return ui.heading("הפרופיל שלי")            # CONTENT → right-aligned by the DS
+        return ui.heading("הפרופיל שלי")
 
     def _render_body(self) -> ft.Control:
         # Documented exception: this form's fixed-width (400px) fields are CENTRED

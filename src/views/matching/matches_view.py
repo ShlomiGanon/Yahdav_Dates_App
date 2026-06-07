@@ -34,10 +34,9 @@ from views.common.load_flow import run_guarded_load, LoadGuard
 from components.feedback import create_status_banner, show_status
 from style.design_system import DS
 from components.avatars import create_initial_avatar, create_unread_badge
-from components.cards import create_tile_card
+from components.cards import create_member_row_card
 from services.i_messaging_service import IMessagingService
 from services.i_profile_repository import IProfileRepository
-from utils.constants import TextSizes, UIConstants, ThemeColors
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +72,7 @@ class MatchesView(BaseView):
     #  Layout
     # ============================================================
 
+    EXPAND_BODY = True                        # long thread list → fill the viewport
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
     def get_header(self) -> ui.UIComponent:
@@ -186,55 +186,19 @@ class MatchesView(BaseView):
     # ============================================================
 
     def _thread_row(self, self_id: str, t: dict) -> ft.Control:
+        # Same member-row layout as the Discover feed (`create_member_row_card`,
+        # also used by `create_candidate_tile`) — avatar far right, name+preview
+        # filling the middle, an optional unread badge as the trailing (far-left)
+        # control. One shared definition keeps both lists looking identical.
         avatar = create_initial_avatar(t["name"], diameter=DS.sizing.avatar_sm)
-
-        # Details fill the space between avatar (right) and badge (left); STRETCH
-        # + text_align=RIGHT pins the two lines to the right, beside the avatar.
-        details = ft.Column(
-            controls=[
-                ft.Text(
-                    t["name"],
-                    size=TextSizes.INPUT,
-                    weight=ft.FontWeight.BOLD,
-                    color=ThemeColors.TEXT_MAIN,
-                    rtl=True,
-                    text_align=ft.TextAlign.RIGHT,
-                    max_lines=1,
-                    overflow=ft.TextOverflow.ELLIPSIS,
-                ),
-                ft.Text(
-                    self._preview(self_id, t),
-                    size=TextSizes.BODY,
-                    color=ThemeColors.SECONDARY,
-                    rtl=True,
-                    text_align=ft.TextAlign.RIGHT,
-                    max_lines=1,
-                    overflow=ft.TextOverflow.ELLIPSIS,
-                ),
-            ],
-            spacing=DS.spacing.xxs,
-            expand=True,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-            alignment=ft.MainAxisAlignment.CENTER,
-        )
-
-        # RTL-native order: first child = rightmost. So [avatar, details, badge]
-        # → avatar FAR RIGHT, details fill the middle, badge FAR LEFT.
-        controls: list[ft.Control] = [avatar, details]
-        if t["unread"] > 0:
-            controls.append(create_unread_badge(t["unread"]))
-
-        row = ft.Row(
-            controls=controls,
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=DS.spacing.md,
-        )
-
-        # Full-width card (fills the ListView) so it never floats left.
-        return create_tile_card(
-            row,
-            height=self._CARD_HEIGHT,
+        badge = create_unread_badge(t["unread"]) if t["unread"] > 0 else None
+        return create_member_row_card(
+            avatar,
+            t["name"],
+            self._preview(self_id, t),
             on_click=lambda _e, pid=t["peer_id"]: self._open_chat(pid),
+            height=self._CARD_HEIGHT,
+            trailing=badge,
         )
 
     def _preview(self, self_id: str, t: dict) -> str:
