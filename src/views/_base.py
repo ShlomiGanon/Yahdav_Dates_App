@@ -1,14 +1,27 @@
-"""BaseView — the common lifecycle + navigation-stack contract for every screen.
+"""BaseView — the Template-Method ENGINE: the single home for the structural
+rendering of every screen, plus the navigation-stack lifecycle contract.
 
-Under the navigation-stack migration the router keeps multiple views ALIVE in
-`page.views` (a real push/pop stack), so a view needs:
+`BaseView.build()` is the template method (screens never override it). It owns the
+whole frame — the full-screen background + RTL, the translucent card, the HUB-vs-
+CONTENT layout, the sticky animated action bar, and the overlay Stack — pulling
+every layout value from the Design System (`style/design_system.py`). A screen is
+PURE CONFIGURATION: it provides only *content* via the interface below
+(`get_header`/`get_content`/`get_actions`/…), never layout.
 
-  * a per-instance identity (`INSTANCE_ID`) — two stacked views can share a
-    `ROUTE` (e.g. two peer profiles), so route-string checks are ambiguous;
-  * explicit lifecycle hooks the router drives — `did_mount`/`will_unmount` only
-    fire on attach/detach, NOT when a view is merely *covered* by another, so
-    cover/reveal must be signalled by the router;
-  * an owned background-task handle so a popped view's load can be cancelled.
+(Absorbed: the structural composition that used to live in `views/common/screen.py`'s
+`ScreenShell`/`_hub_root`/`_content_root`/`_action_region` now lives here as the
+`_compose_frame`/`_hub_root`/`_content_root`/`_action_region` methods. `screen.py`
+keeps only the low-level primitives the engine composes.)
+
+Navigation-stack lifecycle (unchanged): the router keeps multiple views ALIVE in
+`page.views`, so a view needs a per-instance identity (`INSTANCE_ID`), explicit
+lifecycle hooks the router drives, and an owned background-task handle so a popped
+view's load can be cancelled.
+
+Transition note: during the per-screen migration, a screen may still provide a
+legacy `get_view_schema()` (a `ViewContent`); `build()` renders that directly. New
+screens implement `get_header`/`get_content`/`get_actions` and `BaseView` wraps the
+content in the standardized DS-spaced body itself.
 """
 from __future__ import annotations
 
@@ -18,32 +31,37 @@ from concurrent.futures import Future
 
 import flet as ft
 
+from views.common import renderer as ui
 from views.common.screen import (
-    ScreenShell, ScreenType, BodyLayout, responsive_card_of, clamp_hub_width,
+    ScreenType, BodyLayout,
+    background_screen, translucent_card, responsive_card, responsive_card_of,
+    clamp_hub_width, action_bar_height, _center_fixed_width, ACTION_BAR_ANIM,
+    _BUTTONS_BOX_TAG, guard,
 )
+from style.design_system import DS
 
 log = logging.getLogger(__name__)
 
+# One stateless renderer shared by every view — it holds no per-instance state.
+_RENDERER = ui.ViewRenderer()
+
 
 class BaseView:
-    """Page wrapper. Subclasses declare exactly which service interfaces they
-    need via their own __init__, so each view depends on the smallest possible
-    surface area (Interface Segregation)."""
+    """Page wrapper + structural engine. Subclasses declare exactly which service
+    interfaces they need via their own __init__ (Interface Segregation) and supply
+    only content; `BaseView` owns all layout."""
 
     # Subclasses override with their own route string (e.g. "/discover/profile").
     ROUTE: str = ""
-    # A screen DECLARES its frame and scroll intent; the framework does the rest.
+    # A screen DECLARES its frame and scroll intent; the engine does the rest.
     SCREEN_TYPE: ScreenType = ScreenType.CONTENT
     BODY_LAYOUT: BodyLayout = BodyLayout.SCROLLING
 
     def __init__(self, page: ft.Page) -> None:
         self.page = page
-        # Per-instance identity — disambiguates two stacked views that share a
-        # ROUTE (the route-string ambiguity the migration assessment flagged).
+        # Per-instance identity — disambiguates two stacked views that share a ROUTE.
         self.INSTANCE_ID: str = uuid.uuid4().hex
-        # Owned handle to the background load task, so it can be cancelled on
-        # teardown instead of leaking as fire-and-forget. `page.run_task` returns
-        # a concurrent.futures.Future.
+        # Owned handle to the background load task (cancelled on teardown).
         self._load_task: Future | None = None
         # Responsive-hub plumbing: the live card to re-clamp on resize (None for
         # CONTENT screens) and the prior page resize handler to restore on pop.
@@ -51,59 +69,216 @@ class BaseView:
         self._prev_on_resized = None
 
     # ============================================================
-    #  The Interface — a screen PROVIDES these; it never writes build()
+    #  The Interface — a screen PROVIDES content; it never writes build()
     # ============================================================
 
-    def get_body(self) -> ft.Control:
-        """REQUIRED. Compose and return the screen's content as ONE control.
-        The view owns the internal arrangement; the Shell positions it."""
-        raise NotImplementedError(
-            f"{type(self).__name__} must implement get_body()"
-        )
-
-    def get_actions(self) -> list[ft.Control]:
-        """The screen's buttons in display order. CONTENT → the sticky animated
-        bar; HUB → stacked inside the card. Default: none."""
-        return []
-
-    def get_status_banner(self) -> ft.Control | None:
-        """CONTENT-only inline banner (save/error/empty feedback) shown above the
-        buttons. Default: none."""
+    def get_header(self) -> "ui.UIComponent | None":
+        """The screen's title CONTENT (e.g. `ui.heading("…")`). The engine styles
+        and positions it (DS heading alignment by SCREEN_TYPE, as the body's first
+        slot). Default: no header."""
         return None
 
-    def get_overlay(self) -> ft.Control | None:
-        """CONTENT-only fullscreen layer (e.g. a lightbox) the Shell stacks over
-        the content. Default: none."""
+    def get_content(self) -> "list[ui.UIComponent]":
+        """REQUIRED for new-style screens. The body CONTENT as a flat list of
+        `UIComponent` nodes — NO spacing/alignment/wrapping (the engine owns those)."""
+        raise NotImplementedError(
+            f"{type(self).__name__} must implement get_content() or get_view_schema()"
+        )
+
+    def get_actions(self) -> "list[ui.UIComponent]":
+        """The screen's action buttons in display order. Default: none."""
+        return []
+
+    def get_status_banner(self) -> "ui.UIComponent | None":
+        """CONTENT-only inline banner (save/error/empty feedback). Default: none."""
+        return None
+
+    def get_overlay(self) -> "ui.UIComponent | None":
+        """CONTENT-only fullscreen layer (e.g. a lightbox). Default: none."""
         return None
 
     def get_services(self) -> list[ft.Control]:
-        """Flet services to attach to the View (e.g. an `ft.FilePicker`), mounted
-        and discarded with the view. Default: none."""
+        """Flet services to attach to the View (e.g. an `ft.FilePicker`). Default: none."""
         return []
 
+    # ---- legacy seam (removed as each screen migrates to get_content) ----
+    def get_view_schema(self) -> "ui.ViewContent | None":
+        """Transitional: a not-yet-migrated screen returns its whole UI as a
+        `ViewContent`; `build()` renders it directly. New screens return None
+        (default) and implement `get_header`/`get_content`/`get_actions`."""
+        return None
+
     # ============================================================
-    #  The framework — a CONCRETE template (screens don't override build)
+    #  The ENGINE — the Template Method (screens NEVER override build)
     # ============================================================
 
     def build(self) -> ft.View:
-        """Orchestrate the screen from its `get_*` providers: hand them (as
-        builders, so the Shell's `guard` catches any failure) to `ScreenShell`,
-        attach services, capture the responsive hub card, and bind lifecycle.
-        Screens never override this — they implement the interface above."""
-        view = ScreenShell(
-            self.ROUTE,
-            body=self.get_body,
-            actions=self.get_actions,
-            status_banner=self.get_status_banner,
-            overlay=self.get_overlay,
-            screen_type=self.SCREEN_TYPE,
-            body_layout=self.BODY_LAYOUT,
-        )
-        for service in self.get_services():
+        """Compose the screen: resolve content → standardized DS-spaced body →
+        the HUB/CONTENT frame → the background+RTL `ft.View`, then attach services,
+        capture the responsive hub card, and bind lifecycle."""
+        body, actions, banner, overlay, services = self._resolve_regions()
+        root = self._compose_frame(body, actions, banner, overlay)
+        view = self._assemble(root)
+        for service in services:
             view.services.append(service)
         # HUB views get a responsive card to re-clamp on resize; CONTENT → None.
         self._hub_card = responsive_card_of(view)
         return self._bind_lifecycle(view)
+
+    # ---- content resolution (legacy ViewContent OR the new node interface) ----
+
+    def _resolve_regions(self):
+        """Return (body, actions, banner, overlay, services) as built controls.
+
+        Fault-isolated to preserve the component ring of the two-layer backstop: a
+        failing `get_content`/`get_header` degrades the body to the Error Component;
+        a failing `get_actions`/banner/overlay/services degrades to none — `build()`
+        never raises (only the body failure is visible, as before)."""
+        schema = self.get_view_schema()
+        if schema is not None:                                   # legacy path
+            rv = _RENDERER.render_content(schema)
+            return rv.body, rv.actions, rv.status_banner, rv.overlay, rv.services
+        # New path — the engine builds the standardized body from pure content.
+        body = guard(self._render_body)                          # → Error Component on failure
+        actions = self._safe(lambda: _RENDERER.render_all(self.get_actions()), [])
+        banner = self._safe(lambda: self._render_node(self.get_status_banner()), None)
+        overlay = self._safe(lambda: self._render_node(self.get_overlay()), None)
+        services = self._safe(lambda: list(self.get_services()), [])
+        return body, actions, banner, overlay, services
+
+    @staticmethod
+    def _safe(fn, fallback):
+        """Run a non-essential region builder; degrade to `fallback` on failure
+        (body is the only fatal region, and it shows the Error Component)."""
+        try:
+            return fn()
+        except Exception:  # noqa: BLE001 — a region failure must degrade, not crash
+            log.exception("BaseView: region build failed; degrading")
+            return fallback
+
+    def _render_node(self, node: "ui.UIComponent | None") -> ft.Control | None:
+        return _RENDERER.render(node) if node is not None else None
+
+    def _render_body(self) -> ft.Control:
+        """The standardized body column: the DS-styled header (if any) as the first
+        slot, then the content nodes — one DS spacing/alignment for ALL screens."""
+        children: list[ft.Control] = []
+        header = self.get_header()
+        if header is not None:
+            children.append(self._render_header(header))
+        children.extend(_RENDERER.render_all(self.get_content()))
+        return ft.Column(
+            controls=children,
+            spacing=DS.body.spacing,
+            horizontal_alignment=DS.body.cross_align,
+            expand=(self.BODY_LAYOUT is BodyLayout.SELF_SCROLLING),
+        )
+
+    def _render_header(self, node: "ui.UIComponent") -> ft.Control:
+        """Render the header, RE-STAMPING its alignment from the DS by SCREEN_TYPE
+        (HUB centres, CONTENT right-aligns) so the screen never picks it."""
+        if node.kind is ui.Kind.HEADING:
+            node = ui.heading(node.text, center=self._heading_centered())
+        return _RENDERER.render(node)
+
+    def _heading_centered(self) -> bool:
+        align = (DS.body.hub_heading_align if self.SCREEN_TYPE is ScreenType.HUB
+                 else DS.body.content_heading_align)
+        return align is ft.TextAlign.CENTER
+
+    # ============================================================
+    #  The FRAME — absorbed structural composition (was ScreenShell)
+    # ============================================================
+
+    def _compose_frame(self, body, actions, banner, overlay) -> ft.Control:
+        if self.SCREEN_TYPE is ScreenType.HUB:
+            return self._hub_root(body, actions)
+        return self._content_root(body, actions, banner, overlay)
+
+    def _hub_root(self, body: ft.Control, actions: list[ft.Control]) -> ft.Control:
+        """HUB frame: ONE centered, max-width card with body AND actions stacked
+        inside it — the shared auth/menu baseline. The card column STRETCHes; the
+        centred column AUTO-scrolls so a tall form scrolls instead of clipping."""
+        card_content = ft.Column(
+            controls=[body, *actions],
+            tight=True,
+            spacing=DS.spacing.element,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
+        card = responsive_card(card_content)
+        return ft.Column(
+            controls=[card],
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+            alignment=ft.MainAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+    def _content_root(self, body, actions, banner, overlay) -> ft.Control:
+        """CONTENT frame: a scrollable body card OVER a sticky, animated action bar
+        (+ optional fullscreen overlay)."""
+        if self.BODY_LAYOUT is BodyLayout.SELF_SCROLLING:
+            card_inner: ft.Control = body          # body owns its own scroll (ListView)
+        else:
+            card_inner = ft.Column(
+                controls=[body],
+                expand=True,
+                scroll=ft.ScrollMode.AUTO,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            )
+        card = translucent_card(
+            card_inner,
+            expand=True,
+            margin=DS.pad.content_margin,
+            padding=DS.pad.content_card_tall,      # canonical top-logo clearance
+        )
+        region = self._action_region(actions, banner)
+        layout = ft.Column(
+            controls=[card, region],
+            expand=True,
+            spacing=DS.spacing.none,        # card and action bar sit flush
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+        if overlay is not None:
+            return ft.Stack(controls=[layout, overlay], expand=True)
+        return layout
+
+    def _action_region(self, actions, banner) -> ft.Container:
+        """The sticky bottom region: an optional auto-sized status banner stacked
+        above the animated Buttons Area, on a transparent bar."""
+        column_controls: list[ft.Control] = []
+        if banner is not None:
+            column_controls.append(banner)
+        column_controls.append(self._animated_buttons_box(actions))
+        return ft.Container(
+            bgcolor=ft.Colors.TRANSPARENT,
+            padding=DS.pad.action_bar,
+            content=ft.Column(
+                controls=column_controls,
+                tight=True,
+                spacing=DS.spacing.bar,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            ),
+        )
+
+    def _animated_buttons_box(self, actions: list[ft.Control]) -> ft.Container:
+        """The persistent, height-animated Buttons Area (so `set_actions` can tween
+        a height change at runtime). Tagged for `action_bar_of`/`set_actions`."""
+        return ft.Container(
+            data=_BUTTONS_BOX_TAG,
+            height=action_bar_height(actions),
+            animate=ACTION_BAR_ANIM,
+            content=ft.Column(
+                controls=[_center_fixed_width(a) for a in actions],
+                tight=True,
+                spacing=DS.spacing.bar,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            ),
+        )
+
+    def _assemble(self, root: ft.Control) -> ft.View:
+        """Wrap the frame in the full-screen background image + RTL `ft.View`."""
+        return background_screen(self.ROUTE, root)
 
     # ============================================================
     #  Navigation-stack lifecycle wiring
@@ -113,10 +288,9 @@ class BaseView:
         """Wire a freshly-built `ft.View` into the stack lifecycle and return it.
 
         Sets a back-reference (`view.data = self`) so the router's view-pop
-        interceptor can reach this instance, and maps Flet's framework hooks to
-        the framework wrappers, which run the responsive wiring and THEN the
-        view-facing `on_mount`/`on_unmount` hooks (so subclasses still override
-        those normally, without calling super()).
+        interceptor can reach this instance, and maps Flet's framework hooks to the
+        framework wrappers, which run the responsive wiring and THEN the view-facing
+        `on_mount`/`on_unmount` hooks (so subclasses still override those normally).
         """
         view.data = self                              # back-ref for the router
         view.did_mount = self._framework_did_mount    # framework -> wrappers
@@ -124,8 +298,8 @@ class BaseView:
         return view
 
     def _framework_did_mount(self) -> None:
-        """Framework mount: start the live responsive clamp, then the view's
-        own `on_mount`. Guarded so a hook failure can't break the mount."""
+        """Framework mount: start the live responsive clamp, then the view's own
+        `on_mount`. Guarded so a hook failure can't break the mount."""
         self._attach_responsive()
         try:
             self.on_mount()
@@ -141,12 +315,11 @@ class BaseView:
     # ---- responsiveness (HUB cards only; CONTENT cards are full-bleed) ----
 
     def _attach_responsive(self) -> None:
-        """Install the page resize handler (saving any prior one so a pop
-        restores the parent's) and apply the initial clamp. No-op for CONTENT."""
+        """Install the page resize handler (saving any prior one so a pop restores
+        the parent's) and apply the initial clamp. No-op for CONTENT."""
         if self._hub_card is None:
             return
         try:
-            # Flet 0.84 exposes the page resize event as `on_resize`.
             self._prev_on_resized = self.page.on_resize
             self.page.on_resize = self._on_resized
             self._apply_responsive()
@@ -196,9 +369,9 @@ class BaseView:
         """HARD teardown — called by the router before a pop AND by Flet's
         will_unmount when the View leaves the tree. Cancels the owned load task.
 
-        Idempotent: safe to call more than once (explicit + framework). It does
-        NOT touch the loading overlay — cancelling the task raises CancelledError
-        at the load's `await`, whose `finally` balances the ref-counted overlay.
+        Idempotent: safe to call more than once. It does NOT touch the loading
+        overlay — cancelling the task raises CancelledError at the load's `await`,
+        whose `finally` balances the ref-counted overlay.
         """
         task = self._load_task
         self._load_task = None
@@ -210,8 +383,8 @@ class BaseView:
                           type(self).__name__)
 
     def on_pop(self) -> bool:
-        """The router gives the TOP view first refusal on a back/pop. Return True
-        to CONSUME the pop in-view (e.g. close a fullscreen lightbox); return
+        """The router gives the TOP view first refusal on a back/pop. Return True to
+        CONSUME the pop in-view (e.g. close a fullscreen lightbox); return
         False/None to let the router pop and unmount this view."""
         return False
 
@@ -230,14 +403,7 @@ class BaseView:
 
     def _is_live(self) -> bool:
         """True only if THIS instance is the active (top) view — the guard a
-        background task checks after an `await` before mutating the page.
-
-        Identity-based for stack-migrated views (those that called
-        `_bind_lifecycle`, so the top View carries a `data` back-reference);
-        falls back to the route string for views not yet migrated (top.data is
-        None). The fallback keeps un-migrated feeds rendering during the
-        incremental rollout and converges to pure identity as each view migrates.
-        """
+        background task checks after an `await` before mutating the page."""
         try:
             views = self.page.views
             if not views:

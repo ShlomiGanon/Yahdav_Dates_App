@@ -1,9 +1,6 @@
-import flet as ft
-
 from views._base import BaseView
 from views.common.screen import ScreenType
-from components.buttons import create_primary_button
-from components.typography import create_screen_heading
+from views.common import renderer as ui
 
 
 class WelcomeView(BaseView):
@@ -18,11 +15,14 @@ class WelcomeView(BaseView):
     ROUTE = "/auth/welcome"
     SCREEN_TYPE = ScreenType.HUB
 
-    def get_body(self) -> ft.Control:
-        return create_screen_heading("ברוכים הבאים ליחדיו", center=True)
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("ברוכים הבאים ליחדיו")   # engine centres it (HUB) via the DS
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_content(self) -> list[ui.UIComponent]:
+        return []                                   # landing screen: title + actions only
+
+    def get_actions(self) -> list[ui.UIComponent]:
         return [
-            create_primary_button("התחבר", lambda _: self.page.go("/auth/login")),
-            create_primary_button("הירשם", lambda _: self.page.go("/auth/signup")),
+            ui.primary_button("התחבר", lambda _: self.page.go("/auth/login")),
+            ui.primary_button("הירשם", lambda _: self.page.go("/auth/signup")),
         ]

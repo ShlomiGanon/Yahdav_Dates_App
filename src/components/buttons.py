@@ -4,6 +4,7 @@ geometry and only differ in their per-state colours, so the shell is defined onc
 in `_styled_button` and each public factory just supplies its palette."""
 import flet as ft
 import utils.constants as constants
+from style.design_system import DS
 
 
 def _styled_button(
@@ -50,7 +51,7 @@ def create_primary_button(text: str, on_click, width=constants.UIConstants.BUTTO
     return _styled_button(
         text, on_click, width=width, height=height, text_size=text_size,
         default_bg=constants.ThemeColors.PRIMARY,
-        hovered_bg=ft.Colors.with_opacity(0.8, constants.ThemeColors.PRIMARY),
+        hovered_bg=ft.Colors.with_opacity(DS.opacity.hover, constants.ThemeColors.PRIMARY),
         pressed_bg=constants.ThemeColors.SECONDARY,
     )
 
@@ -66,6 +67,19 @@ def create_secondary_button(text: str, on_click, width=constants.UIConstants.BUT
     return _styled_button(
         text, on_click, width=width, height=height, text_size=text_size,
         default_bg=constants.ThemeColors.SECONDARY,
-        hovered_bg=ft.Colors.with_opacity(0.85, constants.ThemeColors.SECONDARY),
+        hovered_bg=ft.Colors.with_opacity(DS.opacity.hover_alt, constants.ThemeColors.SECONDARY),
         pressed_bg=constants.ThemeColors.TEXT_MAIN,
     )
+
+
+def create_button(text: str, on_click, *, primary: bool = True) -> ft.Button:
+    """Public 'button' factory (requested API). `primary=True` → the brand-red
+    constructive button (e.g. Save); `primary=False` → the blue-grey secondary
+    (e.g. Cancel / exit). Delegates to the canonical primary/secondary factories.
+
+    The action-hierarchy design rule (constructive = red, exit/nav = blue-grey)
+    FORBIDS Save and Cancel looking identical, so the bare 2-arg
+    `create_button(text, on_click)` defaults to primary and the secondary variant
+    is selected explicitly with `primary=False`."""
+    factory = create_primary_button if primary else create_secondary_button
+    return factory(text, on_click)

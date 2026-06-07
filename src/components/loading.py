@@ -29,16 +29,18 @@ import threading
 
 import flet as ft
 
+from style.design_system import DS
+
 # Persistent overlay instance — one shared blocking scrim for the whole app.
 _loading_overlay = ft.Container(
     content=ft.ProgressRing(
-        width=50,                 # Size of the ring
-        height=50,                # Size of the ring
-        stroke_width=10,          # Thickness of the line
-        color=ft.Colors.WHITE,    # High contrast color
+        width=DS.sizing.loader,             # Size of the ring
+        height=DS.sizing.loader,            # Size of the ring
+        stroke_width=DS.sizing.loader_stroke,  # Thickness of the line
+        color=DS.palette.text_on_primary,   # High contrast (white)
     ),
     alignment=ft.Alignment(0, 0),
-    bgcolor="#88000000",          # Semi-transparent black
+    bgcolor=ft.Colors.with_opacity(DS.opacity.loader_scrim, ft.Colors.BLACK),
     expand=True,
 )
 

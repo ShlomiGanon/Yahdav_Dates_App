@@ -26,12 +26,13 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
+from views.common.screen import BodyLayout
+from views.common import renderer as ui
 from views.common.navigation import back_to_menu_button
 from views.common.render import build_items_safe
 from views.common.load_flow import run_guarded_load, LoadGuard
-from components.typography import create_screen_heading
 from components.feedback import create_status_banner, show_status
+from style.design_system import DS
 from components.avatars import create_initial_avatar, create_unread_badge
 from components.cards import create_tile_card
 from services.i_messaging_service import IMessagingService
@@ -53,7 +54,7 @@ class MatchesView(BaseView):
     _MENU_ROUTE  = "/menu"            # the top "back" button
     _DISCOVER_ROUTE = "/matching/discover"
 
-    _CARD_HEIGHT: int = UIConstants.BUTTON_HEIGHT + 16   # 86px row
+    _CARD_HEIGHT: int = DS.sizing.tile_h   # 86px row
     _PREVIEW_MAX_CHARS: int = 38
 
     def __init__(
@@ -74,28 +75,26 @@ class MatchesView(BaseView):
 
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
-    def get_body(self) -> ft.Control:
-        heading = create_screen_heading("היסטוריית שיחות")
-        # The scrolling thread list (cards fill width via the ListView); expand=True
-        # bounds it inside the card.
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("היסטוריית שיחות")
+
+    def get_content(self) -> list[ui.UIComponent]:
+        # The scrolling thread list is populated at runtime (_load), so it is
+        # PRE-BUILT and embedded via raw(); the engine expands the body (the
+        # ListView owns its scroll — SELF_SCROLLING).
         self._feed_list = ft.ListView(
             expand=True,
-            spacing=UIConstants.ELEMENT_SPACING,
-            padding=ft.Padding(0, 8, 0, 8),
+            spacing=DS.spacing.element,
+            padding=DS.pad.list_v,
         )
-        return ft.Column(
-            controls=[heading, self._feed_list],
-            expand=True,
-            spacing=CONTENT_BODY_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
+        return [ui.raw(self._feed_list)]
 
-    def get_actions(self) -> list[ft.Control]:
-        return [back_to_menu_button(self.page)]   # shared helper; UNWIND to /menu
+    def get_actions(self) -> list[ui.UIComponent]:
+        return [ui.raw(back_to_menu_button(self.page))]   # UNWIND to /menu
 
-    def get_status_banner(self) -> ft.Control:
+    def get_status_banner(self) -> ui.UIComponent:
         self._status_banner, self._status_text = create_status_banner()
-        return self._status_banner
+        return ui.raw(self._status_banner)
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned one-shot thread load.
@@ -187,7 +186,7 @@ class MatchesView(BaseView):
     # ============================================================
 
     def _thread_row(self, self_id: str, t: dict) -> ft.Control:
-        avatar = create_initial_avatar(t["name"], diameter=52)
+        avatar = create_initial_avatar(t["name"], diameter=DS.sizing.avatar_sm)
 
         # Details fill the space between avatar (right) and badge (left); STRETCH
         # + text_align=RIGHT pins the two lines to the right, beside the avatar.
@@ -213,7 +212,7 @@ class MatchesView(BaseView):
                     overflow=ft.TextOverflow.ELLIPSIS,
                 ),
             ],
-            spacing=2,
+            spacing=DS.spacing.xxs,
             expand=True,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
             alignment=ft.MainAxisAlignment.CENTER,
@@ -228,7 +227,7 @@ class MatchesView(BaseView):
         row = ft.Row(
             controls=controls,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=12,
+            spacing=DS.spacing.md,
         )
 
         # Full-width card (fills the ListView) so it never floats left.

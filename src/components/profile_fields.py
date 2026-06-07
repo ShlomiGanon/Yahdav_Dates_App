@@ -3,6 +3,7 @@ profile screen. Centralised so the label/value typography and the RTL recipe
 live in one place."""
 import flet as ft
 
+from style.design_system import DS
 from utils.constants import TextSizes, ThemeColors
 
 
@@ -32,6 +33,12 @@ def create_profile_field(label: str, value: str) -> ft.Control:
                 overflow=ft.TextOverflow.CLIP,
             ),
         ],
-        spacing=2,
+        spacing=DS.spacing.xxs,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
     )
+
+
+def create_text(label: str, value: str) -> ft.Control:
+    """Public 'text display' factory (requested API): a read-only label/value
+    block. Thin alias of `create_profile_field` so the styling stays single-sourced."""
+    return create_profile_field(label, value)

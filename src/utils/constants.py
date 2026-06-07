@@ -2,69 +2,70 @@ from enum import Enum
 from pathlib import Path
 import flet as ft
 
+# Single source of truth for ALL visual/structural layout tokens. The classes
+# below (TextSizes / UIConstants / ThemeColors) are now a thin BACK-COMPAT SHIM
+# that re-exports the design-system values under their legacy names, so the ~50
+# existing import sites keep working while the codebase migrates to reading `DS`
+# directly. Edit `src/style/design_system.py` (not here) to change the look.
+from style.design_system import DS
+
+
 class TextSizes:
-    H1 = 50        # Main welcome titles
-    H2 = 25        # Card titles
-    BUTTON = 40    # Button text
-    BODY = 16      # Standard labels
-    INPUT = 25     # Input text
-    SMALL = 13     # Descriptions or error messages
+    H1 = DS.type.h1        # Main welcome titles
+    H2 = DS.type.h2        # Card titles
+    BUTTON = DS.type.button    # Button text
+    BODY = DS.type.body      # Standard labels
+    INPUT = DS.type.input     # Input text
+    SMALL = DS.type.small     # Descriptions or error messages
 
 class UIConstants:
-    CARD_WIDTH = 400       # base hub-card width (before padding)
+    CARD_WIDTH = DS.sizing.card_w       # base hub-card width (before padding)
     # Hub-card responsive bounds. The centered hub card (Welcome/Login/Signup/
     # Menu) is width-CAPPED at CARD_MAX_WIDTH so it never stretches on a wide
     # window, and floored at CARD_MIN_WIDTH so it stays usable when narrow; the
-    # Shell clamps the live width to (window - 2*HUB_SIDE_MARGIN) between them.
-    CARD_MAX_WIDTH = 460   # = CARD_WIDTH (400) + 2 * CARD_PADDING (30)
-    CARD_MIN_WIDTH = 300
-    HUB_SIDE_MARGIN = 16
-    BUTTON_WIDTH = 400 # Buttons width
-    BUTTON_HEIGHT = 70 # Buttons height
-    INPUT_WIDTH = BUTTON_WIDTH # Inputs width
-    INPUT_HEIGHT = BUTTON_HEIGHT # Inputs height
-    CARD_PADDING = 30
-    ELEMENT_SPACING = 15
-    CORNER_RADIUS = 15
+    # engine clamps the live width to (window - 2*HUB_SIDE_MARGIN) between them.
+    CARD_MAX_WIDTH = DS.sizing.card_max   # = CARD_WIDTH (400) + 2 * CARD_PADDING (30)
+    CARD_MIN_WIDTH = DS.sizing.card_min
+    HUB_SIDE_MARGIN = DS.sizing.hub_margin
+    BUTTON_WIDTH = DS.sizing.button_w  # Buttons width
+    BUTTON_HEIGHT = DS.sizing.button_h # Buttons height
+    INPUT_WIDTH = DS.sizing.input_w    # Inputs width
+    INPUT_HEIGHT = DS.sizing.input_h   # Inputs height
+    CARD_PADDING = DS.pad.card
+    ELEMENT_SPACING = DS.spacing.element
+    CORNER_RADIUS = DS.radius.card
     # Shared implicit-animation duration (ms). Matches the 300ms button state
     # animation (components/buttons.py) so layout transitions feel of-a-piece.
-    # Used by the ScreenShell action bar's animate= (views/common/screen.py).
-    ANIM_MS = 300
+    # Used by the action bar's animate= (BaseView).
+    ANIM_MS = DS.motion.anim_ms
 
-    # --- Content-screen frame geometry (single source of truth) ---
-    # The scrollable card + sticky action bar layout used by every CONTENT
-    # screen. These live here (not in screen.py) so ALL spacing/sizing tokens
-    # have one home; screen.py re-exports them as module-level names for the
-    # views that import CONTENT_BODY_SPACING and for its own internal use.
-    CONTENT_CARD_MARGIN       = ft.Margin.only(left=12, top=12, right=12, bottom=8)
-    CONTENT_CARD_PADDING      = ft.Padding(20, 20, 20, 16)
+    # --- Content-screen frame geometry ---
+    CONTENT_CARD_MARGIN       = DS.pad.content_margin
+    CONTENT_CARD_PADDING      = DS.pad.content_card
     # A taller top padding for screens whose heading must clear the BG top logo
     # (the read-only peer profile and the peer photo album).
-    CONTENT_CARD_PADDING_TALL = ft.Padding(20, 40, 20, 16)
-    CONTENT_BODY_SPACING      = 14   # gap between body controls in the card
-    ACTION_BAR_PADDING        = ft.Padding(24, 12, 24, 20)  # sticky bar outer padding
-    ACTION_BAR_SPACING        = 10   # gap between action rows
+    CONTENT_CARD_PADDING_TALL = DS.pad.content_card_tall
+    CONTENT_BODY_SPACING      = DS.spacing.body   # gap between body controls in the card
+    ACTION_BAR_PADDING        = DS.pad.action_bar  # sticky bar outer padding
+    ACTION_BAR_SPACING        = DS.spacing.bar   # gap between action rows
 
     # --- Inline status banner (components/feedback.py) ---
-    STATUS_BANNER_PADDING = 14   # interior padding of the success/error banner
+    STATUS_BANNER_PADDING = DS.pad.status_banner   # interior padding of the success/error banner
 
     # --- Chat bubble (components/chat.py) ---
-    BUBBLE_PADDING = 12   # interior padding of a chat bubble
-    BUBBLE_RADIUS  = 16   # corner radius of a chat bubble
+    BUBBLE_PADDING = DS.pad.bubble   # interior padding of a chat bubble
+    BUBBLE_RADIUS  = DS.radius.bubble   # corner radius of a chat bubble
 
     # --- List tile (components/cards.py — discover/matches member rows) ---
-    LIST_TILE_PADDING = ft.Padding(16, 8, 16, 8)   # interior padding of a member card
+    LIST_TILE_PADDING = DS.pad.list_tile   # interior padding of a member card
 
     # --- My Profile view ---
-    # Translucency of the form card floating over the full-screen BG image:
-    # 0.0 = fully transparent, 1.0 = solid. Tuned so the artwork shows through
-    # while the inputs stay readable. Used as with_opacity(FORM_OVERLAY_OPACITY,
-    # ThemeColors.SURFACE).
-    FORM_OVERLAY_OPACITY = 0.5
+    # Translucency of the form card floating over the full-screen BG image.
+    FORM_OVERLAY_OPACITY = DS.opacity.form_overlay
     # Birth-date dropdown widths (day / month share one; year is a touch wider
     # for the 4-digit value). Their sum + row spacing stays within INPUT_WIDTH.
-    DOB_PART_WIDTH = 120   # day and month dropdowns
-    DOB_YEAR_WIDTH = 124   # year dropdown
+    DOB_PART_WIDTH = DS.sizing.dob_part_w   # day and month dropdowns
+    DOB_YEAR_WIDTH = DS.sizing.dob_year_w   # year dropdown
 
 
 class AssetPaths:
@@ -83,38 +84,32 @@ class AssetPaths:
     DEFAULT_PROFILE_IMAGE = "UNDEFINED_PROFILE.png"
 
 class ThemeColors:
+    """Back-compat shim — colours now live in `DS.palette` (design_system.py)."""
+
     # --- הליבה (The Core) ---
-    PRIMARY = ft.Colors.RED_900        # אדום כהה (הצבע של המותג)
-    SECONDARY = ft.Colors.BLUE_GREY_400 # אפור-כחלחל שמרגיע את האדום
-    
+    PRIMARY = DS.palette.primary
+    SECONDARY = DS.palette.secondary
+
     # --- מצבים (States) ---
-    SUCCESS = ft.Colors.GREEN_700      # ירוק עמוק
-    DANGER = ft.Colors.RED_400         # אדום בהיר יותר (להתראות, כדי שיבלוט מה-Primary)
-    WARNING = ft.Colors.AMBER_600      # כתום-צהוב
-    INFO = ft.Colors.BLUE_400          # כחול בהיר
-    # Per-field validation error text (components/feedback.py). A strong,
-    # high-contrast red — deliberately stronger than DANGER (RED_400) so a small
-    # inline label under an input stays legible for the 50+ audience.
-    FIELD_ERROR = ft.Colors.RED_ACCENT_700
-    
-    # --- ניטרליים (Crucial for Balance) ---
-    BACKGROUND = ft.Colors.GREY_50     # רקע כמעט לבן כדי לתת לאדום "לנשום"
-    SURFACE = ft.Colors.WHITE          # כרטיסים ואלמנטים צפים
-    TEXT_MAIN = ft.Colors.GREY_900     # כמעט שחור (קריא מאוד)
-    TEXT_ON_PRIMARY = ft.Colors.WHITE  # חובה: טקסט לבן על האדום הכהה
+    SUCCESS = DS.palette.success
+    DANGER = DS.palette.danger
+    WARNING = DS.palette.warning
+    INFO = DS.palette.info
+    FIELD_ERROR = DS.palette.field_error
+
+    # --- ניטרליים (Neutrals) ---
+    BACKGROUND = DS.palette.background
+    SURFACE = DS.palette.surface
+    TEXT_MAIN = DS.palette.text_main
+    TEXT_ON_PRIMARY = DS.palette.text_on_primary
 
     # --- נוכחות (Presence indicators) ---
-    # Deliberately NOT reusing SUCCESS (GREEN_700): the online dot is a tiny
-    # element on a white SURFACE, so it needs a brighter, higher-chroma green
-    # to read at a glance for the 50+ audience.
-    ONLINE  = ft.Colors.GREEN_ACCENT_400  # נקודת "מחובר/ת" — בולטת מול הרקע הלבן
-    OFFLINE = ft.Colors.GREY_400          # לא פעיל/ה כעת
+    ONLINE  = DS.palette.online
+    OFFLINE = DS.palette.offline
 
     # --- בועות צ'אט (Chat bubbles) ---
-    # Soft, high-contrast fills sized for the 50+ audience: my messages in a
-    # soft green on the right, the peer's in a soft grey on the left.
-    BUBBLE_SELF = ft.Colors.GREEN_100     # הודעות שלי (מימין)
-    BUBBLE_PEER = ft.Colors.GREY_200      # הודעות הצד השני (משמאל)
+    BUBBLE_SELF = DS.palette.bubble_self
+    BUBBLE_PEER = DS.palette.bubble_peer
 
 
 class DBConfig:

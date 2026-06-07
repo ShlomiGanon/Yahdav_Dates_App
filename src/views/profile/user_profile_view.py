@@ -38,14 +38,16 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import CONTENT_BODY_SPACING
+from views.common import renderer as ui
 from views.common.navigation import back_button
+from style.design_system import DS
 from views.common.photos import extra_photo_urls
 from components import loading
 from components.buttons import create_primary_button
 from components.typography import create_screen_heading
 from components.profile_fields import create_profile_field
 from components.avatars import create_photo_avatar
+from components.error_card import create_error_card
 from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
@@ -73,7 +75,7 @@ class UserProfileView(BaseView):
     SELECTED_PEER_ID_KEY = "selected_peer_id"
     _DISCOVER_ROUTE = "/matching/discover"
     _PEER_PHOTOS_ROUTE = "/discover/peer_photos"   # the album + lightbox screen
-    _AVATAR_DIAMETER = 104
+    _AVATAR_DIAMETER = DS.sizing.avatar_lg
 
     def __init__(
         self,
@@ -97,14 +99,17 @@ class UserProfileView(BaseView):
     #  Layout (static only — build() must never throw)
     # ============================================================
 
-    def get_body(self) -> ft.Control:
-        # Avatar + heading + fields, STRETCH/RIGHT-aligned so a long bio wraps and
-        # scrolls and can never overflow the render tree.
+    def get_content(self) -> list[ui.UIComponent]:
+        # Static skeleton only — build() must never throw. Avatar + heading +
+        # fields are STRETCH/RIGHT-aligned so a long bio wraps and scrolls and can
+        # never overflow the render tree. Every region control is mutated at
+        # runtime by _render_profile / _show_error_card, so each is PRE-BUILT and
+        # embedded via raw() (no get_header: the title is the dynamic peer name).
         self._heading = create_screen_heading("")
         self._avatar_slot = ft.Container(alignment=ft.Alignment(0, 0))
         self._content = ft.Column(
             controls=[],
-            spacing=14,
+            spacing=DS.spacing.body,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
         # Primary action — "view more photos". Hidden until load confirms the
@@ -116,19 +121,17 @@ class UserProfileView(BaseView):
             text_size=TextSizes.INPUT,   # the label is long → step down from BUTTON
         )
         self._album_button.visible = False
-        return ft.Column(
-            controls=[self._avatar_slot, self._heading, self._content],
-            spacing=CONTENT_BODY_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
+        return [ui.raw(self._avatar_slot), ui.raw(self._heading),
+                ui.raw(self._content)]
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_actions(self) -> list[ui.UIComponent]:
         # The album button (shown only when the peer has extras) above "חזור",
         # which is ALWAYS present (so an error card is never a dead end) and
         # STACK-AWARE: it pops one level — to Discover, the only entry point.
         return [
-            self._album_button,
-            back_button(self.page, label="חזור", fallback=self._DISCOVER_ROUTE),
+            ui.raw(self._album_button),
+            ui.raw(back_button(self.page, label="חזור",
+                               fallback=self._DISCOVER_ROUTE)),
         ]
 
     # ============================================================
@@ -291,29 +294,8 @@ class UserProfileView(BaseView):
 
     @staticmethod
     def _error_card(message: str) -> ft.Control:
-        """A styled, RTL error card shown inside the translucent shell."""
-        return ft.Container(
-            bgcolor=ft.Colors.with_opacity(0.12, ThemeColors.DANGER),
-            border_radius=UIConstants.CORNER_RADIUS,
-            padding=24,
-            content=ft.Column(
-                controls=[
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color=ThemeColors.DANGER),
-                    ft.Text(
-                        message, size=TextSizes.INPUT, weight=ft.FontWeight.W_600,
-                        color=ThemeColors.TEXT_MAIN, rtl=True,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                    ft.Text(
-                        "אפשר לחזור ולנסות שוב.", size=TextSizes.BODY,
-                        color=ThemeColors.TEXT_MAIN, rtl=True,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                ],
-                spacing=12,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
+        """A styled, RTL error card shown inside the translucent shell (shared)."""
+        return create_error_card(message)
 
     # ============================================================
     #  Safe accessors — TOTAL (never raise); the heart of the fix

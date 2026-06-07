@@ -1,13 +1,16 @@
-"""Framework tests for the Interface-First UI shell.
+"""Framework tests for the Template-Method engine (BaseView).
 
-Covers the three guarantees the framework makes, headlessly (no window):
+Covers the three guarantees the engine makes, headlessly (no window):
 
-  1. Fault tolerance — a failing `get_body`/`get_actions`/overlay degrades to the
-     shared Error Component (or is dropped) instead of crashing the screen.
+  1. Fault tolerance — a failing `get_content`/`get_actions`/overlay degrades to
+     the shared Error Component (or is dropped) instead of crashing the screen.
   2. Responsiveness — the hub card width is centred + clamped to
      [CARD_MIN_WIDTH, CARD_MAX_WIDTH] (never stretches wide, fits when narrow).
   3. Structure — HUB vs CONTENT produce their documented frames, and `BaseView`
      wires the live resize clamp for HUB screens only.
+
+These used to drive the now-absorbed `ScreenShell`; they now drive `BaseView`
+directly (the structural engine), asserting the SAME invariants.
 
 Run:  python -m unittest tests.test_screen_shell      # from repo root
 """
@@ -24,8 +27,10 @@ if str(_SRC) not in sys.path:
 import flet as ft
 
 from views._base import BaseView
+from views.common import renderer as ui
+from views.common.system_views import error_view
 from views.common.screen import (
-    ScreenShell, ScreenType, BodyLayout, error_component, guard, error_screen,
+    ScreenType, BodyLayout, error_component, guard,
     responsive_card_of, action_bar_of, clamp_hub_width, stress_report,
     DEFAULT_ERROR_MESSAGE,
 )
@@ -60,6 +65,39 @@ def _is_error_component(ctrl) -> bool:
     )
 
 
+def _make_view(
+    page,
+    *,
+    screen_type=ScreenType.CONTENT,
+    body=None,
+    actions=(),
+    banner=None,
+    overlay=None,
+    body_layout=BodyLayout.SCROLLING,
+    fail_content=False,
+    fail_actions=False,
+):
+    """Build a BaseView with the given content/actions/banner/overlay via the new
+    content interface — the headless way to exercise the engine's frame."""
+    class _V(BaseView):
+        ROUTE = "/x"
+        def get_content(self):
+            if fail_content:
+                raise RuntimeError("content blew up")
+            return [ui.raw(body)] if body is not None else []
+        def get_actions(self):
+            if fail_actions:
+                raise RuntimeError("actions blew up")
+            return [ui.raw(a) for a in actions]
+        def get_status_banner(self):
+            return ui.raw(banner) if banner is not None else None
+        def get_overlay(self):
+            return ui.raw(overlay) if overlay is not None else None
+    _V.SCREEN_TYPE = screen_type
+    _V.BODY_LAYOUT = body_layout
+    return _V(page).build()
+
+
 # --------------------------------------------------------------------------
 # 1. Fault tolerance
 # --------------------------------------------------------------------------
@@ -68,33 +106,27 @@ class TestFaultTolerance(unittest.TestCase):
         def boom(): raise ValueError("x")
         self.assertTrue(_is_error_component(guard(boom)))
 
-    def test_failing_body_builder_renders_error_component(self):
-        def boom(): raise RuntimeError("body blew up")
-        view = ScreenShell("/x", body=boom, actions=[],
-                           screen_type=ScreenType.CONTENT)
-        # CONTENT: card -> scroll column -> [error_component]
+    def test_failing_body_renders_error_component(self):
+        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT, fail_content=True)
         card = view.controls[0].content.controls[0]
         self.assertTrue(_is_error_component(card.content.controls[0]))
 
-    def test_failing_actions_builder_degrades_to_none(self):
-        def boom(): raise RuntimeError("actions blew up")
-        # Should NOT raise; the body still renders, the bar has no buttons.
-        view = ScreenShell("/x", body=ft.Text("ok"), actions=boom,
-                           screen_type=ScreenType.CONTENT)
+    def test_failing_actions_degrade_to_none(self):
+        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT,
+                          body=ft.Text("ok"), fail_actions=True)
         box = action_bar_of(view)
         self.assertEqual(box.content.controls, [])
 
-    def test_baseview_get_body_failure_returns_error_view(self):
+    def test_baseview_get_content_failure_returns_error_view(self):
         class Broken(BaseView):
             ROUTE = "/broken"
-            def get_body(self): raise RuntimeError("boom")
-        # build() must NOT raise — it returns a view showing the Error Component.
-        view = Broken(FakePage()).build()
+            def get_content(self): raise RuntimeError("boom")
+        view = Broken(FakePage()).build()       # must NOT raise
         card = view.controls[0].content.controls[0]
         self.assertTrue(_is_error_component(card.content.controls[0]))
 
-    def test_error_screen_is_a_hub_view(self):
-        view = error_screen("/error")
+    def test_error_view_is_a_hub_view(self):
+        view = error_view(FakePage(), route="/error")
         self.assertEqual(view.route, "/error")
         centered = view.controls[0].content
         self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
@@ -118,7 +150,7 @@ class TestResponsiveness(unittest.TestCase):
     def test_baseview_applies_clamp_to_hub_card(self):
         class Hub(BaseView):
             ROUTE = "/hub"; SCREEN_TYPE = ScreenType.HUB
-            def get_body(self): return ft.Text("t")
+            def get_content(self): return [ui.raw(ft.Text("t"))]
         page = FakePage(width=320)
         view_obj = Hub(page)
         view_obj.build()                      # captures the responsive card
@@ -134,40 +166,29 @@ class TestResponsiveness(unittest.TestCase):
 # --------------------------------------------------------------------------
 class TestScreenTypeStructure(unittest.TestCase):
     def test_hub_stacks_body_and_actions_in_one_card(self):
-        view = ScreenShell(
-            "/auth/login",
-            body=ft.Text("title"),
-            actions=[ft.Container(width=400, height=70)],
-            screen_type=ScreenType.HUB,
-        )
+        view = _make_view(FakePage(), screen_type=ScreenType.HUB,
+                          body=ft.Text("title"),
+                          actions=[ft.Container(width=400, height=70)])
         card = responsive_card_of(view)
-        self.assertIsNotNone(card)                      # HUB has a responsive card
-        self.assertEqual(len(card.content.controls), 2)  # body + 1 action inside
+        self.assertIsNotNone(card)                       # HUB has a responsive card
+        self.assertEqual(len(card.content.controls), 2)  # body column + 1 action
         self.assertEqual(view.controls[0].content.scroll, ft.ScrollMode.AUTO)
 
     def test_content_has_action_bar_and_no_hub_card(self):
-        view = ScreenShell(
-            "/x",
-            body=ft.Text("b"),
-            actions=[ft.Container(width=400, height=70)],
-            screen_type=ScreenType.CONTENT,
-        )
-        self.assertIsNone(responsive_card_of(view))     # CONTENT card is full-bleed
-        self.assertIsNotNone(action_bar_of(view))       # sticky animated bar exists
+        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT,
+                          body=ft.Text("b"),
+                          actions=[ft.Container(width=400, height=70)])
+        self.assertIsNone(responsive_card_of(view))      # CONTENT card is full-bleed
+        self.assertIsNotNone(action_bar_of(view))        # sticky animated bar exists
 
     def test_content_overlay_is_stacked(self):
         lightbox = ft.Container(visible=False)
-        view = ScreenShell(
-            "/album",
-            body=ft.ListView(expand=True),
-            actions=[],
-            overlay=lightbox,
-            screen_type=ScreenType.CONTENT,
-            body_layout=BodyLayout.SELF_SCROLLING,
-        )
+        view = _make_view(FakePage(), screen_type=ScreenType.CONTENT,
+                          body=ft.ListView(expand=True), overlay=lightbox,
+                          body_layout=BodyLayout.SELF_SCROLLING)
         content = view.controls[0].content
         self.assertIsInstance(content, ft.Stack)
-        self.assertIs(content.controls[1], lightbox)    # overlay ON TOP
+        self.assertIs(content.controls[1], lightbox)     # overlay ON TOP
 
 
 if __name__ == "__main__":

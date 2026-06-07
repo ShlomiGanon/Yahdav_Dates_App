@@ -6,6 +6,7 @@ here so their circle geometry, colours and the presence-dot overlay are defined
 once instead of inline per view."""
 import flet as ft
 
+from style.design_system import DS
 from utils.constants import TextSizes, ThemeColors
 
 
@@ -45,7 +46,7 @@ def create_initial_avatar(
     *,
     diameter: float,
     online: bool | None = None,
-    dot_diameter: float = 16,
+    dot_diameter: float = DS.sizing.presence_dot,
 ) -> ft.Control:
     """A circular initials avatar (brand red, white initial).
 
@@ -77,7 +78,7 @@ def create_initial_avatar(
         border_radius=dot_diameter / 2,
         bgcolor=ThemeColors.ONLINE if online else ThemeColors.OFFLINE,
         # White ring lifts the dot off the avatar regardless of its colour.
-        border=ft.border.all(2, ThemeColors.SURFACE),
+        border=ft.border.all(DS.sizing.ring, ThemeColors.SURFACE),
     )
     return ft.Stack(
         controls=[
@@ -89,7 +90,7 @@ def create_initial_avatar(
     )
 
 
-def create_unread_badge(count: int, *, diameter: float = 34) -> ft.Control:
+def create_unread_badge(count: int, *, diameter: float = DS.sizing.unread_badge) -> ft.Control:
     """Unread-count badge — a red circle with the number, for the far-left of a
     Matches thread row."""
     return ft.Container(

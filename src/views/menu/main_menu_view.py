@@ -23,11 +23,11 @@ import flet as ft
 
 from views._base import BaseView
 from views.common.screen import ScreenType
+from views.common import renderer as ui
 from views.common.session import safe_remove
-from components.buttons import create_primary_button, create_secondary_button
-from components.typography import create_screen_heading
+from components.dividers import create_action_divider
+from style.design_system import DS
 from utils import local_storage
-from utils.constants import UIConstants, ThemeColors
 
 log = logging.getLogger(__name__)
 
@@ -49,32 +49,30 @@ class MainMenuView(BaseView):
     SESSION_USER_ID_KEY    = "current_user_id"
     SESSION_USER_EMAIL_KEY = "current_user_email"
 
-    def get_body(self) -> ft.Control:
-        return create_screen_heading("תפריט ראשי", center=True)
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("תפריט ראשי")             # engine centres it (HUB) via the DS
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_content(self) -> list[ui.UIComponent]:
+        return []                                    # menu: title + action buttons only
+
+    def get_actions(self) -> list[ui.UIComponent]:
         # Three large primary choices, a divider, then the secondary (blue-grey)
-        # logout — all stacked inside the hub card by the framework.
-        divider = ft.Container(
-            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
-            width=UIConstants.INPUT_WIDTH,
-            padding=ft.Padding(0, 8, 0, 4),
-        )
+        # logout — all stacked inside the hub card by the engine.
         return [
-            create_primary_button(
+            ui.primary_button(
                 "עריכת הפרופיל שלי",
                 lambda _e: self.page.go(self._PROFILE_ROUTE),
             ),
-            create_primary_button(
+            ui.primary_button(
                 "צפייה במשתמשים אחרים",
                 lambda _e: self.page.go(self._DISCOVER_ROUTE),
             ),
-            create_primary_button(
+            ui.primary_button(
                 "היסטוריית שיחות",
                 lambda _e: self.page.go(self._CHAT_HISTORY_ROUTE),
             ),
-            divider,
-            create_secondary_button("התנתק מהמערכת", self._on_logout_click),
+            ui.raw(create_action_divider(width=DS.sizing.input_w)),
+            ui.secondary_button("התנתק מהמערכת", self._on_logout_click),
         ]
 
     # ============================================================

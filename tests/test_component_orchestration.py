@@ -79,7 +79,9 @@ from utils.router import Router, _DEFAULT_ROUTE
 from views.menu.main_menu_view import MainMenuView
 from views.profile.user_profile_view import UserProfileView
 from views.common.navigation import go_back
-from views.common.screen import content_screen, hub_screen
+from views._base import BaseView
+from views.common import renderer as ui
+from views.common.screen import ScreenType, BodyLayout
 from views.common.photo_ops import save_photo_urls_or_rollback
 from views.common.load_flow import run_guarded_load, LoadGuard
 from components import loading
@@ -1083,18 +1085,23 @@ class TestStackAwareBack(_BackendMixin, unittest.TestCase):
 
 
 class TestContentScreenLayout(unittest.TestCase):
-    """The shared `content_screen` primitive: a scrollable translucent card on
-    top of a sticky, TRANSPARENT action bar — status banner in the BAR (never in
-    the scroll region), buttons OUTSIDE the card, and no nested scroll."""
+    """The CONTENT frame (now built by `BaseView`): a scrollable translucent card
+    on top of a sticky, TRANSPARENT action bar — status banner in the BAR (never
+    in the scroll region), buttons in the animated box, and no nested scroll."""
 
-    def _build(self, **kw):
+    def _build(self, *, self_scroll=False):
         self.heading = ft.Text("title")
         self.banner = ft.Container()
         self.back = ft.Text("חזור")
-        return content_screen(
-            "/x", body=[self.heading], actions=[self.back],
-            status_banner=self.banner, **kw,
-        )
+        heading, banner, back = self.heading, self.banner, self.back
+
+        class _V(BaseView):
+            ROUTE = "/x"; SCREEN_TYPE = ScreenType.CONTENT
+            def get_content(self): return [ui.raw(heading)]
+            def get_status_banner(self): return ui.raw(banner)
+            def get_actions(self): return [ui.raw(back)]
+        _V.BODY_LAYOUT = BodyLayout.SELF_SCROLLING if self_scroll else BodyLayout.SCROLLING
+        return _V(FakePage()).build()
 
     def _regions(self, view):
         # background_screen → View(controls=[Container(image, content=Column)]);
@@ -1111,46 +1118,54 @@ class TestContentScreenLayout(unittest.TestCase):
 
     def test_status_banner_in_action_bar_not_in_card(self):
         card, action_bar = self._regions(self._build())
-        bar_controls = action_bar.content.controls
+        bar_controls = action_bar.content.controls         # [banner, animated box]
         self.assertIs(bar_controls[0], self.banner)        # banner ABOVE buttons
-        self.assertIn(self.back, bar_controls)             # button in the BAR
-        card_controls = card.content.controls
-        self.assertIn(self.heading, card_controls)         # body in the CARD
-        self.assertNotIn(self.banner, card_controls)       # NOT in scroll region
+        buttons_box = bar_controls[1]
+        self.assertIn(self.back, buttons_box.content.controls)   # button in the BAR
+        body_col = card.content.controls[0]                # scroll col -> body col
+        self.assertIn(self.heading, body_col.controls)     # body in the CARD
+        self.assertNotIn(self.banner, body_col.controls)   # NOT in scroll region
 
     def test_scroll_true_sets_auto_scroll_on_card_column(self):
-        card, _bar = self._regions(self._build(scroll=True))
+        card, _bar = self._regions(self._build(self_scroll=False))
         self.assertEqual(card.content.scroll, ft.ScrollMode.AUTO)
 
-    def test_scroll_false_avoids_nested_scroll(self):
-        card, _bar = self._regions(self._build(scroll=False))
+    def test_self_scrolling_avoids_nested_scroll(self):
+        # SELF_SCROLLING places the body column directly (no Shell scroll wrapper).
+        card, _bar = self._regions(self._build(self_scroll=True))
         self.assertIsNone(card.content.scroll)
 
 
 class TestHubScreenLayout(unittest.TestCase):
-    """The shared `hub_screen` primitive: ONE translucent_card centred both axes
-    over the background, with ALL controls (buttons included) inside it — NO
-    scroll region, NO sticky action bar (the documented hub/auth exception)."""
+    """The HUB frame (now built by `BaseView`): ONE translucent_card centred both
+    axes over the background, with ALL controls (buttons included) inside it — NO
+    scroll region OUTSIDE the card, NO sticky action bar (the auth/menu baseline)."""
+
+    def _hub(self, controls):
+        class _V(BaseView):
+            ROUTE = "/menu"; SCREEN_TYPE = ScreenType.HUB
+            def get_content(self): return [ui.raw(c) for c in controls]
+        return _V(FakePage()).build()
 
     def test_single_centered_card_holds_the_content(self):
-        content = ft.Column(controls=[ft.Text("hi"), ft.Text("bye")])
-        view = hub_screen("/menu", content)
-        # background_screen → View(controls=[Container(image, content=centered)]).
+        t1, t2 = ft.Text("hi"), ft.Text("bye")
+        view = self._hub([t1, t2])
         centered = view.controls[0].content
         self.assertIsInstance(centered, ft.Column)
         self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
         self.assertEqual(centered.horizontal_alignment, ft.CrossAxisAlignment.CENTER)
         self.assertEqual(len(centered.controls), 1)        # ONE card, no action bar
-        # The unified HUB shell wraps the body (+ any actions) in a STRETCH card
-        # column, so `content` is the card column's FIRST child, not the card's
-        # direct content.
+        # The HUB frame wraps the content in a standardized body column inside the
+        # card, so the content controls live in the card column's first child.
         card = centered.controls[0]
-        self.assertIs(card.content.controls[0], content)   # content IN the card
+        body_col = card.content.controls[0]
+        self.assertIn(t1, body_col.controls)
+        self.assertIn(t2, body_col.controls)
         self.assertEqual(view.route, "/menu")
 
     def test_default_padding_is_the_shared_card_padding(self):
         from utils.constants import UIConstants
-        view = hub_screen("/x", ft.Text("x"))
+        view = self._hub([ft.Text("x")])
         card = view.controls[0].content.controls[0]
         self.assertEqual(card.padding, UIConstants.CARD_PADDING)
 

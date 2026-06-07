@@ -15,6 +15,7 @@ from typing import Sequence
 
 import flet as ft
 
+from style.design_system import DS
 from utils.constants import AssetPaths, UIConstants, ThemeColors
 
 # The system-wide missing-picture fallback (a bundled asset, served by name).
@@ -45,7 +46,7 @@ def photo_thumb(src: str, *, size: float) -> ft.Container:
         width=size,
         height=size,
         border_radius=UIConstants.CORNER_RADIUS,
-        bgcolor=ft.Colors.with_opacity(0.25, ThemeColors.SECONDARY),
+        bgcolor=ft.Colors.with_opacity(DS.opacity.tile_bg, ThemeColors.SECONDARY),
         alignment=ft.Alignment(0, 0),
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         content=ft.Image(
@@ -55,7 +56,7 @@ def photo_thumb(src: str, *, size: float) -> ft.Container:
             fit=ft.BoxFit.COVER,
             error_content=ft.Icon(
                 ft.Icons.BROKEN_IMAGE_OUTLINED,
-                size=size * 0.35,
+                size=size * DS.opacity.thumb_icon,
                 color=ThemeColors.TEXT_MAIN,
             ),
         ),

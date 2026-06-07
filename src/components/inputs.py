@@ -45,3 +45,14 @@ def create_hebrew_text_field(
         max_length=max_length,
         on_submit=on_submit,
     )
+
+
+def create_input(label: str, initial_value: str = "", on_change=None) -> ft.TextField:
+    """Public 'input' factory (requested API): a senior-friendly RTL text field
+    seeded with `initial_value` and wired to `on_change`. Delegates to the
+    canonical `create_hebrew_text_field` so the styling stays single-sourced — this
+    is a thin API alias, NOT a second input implementation."""
+    field = create_hebrew_text_field(label, hebrew_content=True)
+    field.value = initial_value
+    field.on_change = on_change
+    return field

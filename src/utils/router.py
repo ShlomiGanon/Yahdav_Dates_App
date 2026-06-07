@@ -35,7 +35,7 @@ from views.profile.peer_photos_view import PeerPhotosView
 from views.matching.discover_view import DiscoverView
 from views.matching.chat_view import ChatView
 from views.matching.matches_view import MatchesView
-from views.common.screen import hub_screen, error_screen
+from views.common.system_views import boot_view, error_view
 from components.buttons import create_secondary_button
 from utils.constants import TextSizes, UIConstants, ThemeColors
 
@@ -288,8 +288,9 @@ class Router:
         back = create_secondary_button(
             "חזרה לתפריט הראשי", lambda _e: self.page.go(MainMenuView.ROUTE),
         )
-        return error_screen(
-            "/error",
+        return error_view(
+            self.page,
+            route="/error",
             message="משהו השתבש בטעינת המסך",
             actions=[back],
         )
@@ -306,8 +307,8 @@ class Router:
         unpainted page. The subsequent `page.go` replaces this view in place."""
         # Calm spinner card in the SHARED centered hub layout — same frame as the
         # Welcome / error screens, so the very first frame is already on-brand.
-        view = hub_screen(
-            "/boot",
+        view = boot_view(
+            self.page,
             ft.Column(
                 controls=[
                     ft.ProgressRing(width=48, height=48, color=ThemeColors.PRIMARY),

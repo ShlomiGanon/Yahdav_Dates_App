@@ -19,15 +19,14 @@ import flet as ft
 
 from views._base import BaseView
 from views.common.screen import ScreenType
+from views.common import renderer as ui
 from views.common.session import safe_remove
 from components import loading
-from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
-from components.typography import create_screen_heading
 from components.feedback import create_field_error_label, set_field_error, clear_field_errors
 from services.i_auth_service import IAuthService
 from utils import local_storage
-from utils.constants import TextSizes, ThemeColors, UIConstants
+from utils.constants import TextSizes, ThemeColors
 
 log = logging.getLogger(__name__)
 
@@ -51,8 +50,13 @@ class LoginView(BaseView):
     #  Layout — the interface the framework renders
     # ============================================================
 
-    def get_body(self) -> ft.Control:
-        # ---- Inputs ----
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("התחברות למערכת")          # engine centres it (HUB) via the DS
+
+    def get_content(self) -> list[ui.UIComponent]:
+        # Inputs, error labels and the remember-me checkbox are read/mutated in
+        # the submit handler, so they are PRE-BUILT and embedded via raw(). The
+        # engine owns the body spacing/alignment — the screen supplies only content.
         self._email_field = create_hebrew_text_field(
             "אימייל",
             on_submit=self._on_login_click,
@@ -79,27 +83,20 @@ class LoginView(BaseView):
             rtl=True,
         )
 
-        # STRETCH so the fixed-width inputs flex to the (responsive) card width.
-        return ft.Column(
-            controls=[
-                create_screen_heading("התחברות למערכת", center=True),
-                self._email_field,
-                self._email_error,
-                self._password_field,
-                self._password_error,
-                self._remember_me,
-            ],
-            tight=True,
-            spacing=UIConstants.ELEMENT_SPACING,   # match the Welcome baseline
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
+        return [
+            ui.raw(self._email_field),
+            ui.raw(self._email_error),
+            ui.raw(self._password_field),
+            ui.raw(self._password_error),
+            ui.raw(self._remember_me),
+        ]
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_actions(self) -> list[ui.UIComponent]:
         # Primary (red) = the constructive login action; secondary (blue-grey) =
         # cancel/navigation, per the action hierarchy.
         return [
-            create_primary_button("התחבר", self._on_login_click),
-            create_secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
+            ui.primary_button("התחבר", self._on_login_click),
+            ui.secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
         ]
 
     # ============================================================

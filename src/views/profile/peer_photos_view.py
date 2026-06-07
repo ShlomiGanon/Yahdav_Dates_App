@@ -45,8 +45,10 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
+from views.common.screen import BodyLayout
+from views.common import renderer as ui
 from views.common.navigation import back_button
+from style.design_system import DS
 from views.common.photos import (
     DEFAULT_PROFILE_IMAGE,
     resolve_main_photo,
@@ -55,6 +57,7 @@ from views.common.photos import (
 from views.common.render import build_items_safe
 from components import loading
 from components.typography import create_screen_heading
+from components.error_card import create_error_card
 from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile
 from utils.constants import TextSizes, UIConstants, ThemeColors, AssetPaths
@@ -75,8 +78,8 @@ class PeerPhotosView(BaseView):
     _PEER_PROFILE_ROUTE = "/discover/profile"
 
     # Full-width album tiles, sized generously for the 50+ audience.
-    _TILE_HEIGHT = 240
-    _CLOSE_DIAMETER = 56
+    _TILE_HEIGHT = DS.sizing.album_tile_h
+    _CLOSE_DIAMETER = DS.sizing.close_btn
 
     def __init__(
         self,
@@ -98,35 +101,32 @@ class PeerPhotosView(BaseView):
 
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # _photos_column owns the scroll
 
-    def get_body(self) -> ft.Control:
+    def get_content(self) -> list[ui.UIComponent]:
+        # Static skeleton only — build() must never throw. The heading and the
+        # album column are mutated at runtime (_render_album / _show_error), so
+        # both are PRE-BUILT and embedded via raw() (no get_header: the title is
+        # the dynamic peer name). STRETCH so each tile spans the card width; the
+        # column owns the single bounded scroll region (SELF_SCROLLING).
         self._heading = create_screen_heading("תמונות נוספות")
-        # The album tiles land here on load. STRETCH so each tile spans the card
-        # width; the column owns the single bounded scroll region.
         self._photos_column = ft.Column(
             controls=[],
-            spacing=14,
+            spacing=DS.spacing.body,
             scroll=ft.ScrollMode.AUTO,
             expand=True,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        return ft.Column(
-            controls=[self._heading, self._photos_column],
-            expand=True,
-            spacing=CONTENT_BODY_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
+        return [ui.raw(self._heading), ui.raw(self._photos_column)]
 
-    def get_actions(self) -> list[ft.Control]:
-        # Stack-aware "back" — pops to whatever opened the album (the peer profile).
-        return [back_button(
-            self.page, label="חזרה", fallback=self._PEER_PROFILE_ROUTE,
-        )]
+    def get_actions(self) -> list[ui.UIComponent]:
+        # Stack-aware "back" — pops to whatever opened the album (peer profile).
+        return [ui.raw(back_button(self.page, label="חזרה",
+                                   fallback=self._PEER_PROFILE_ROUTE))]
 
-    def get_overlay(self) -> ft.Control:
-        # The fullscreen lightbox (hidden until a tile is tapped). The Shell owns
+    def get_overlay(self) -> ui.UIComponent:
+        # The fullscreen lightbox (hidden until a tile is tapped). The engine owns
         # the Stack, so toggling the lightbox never rebuilds the album.
         self._lightbox = self._build_lightbox()
-        return self._lightbox
+        return ui.raw(self._lightbox)
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned background load. Cancelled
@@ -160,7 +160,7 @@ class PeerPhotosView(BaseView):
             fit=ft.BoxFit.CONTAIN,
             expand=True,
             error_content=ft.Icon(
-                ft.Icons.BROKEN_IMAGE_OUTLINED, size=96,
+                ft.Icons.BROKEN_IMAGE_OUTLINED, size=DS.sizing.icon_xxl,
                 color=ThemeColors.TEXT_ON_PRIMARY,
             ),
         )
@@ -171,12 +171,12 @@ class PeerPhotosView(BaseView):
             width=self._CLOSE_DIAMETER,
             height=self._CLOSE_DIAMETER,
             border_radius=self._CLOSE_DIAMETER / 2,
-            bgcolor=ft.Colors.with_opacity(0.6, ThemeColors.PRIMARY),
+            bgcolor=ft.Colors.with_opacity(DS.opacity.close_btn, ThemeColors.PRIMARY),
             alignment=ft.Alignment(0, 0),
             tooltip="סגירה",
             on_click=lambda _e: self._close_lightbox(),
             content=ft.Icon(
-                ft.Icons.CLOSE, size=30, color=ThemeColors.TEXT_ON_PRIMARY,
+                ft.Icons.CLOSE, size=DS.sizing.icon_md, color=ThemeColors.TEXT_ON_PRIMARY,
             ),
         )
 
@@ -184,7 +184,7 @@ class PeerPhotosView(BaseView):
             visible=False,
             expand=True,
             # Dark scrim (a named Flet colour at opacity — never a raw hex).
-            bgcolor=ft.Colors.with_opacity(0.92, ft.Colors.BLACK),
+            bgcolor=ft.Colors.with_opacity(DS.opacity.scrim, ft.Colors.BLACK),
             alignment=ft.Alignment(0, 0),
             on_click=lambda _e: self._close_lightbox(),   # tap-to-dismiss
             content=ft.Stack(
@@ -203,7 +203,7 @@ class PeerPhotosView(BaseView):
                     ft.Container(
                         expand=True,
                         alignment=ft.Alignment(1, -1),     # == top-right, RTL-immune
-                        padding=ft.Padding(0, 16, 16, 0),
+                        padding=DS.pad.lightbox_close,
                         content=close_button,
                     ),
                 ],
@@ -320,7 +320,7 @@ class PeerPhotosView(BaseView):
         return ft.Container(
             height=self._TILE_HEIGHT,
             border_radius=UIConstants.CORNER_RADIUS,
-            bgcolor=ft.Colors.with_opacity(0.25, ThemeColors.SECONDARY),
+            bgcolor=ft.Colors.with_opacity(DS.opacity.tile_bg, ThemeColors.SECONDARY),
             alignment=ft.Alignment(0, 0),
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             ink=True,
@@ -330,7 +330,7 @@ class PeerPhotosView(BaseView):
                 fit=ft.BoxFit.COVER,
                 expand=True,
                 error_content=ft.Icon(
-                    ft.Icons.BROKEN_IMAGE_OUTLINED, size=64,
+                    ft.Icons.BROKEN_IMAGE_OUTLINED, size=DS.sizing.icon_xl,
                     color=ThemeColors.TEXT_MAIN,
                 ),
             ),
@@ -338,29 +338,8 @@ class PeerPhotosView(BaseView):
 
     @staticmethod
     def _error_card(message: str) -> ft.Control:
-        """A styled, RTL error card shown inside the translucent shell."""
-        return ft.Container(
-            bgcolor=ft.Colors.with_opacity(0.12, ThemeColors.DANGER),
-            border_radius=UIConstants.CORNER_RADIUS,
-            padding=24,
-            content=ft.Column(
-                controls=[
-                    ft.Icon(ft.Icons.ERROR_OUTLINE, size=48, color=ThemeColors.DANGER),
-                    ft.Text(
-                        message, size=TextSizes.INPUT, weight=ft.FontWeight.W_600,
-                        color=ThemeColors.TEXT_MAIN, rtl=True,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                    ft.Text(
-                        "אפשר לחזור ולנסות שוב.", size=TextSizes.BODY,
-                        color=ThemeColors.TEXT_MAIN, rtl=True,
-                        text_align=ft.TextAlign.CENTER,
-                    ),
-                ],
-                spacing=12,
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            ),
-        )
+        """A styled, RTL error card shown inside the translucent shell (shared)."""
+        return create_error_card(message)
 
     # ============================================================
     #  Safe accessors — TOTAL (never raise)

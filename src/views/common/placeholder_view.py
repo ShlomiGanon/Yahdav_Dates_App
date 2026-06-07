@@ -12,8 +12,8 @@ import flet as ft
 
 from views._base import BaseView
 from views.common.screen import ScreenType
+from views.common import renderer as ui
 from views.common.navigation import back_to_menu_button
-from components.typography import create_screen_heading
 from utils.constants import TextSizes, ThemeColors
 
 
@@ -31,21 +31,18 @@ class PlaceholderView(BaseView):
         self._title = title
         self.ROUTE = route          # instance route → used by BaseView.build()
 
-    def get_body(self) -> ft.Control:
-        return ft.Column(
-            controls=[
-                create_screen_heading(self._title, center=True),
-                ft.Text(
-                    "התכונה הזו תהיה זמינה בקרוב 🙂",
-                    size=TextSizes.INPUT,
-                    color=ThemeColors.TEXT_MAIN,
-                    rtl=True,
-                    text_align=ft.TextAlign.CENTER,
-                ),
-            ],
-            tight=True,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading(self._title)              # engine centres it (HUB) via the DS
 
-    def get_actions(self) -> list[ft.Control]:
-        return [back_to_menu_button(self.page)]
+    def get_content(self) -> list[ui.UIComponent]:
+        return [
+            ui.text(
+                "התכונה הזו תהיה זמינה בקרוב 🙂",
+                size=TextSizes.INPUT,
+                color=ThemeColors.TEXT_MAIN,
+                text_align=ft.TextAlign.CENTER,
+            ),
+        ]
+
+    def get_actions(self) -> list[ui.UIComponent]:
+        return [ui.raw(back_to_menu_button(self.page))]

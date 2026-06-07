@@ -32,23 +32,28 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import CONTENT_BODY_SPACING
+from views.common.screen import ScreenType
+from views.common import renderer as ui
 from views.common.navigation import back_to_menu_button
 from views.common.render import build_items_safe
 from views.common.load_flow import run_guarded_load, LoadGuard
 from components.buttons import create_primary_button, create_secondary_button
-from components.typography import create_screen_heading
 from components.feedback import create_status_banner, show_status
 from components.discover import create_candidate_tile
 from services.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender, AccountStatus
-from utils.constants import TextSizes, UIConstants, ThemeColors, MatchConfig
+from style.design_system import DS
+from utils.constants import TextSizes, ThemeColors, MatchConfig
 
 log = logging.getLogger(__name__)
 
 
 class DiscoverView(BaseView):
     ROUTE = "/matching/discover"
+    # Owner preference: Discover uses the centered-card HUB look (like the Main
+    # Menu) rather than the full-width CONTENT feed. The hub card AUTO-scrolls the
+    # whole stack (heading + feed + banner + back button); there is no sticky bar.
+    SCREEN_TYPE = ScreenType.HUB
 
     # Identity token written by login_view on success; read here. Centralised
     # so a typo can't silently desync writer and reader.
@@ -74,31 +79,24 @@ class DiscoverView(BaseView):
     #  Layout
     # ============================================================
 
-    def get_body(self) -> ft.Control:
-        heading = create_screen_heading("אנשים שתרצו להכיר")
-        # The profile list — tiles are added on load. STRETCH makes each card
-        # fill the full panel width (so a card can never float left); the card's
-        # own content is right-aligned internally (see _candidate_tile).
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("אנשים שתרצו להכיר")     # centered (HUB) like the Main Menu
+
+    def get_content(self) -> list[ui.UIComponent]:
+        # HUB centered card (like the Main Menu): the feed is a plain Column the
+        # hub card AUTO-scrolls, and the status banner lives IN the card (HUB has
+        # no sticky action bar). Both are populated at runtime → pre-built + raw().
         self._feed_column = ft.Column(
             controls=[],
-            spacing=UIConstants.ELEMENT_SPACING,
+            spacing=DS.spacing.element,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        return ft.Column(
-            controls=[heading, self._feed_column],
-            spacing=CONTENT_BODY_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
-
-    def get_actions(self) -> list[ft.Control]:
-        return [back_to_menu_button(self.page)]
-
-    def get_status_banner(self) -> ft.Control:
-        # Defensive auth / empty / error states. Lives in the sticky bar (not the
-        # scroll region), so an empty/error state stays visible however far the
-        # feed has scrolled.
+        # Defensive auth / empty / error states (e.g. "no profiles yet").
         self._status_banner, self._status_text = create_status_banner()
-        return self._status_banner
+        return [ui.raw(self._feed_column), ui.raw(self._status_banner)]
+
+    def get_actions(self) -> list[ui.UIComponent]:
+        return [ui.raw(back_to_menu_button(self.page))]
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned one-shot feed load.
@@ -244,7 +242,7 @@ class DiscoverView(BaseView):
         )
 
         sheet.content = ft.Container(
-            padding=24,
+            padding=DS.pad.section,
             bgcolor=ThemeColors.SURFACE,
             content=ft.Column(
                 controls=[
@@ -256,7 +254,7 @@ class DiscoverView(BaseView):
                     close_button,
                 ],
                 tight=True,
-                spacing=14,
+                spacing=DS.spacing.body,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             ),
         )

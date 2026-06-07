@@ -26,17 +26,18 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import BodyLayout, CONTENT_BODY_SPACING
+from views.common.screen import BodyLayout
+from views.common import renderer as ui
 from views.common.navigation import go_back
 from views.common.render import build_items_safe
 from views.common.load_flow import run_guarded_load, LoadGuard
-from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
-from components.typography import create_screen_heading
+from components.dividers import create_action_divider
 from components.feedback import create_status_banner, show_status
 from components.chat import create_chat_bubble
 from services.i_messaging_service import IMessagingService
-from utils.constants import MessageType, ChatConfig, ThemeColors
+from style.design_system import DS
+from utils.constants import MessageType, ChatConfig
 
 log = logging.getLogger(__name__)
 
@@ -78,52 +79,48 @@ class ChatView(BaseView):
 
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
-    def get_body(self) -> ft.Control:
-        # H1 heading. ChatView depends ONLY on IMessagingService (Interface
-        # Segregation), so it can't resolve the peer's name without widening the
-        # contract — the title is a generic, senior-readable "שיחה". STRETCH so
-        # each bubble's wrapper spans the full width (the absolute-alignment
-        # bubble logic relies on it).
-        heading = create_screen_heading("שיחה")
+    def get_header(self) -> ui.UIComponent:
+        # ChatView depends ONLY on IMessagingService (Interface Segregation), so it
+        # can't resolve the peer's name without widening the contract — the title
+        # is a generic, senior-readable "שיחה".
+        return ui.heading("שיחה")
+
+    def get_content(self) -> list[ui.UIComponent]:
+        # The message list is mutated at runtime, so it is PRE-BUILT and embedded
+        # via raw(); the engine STRETCHes the body so each bubble's wrapper spans
+        # the full width (the absolute-alignment bubble logic relies on it).
         self._messages_list = ft.ListView(
             expand=True,
-            spacing=10,
+            spacing=DS.spacing.bar,
             auto_scroll=True,
-            padding=ft.Padding(0, 8, 0, 8),
+            padding=DS.pad.list_v,
         )
-        return ft.Column(
-            controls=[heading, self._messages_list],
-            expand=True,
-            spacing=CONTENT_BODY_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
+        return [ui.raw(self._messages_list)]
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_actions(self) -> list[ui.UIComponent]:
         # Send bar (field RIGHT, "שלח" LEFT), a divider, then a SECONDARY stack-
-        # aware back button. The Shell stretches the send bar to full width
+        # aware back button. The engine stretches the send bar to full width
         # (composer expands) and auto-centres the fixed-width back button.
         self._composer = create_hebrew_text_field(
             "הקלידו הודעה…", hebrew_content=True, on_submit=self._on_send,
         )
         self._composer.expand = True                 # fill the bar (minus button)
         self._composer.width = None
-        send_button = create_primary_button("שלח", self._on_send, width=140)
-        send_bar = ft.Row(
-            controls=[self._composer, send_button],
+        send_bar = ui.row(
+            [ui.raw(self._composer),
+             ui.primary_button("שלח", self._on_send, width=DS.sizing.send_btn_w)],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=12,
+            spacing=DS.spacing.md,
         )
-        divider = ft.Container(
-            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
-            height=24,                       # declared so the Shell sizes the bar
-            padding=ft.Padding(0, 8, 0, 4),
-        )
-        back_btn = create_secondary_button("חזור", self._on_back)
-        return [send_bar, divider, back_btn]
+        return [
+            send_bar,
+            ui.raw(create_action_divider(height=DS.sizing.divider_h)),
+            ui.secondary_button("חזור", self._on_back),
+        ]
 
-    def get_status_banner(self) -> ft.Control:
+    def get_status_banner(self) -> ui.UIComponent:
         self._status_banner, self._status_text = create_status_banner()
-        return self._status_banner
+        return ui.raw(self._status_banner)
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned one-shot history load

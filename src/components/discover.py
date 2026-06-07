@@ -6,12 +6,13 @@ import flet as ft
 
 from components.avatars import create_initial_avatar
 from components.cards import create_tile_card
-from utils.constants import TextSizes, ThemeColors, UIConstants
+from style.design_system import DS
+from utils.constants import TextSizes, ThemeColors
 
 # Tap-target geometry. The card clears BUTTON_HEIGHT (70px) with headroom for a
 # two-line name+meta stack — the 50+ audience needs generous targets.
-_CARD_HEIGHT: int = UIConstants.BUTTON_HEIGHT + 16   # 86px
-_AVATAR_DIAMETER: int = 52
+_CARD_HEIGHT: int = DS.sizing.tile_h        # 86px
+_AVATAR_DIAMETER: int = DS.sizing.avatar_sm  # 52px
 
 
 def create_candidate_tile(
@@ -49,7 +50,7 @@ def create_candidate_tile(
     )
     details = ft.Column(
         controls=[name_text, meta_text],
-        spacing=2,
+        spacing=DS.spacing.xxs,
         alignment=ft.MainAxisAlignment.CENTER,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         expand=True,
@@ -60,6 +61,6 @@ def create_candidate_tile(
             details,
         ],
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        spacing=12,
+        spacing=DS.spacing.md,
     )
     return create_tile_card(row, on_click=on_click, height=_CARD_HEIGHT)

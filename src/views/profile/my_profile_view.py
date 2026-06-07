@@ -56,15 +56,16 @@ from datetime import date
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import CONTENT_BODY_SPACING
+from views.common import renderer as ui
 from views.common.navigation import back_to_menu_button
 from views.common.photos import resolve_main_photo
 from views.common.photo_ops import save_photo_urls_or_rollback
 from views.common.load_flow import run_guarded_load, LoadGuard
 from components import loading
 from components.buttons import create_primary_button
+from components.dividers import create_action_divider
 from components.inputs import create_hebrew_text_field
-from components.typography import create_screen_heading
+from style.design_system import DS
 from components.feedback import (
     create_field_error_label, set_field_error, clear_field_errors,
     create_status_banner, show_status,
@@ -119,7 +120,7 @@ class MyProfileView(BaseView):
     # AdditionalPhotosView.ROUTE).
     _ADDITIONAL_PHOTOS_ROUTE = "/profile/photos"
     # Main profile-picture display size.
-    _MAIN_PHOTO_SIZE = 180
+    _MAIN_PHOTO_SIZE = DS.sizing.main_photo
 
     def __init__(
         self,
@@ -148,14 +149,29 @@ class MyProfileView(BaseView):
     #  Layout
     # ============================================================
 
-    def get_body(self) -> ft.Control:
-        heading = create_screen_heading("הפרופיל שלי")
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("הפרופיל שלי")            # CONTENT → right-aligned by the DS
 
+    def _render_body(self) -> ft.Control:
+        # Documented exception: this form's fixed-width (400px) fields are CENTRED
+        # rather than STRETCHed full-width, so the engine's default body alignment
+        # is overridden here (the sanctioned `_render_*` escape hatch). Spacing and
+        # everything else still come from the DS via super().
+        body = super()._render_body()
+        body.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+        return body
+
+    def get_content(self) -> list[ui.UIComponent]:
+        """Pure content — the stateful controls the handlers mutate (inputs,
+        dropdowns, error labels, the photo image) are PRE-BUILT here and embedded
+        via `ui.raw(...)` so the view keeps the live refs. The engine owns the body
+        layout (spacing; alignment via the `_render_body` override above)."""
         # ---- Photos: main picture + "תמונות נוספות" navigation ----
         # The FilePicker is a Flet *service*; it's attached to THIS view's
-        # `services` list at the end of build() (not page.services, which still
-        # points at the outgoing view while we build). _load_profile_data sets
-        # the real main-picture src once the profile is hydrated.
+        # `services` (not page.services, which still points at the outgoing view
+        # while we build). _load_profile_data sets the real main-picture src once
+        # the profile is hydrated. The section embeds the mutated _main_image, so
+        # it is pre-built and embedded via raw().
         self._file_picker = ft.FilePicker()
         photo_section = self._build_photo_section()
 
@@ -211,20 +227,6 @@ class MyProfileView(BaseView):
                                     today.year - _MAX_AGE_YEARS - 1, -1)],
             width=UIConstants.DOB_YEAR_WIDTH,
         )
-        dob_heading = ft.Text(
-            "תאריך לידה",
-            size=TextSizes.BODY,
-            weight=ft.FontWeight.W_600,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
-        dob_row = ft.Row(
-            controls=[self._dob_day, self._dob_month, self._dob_year],
-            spacing=8,
-            width=UIConstants.INPUT_WIDTH,
-            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-        )
         self._dob_error = create_field_error_label()
 
         # ---- Location: city (text) + region (dropdown of Israeli districts) ----
@@ -239,42 +241,44 @@ class MyProfileView(BaseView):
         )
 
         # The scrollable form fields, top → bottom: identity, then demographics,
-        # then the free-text bio (longest, so it sits last). CENTER keeps the
-        # fixed-width fields centred. New field editors drop straight in here.
-        return ft.Column(
-            controls=[
-                heading,
-                photo_section,
-                self._name_field,    self._name_error,
-                self._gender_dropdown, self._gender_error,
-                dob_heading, dob_row, self._dob_error,
-                self._city_field,    self._city_error,
-                self._region_dropdown,
-                self._bio_field,     self._bio_error,
-            ],
-            spacing=CONTENT_BODY_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+        # then the free-text bio (longest, so it sits last).
+        return [
+            ui.raw(photo_section),
+            ui.raw(self._name_field),     ui.raw(self._name_error),
+            ui.raw(self._gender_dropdown), ui.raw(self._gender_error),
+            ui.text("תאריך לידה", size=TextSizes.BODY,
+                    weight=ft.FontWeight.W_600, color=ThemeColors.TEXT_MAIN),
+            ui.row(
+                [ui.raw(self._dob_day), ui.raw(self._dob_month),
+                 ui.raw(self._dob_year)],
+                spacing=DS.spacing.sm,
+                width=DS.sizing.input_w,
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ),
+            ui.raw(self._dob_error),
+            ui.raw(self._city_field),     ui.raw(self._city_error),
+            ui.raw(self._region_dropdown),
+            ui.raw(self._bio_field),      ui.raw(self._bio_error),
+        ]
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_actions(self) -> list[ui.UIComponent]:
         # Primary "save" (red) above a divider above the secondary (blue-grey)
         # "return to menu", so a senior never confuses the two.
-        save_button = create_primary_button("שמור שינויים", self._on_save_click)
-        divider = ft.Container(
-            content=ft.Divider(thickness=1, color=ThemeColors.SECONDARY),
-            width=UIConstants.INPUT_WIDTH,
-            height=28,                       # declared so the Shell sizes the bar
-            padding=ft.Padding(0, 8, 0, 4),
-        )
-        return [save_button, divider, back_to_menu_button(self.page)]
+        return [
+            ui.primary_button("שמור שינויים", self._on_save_click),
+            ui.raw(create_action_divider(
+                width=DS.sizing.input_w, height=DS.sizing.divider_h_tall,
+            )),
+            ui.raw(back_to_menu_button(self.page)),
+        ]
 
-    def get_status_banner(self) -> ft.Control:
+    def get_status_banner(self) -> ui.UIComponent:
         # Inline success/error feedback (reliable across Flet versions — no
         # dependency on page.snack_bar). Sits above the buttons in the sticky bar.
         self._status_banner, self._status_text = create_status_banner(
-            width=UIConstants.INPUT_WIDTH,
+            width=DS.sizing.input_w,
         )
-        return self._status_banner
+        return ui.raw(self._status_banner)
 
     def get_services(self) -> list[ft.Control]:
         # The FilePicker mounts + registers with THIS view (discarded on nav).
@@ -533,7 +537,7 @@ class MyProfileView(BaseView):
             width=self._MAIN_PHOTO_SIZE,
             height=self._MAIN_PHOTO_SIZE,
             border_radius=self._MAIN_PHOTO_SIZE / 2,   # circular avatar
-            bgcolor=ft.Colors.with_opacity(0.25, ThemeColors.SECONDARY),
+            bgcolor=ft.Colors.with_opacity(DS.opacity.tile_bg, ThemeColors.SECONDARY),
             alignment=ft.Alignment(0, 0),
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
             ink=True,
@@ -546,11 +550,11 @@ class MyProfileView(BaseView):
                     ft.Container(
                         alignment=ft.Alignment(0, 1),
                         content=ft.Container(
-                            bgcolor=ft.Colors.with_opacity(0.55, ft.Colors.BLACK),
-                            padding=6,
+                            bgcolor=ft.Colors.with_opacity(DS.opacity.badge, ft.Colors.BLACK),
+                            padding=DS.pad.badge,
                             content=ft.Icon(
                                 ft.Icons.PHOTO_CAMERA,
-                                size=22,
+                                size=DS.sizing.icon_sm,
                                 color=ft.Colors.WHITE,
                             ),
                         ),
@@ -575,8 +579,8 @@ class MyProfileView(BaseView):
         )
         return ft.Column(
             controls=[main_picture, change_hint, additional_button],
-            spacing=12,
-            width=UIConstants.INPUT_WIDTH,
+            spacing=DS.spacing.md,
+            width=DS.sizing.input_w,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
 

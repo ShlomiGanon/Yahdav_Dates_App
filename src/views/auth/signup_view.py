@@ -14,13 +14,11 @@ import flet as ft
 
 from views._base import BaseView
 from views.common.screen import ScreenType
+from views.common import renderer as ui
 from components import loading
-from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
-from components.typography import create_screen_heading
 from components.feedback import create_field_error_label, set_field_error, clear_field_errors
 from services.i_auth_service import IAuthService
-from utils.constants import UIConstants
 
 
 class SignupView(BaseView):
@@ -35,8 +33,12 @@ class SignupView(BaseView):
     #  Layout — the interface the framework renders
     # ============================================================
 
-    def get_body(self) -> ft.Control:
-        # STRETCH so the fixed-width inputs flex to the (responsive) card width.
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("הרשמה למערכת")           # engine centres it (HUB) via the DS
+
+    def get_content(self) -> list[ui.UIComponent]:
+        # Inputs and error labels are read/mutated in the submit handler, so they
+        # are PRE-BUILT and embedded via raw(). The engine owns spacing/alignment.
         self._email_field = create_hebrew_text_field(
             "אימייל", on_submit=self._on_signup_click,
         )
@@ -49,23 +51,18 @@ class SignupView(BaseView):
         self._email_error            = create_field_error_label()
         self._password_error         = create_field_error_label()
         self._confirm_password_error = create_field_error_label()
-        return ft.Column(
-            controls=[
-                create_screen_heading("הרשמה למערכת", center=True),
-                self._email_field, self._email_error,
-                self._password_field, self._password_error,
-                self._confirm_password_field, self._confirm_password_error,
-            ],
-            tight=True,
-            spacing=UIConstants.ELEMENT_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
+        return [
+            ui.raw(self._email_field), ui.raw(self._email_error),
+            ui.raw(self._password_field), ui.raw(self._password_error),
+            ui.raw(self._confirm_password_field),
+            ui.raw(self._confirm_password_error),
+        ]
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_actions(self) -> list[ui.UIComponent]:
         # Primary (red) = constructive signup; secondary (blue-grey) = cancel.
         return [
-            create_primary_button("הירשם", self._on_signup_click),
-            create_secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
+            ui.primary_button("הירשם", self._on_signup_click),
+            ui.secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
         ]
 
     # ============================================================

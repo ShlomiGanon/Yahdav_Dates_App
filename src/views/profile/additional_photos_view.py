@@ -23,14 +23,14 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import CONTENT_BODY_SPACING
+from views.common import renderer as ui
 from views.common.navigation import back_to_menu_button, back_button
+from style.design_system import DS
 from views.common.photos import DEFAULT_PROFILE_IMAGE, extra_photo_urls, photo_thumb
 from views.common.photo_ops import save_photo_urls_or_rollback
 from views.common.load_flow import run_guarded_load, LoadGuard
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
-from components.typography import create_screen_heading
 from components.feedback import create_status_banner, show_status
 from services.i_profile_repository import IProfileRepository
 from services.i_storage_service import IStorageService
@@ -45,7 +45,7 @@ class AdditionalPhotosView(BaseView):
 
     SESSION_USER_ID_KEY = "current_user_id"
     _PROFILE_ROUTE = "/profile/me"
-    _THUMB_SIZE = 110
+    _THUMB_SIZE = DS.sizing.thumb
 
     def __init__(
         self,
@@ -69,43 +69,43 @@ class AdditionalPhotosView(BaseView):
     #  Layout
     # ============================================================
 
-    def get_body(self) -> ft.Control:
-        heading = create_screen_heading("תמונות נוספות")
-        hint = ft.Text(
-            f"ניתן להוסיף עד {StorageConfig.MAX_EXTRA_PHOTOS} תמונות, "
-            f"בנוסף לתמונת הפרופיל הראשית.",
-            size=TextSizes.SMALL,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.RIGHT,
-        )
-        self._file_picker = ft.FilePicker()
-        # STRETCH so tiles span the card width and right-align via text_align.
-        self._photos_area = ft.Column(
-            spacing=12,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
-        return ft.Column(
-            controls=[heading, hint, self._photos_area],
-            spacing=CONTENT_BODY_SPACING,
-            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
-        )
+    def get_header(self) -> ui.UIComponent:
+        return ui.heading("תמונות נוספות")
 
-    def get_actions(self) -> list[ft.Control]:
+    def get_content(self) -> list[ui.UIComponent]:
+        # The photos area is populated at runtime (_refresh_photos), so it is
+        # PRE-BUILT and embedded via raw(); the hint is declarative. STRETCH so
+        # tiles span the card width and right-align via text_align.
+        self._file_picker = ft.FilePicker()
+        self._photos_area = ft.Column(
+            spacing=DS.spacing.md,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        )
+        return [
+            ui.text(
+                f"ניתן להוסיף עד {StorageConfig.MAX_EXTRA_PHOTOS} תמונות, "
+                f"בנוסף לתמונת הפרופיל הראשית.",
+                size=TextSizes.SMALL,
+                color=ThemeColors.TEXT_MAIN,
+            ),
+            ui.raw(self._photos_area),
+        ]
+
+    def get_actions(self) -> list[ui.UIComponent]:
         # Stack-aware "back to profile" (profile is the only entry point) + the
         # menu button (UNWIND to /menu).
         return [
-            back_button(
+            ui.raw(back_button(
                 self.page, label="חזרה לפרופיל", fallback=self._PROFILE_ROUTE,
-            ),
-            back_to_menu_button(self.page),
+            )),
+            ui.raw(back_to_menu_button(self.page)),
         ]
 
-    def get_status_banner(self) -> ft.Control:
+    def get_status_banner(self) -> ui.UIComponent:
         self._status_banner, self._status_text = create_status_banner(
-            width=UIConstants.INPUT_WIDTH,
+            width=DS.sizing.input_w,
         )
-        return self._status_banner
+        return ui.raw(self._status_banner)
 
     def get_services(self) -> list[ft.Control]:
         # The FilePicker mounts + registers with THIS view (discarded on nav).
@@ -196,17 +196,17 @@ class AdditionalPhotosView(BaseView):
             "הסר תמונה",
             functools.partial(self._on_remove_photo, extra_index),
             width=None,
-            height=UIConstants.BUTTON_HEIGHT,   # 70px tap target
+            height=DS.sizing.button_h,   # 70px tap target
             text_size=TextSizes.INPUT,
         )
         info = ft.Column(
             controls=[caption, remove_btn],
-            spacing=8, expand=True,
+            spacing=DS.spacing.sm, expand=True,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
         return ft.Row(
             controls=[photo_thumb(path, size=self._THUMB_SIZE), info],
-            spacing=12,
+            spacing=DS.spacing.md,
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
