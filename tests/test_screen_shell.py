@@ -29,14 +29,14 @@ if str(_SRC) not in sys.path:
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.system_views import error_view
-from views.common.screen import (
+from views.common.engine import renderer as ui
+from views.common.views.system_views import error_view
+from views.common.engine.screen import (
     BodyLayout, error_component, guard,
     responsive_card_of, clamp_hub_width, stress_report,
     DEFAULT_ERROR_MESSAGE,
 )
-from utils.constants import UIConstants
+from style.design_system import DS
 
 
 # --------------------------------------------------------------------------
@@ -140,8 +140,8 @@ class TestFaultTolerance(unittest.TestCase):
 # --------------------------------------------------------------------------
 class TestResponsiveness(unittest.TestCase):
     def test_clamp_caps_wide_and_floors_narrow(self):
-        self.assertEqual(clamp_hub_width(2000), UIConstants.CARD_MAX_WIDTH)
-        self.assertEqual(clamp_hub_width(100), UIConstants.CARD_MIN_WIDTH)
+        self.assertEqual(clamp_hub_width(2000), DS.sizing.card_max)
+        self.assertEqual(clamp_hub_width(100), DS.sizing.card_min)
         self.assertIsNone(clamp_hub_width(None))   # unknown width → content-sized
 
     def test_stress_report_never_stretches_and_always_fits(self):
@@ -161,7 +161,7 @@ class TestResponsiveness(unittest.TestCase):
         self.assertEqual(view_obj._card.width, clamp_hub_width(320))
         page.width = 1440
         view_obj._apply_responsive()
-        self.assertEqual(view_obj._card.width, UIConstants.CARD_MAX_WIDTH)
+        self.assertEqual(view_obj._card.width, DS.sizing.card_max)
 
 
 # --------------------------------------------------------------------------

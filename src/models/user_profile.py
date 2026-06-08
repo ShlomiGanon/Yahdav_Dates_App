@@ -14,6 +14,16 @@ class Gender(Enum):
     OTHER = "other"
 
 
+# Canonical Gender → Hebrew label map — single source of truth for every
+# screen that displays or selects a gender (My Profile's dropdown, the
+# read-only peer profile display, etc.).
+GENDER_LABELS_HE: dict[Gender, str] = {
+    Gender.MALE:   "זכר",
+    Gender.FEMALE: "נקבה",
+    Gender.OTHER:  "אחר",
+}
+
+
 class AccountStatus(Enum):
     PENDING = 1
     ACTIVE = 2

@@ -15,9 +15,9 @@ Design
   (the spacing scale), `Sizing` (widths/heights/diameters), `Radius`, `Pad`
   (ft.Padding/ft.Margin bundles), `Motion`, `Opacity`, and `BodyTemplate` (the ONE
   normalized body-layout rule the engine applies to every screen).
-* **`utils/constants.py` is a thin shim** that re-exports these as the legacy
-  `TextSizes`/`UIConstants`/`ThemeColors` names, so existing imports keep working
-  while the codebase migrates to reading `DS` directly.
+* **The single source of visual truth.** Screens and components read `DS.*`
+  directly — `utils/constants.py` holds only config (asset paths, DB/storage/
+  auth knobs, message/match types), no visual tokens.
 
 Scope: this file holds LAYOUT/STYLE tokens only. Geometric `ft.Alignment` coords
 (the RTL-immune rule) and domain constants (age bounds, payload caps, page sizes)

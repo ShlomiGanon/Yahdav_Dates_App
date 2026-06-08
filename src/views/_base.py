@@ -19,10 +19,8 @@ Navigation-stack lifecycle (unchanged): the router keeps multiple views ALIVE in
 lifecycle hooks the router drives, and an owned background-task handle so a popped
 view's load can be cancelled.
 
-Transition note: during the per-screen migration, a screen may still provide a
-legacy `get_view_schema()` (a `ViewContent`); `build()` renders that directly. New
-screens implement `get_header`/`get_content`/`get_actions` and `BaseView` wraps the
-content in the standardized DS-spaced body itself.
+Every screen implements `get_header`/`get_content`/`get_actions` (pure content);
+`BaseView` wraps that content in the standardized DS-spaced body itself.
 """
 from __future__ import annotations
 
@@ -32,8 +30,8 @@ from concurrent.futures import Future
 
 import flet as ft
 
-from views.common import renderer as ui
-from views.common.screen import (
+from views.common.engine import renderer as ui
+from views.common.engine.screen import (
     BodyLayout,
     background_screen, responsive_card, responsive_card_of,
     clamp_hub_width, guard,
@@ -69,6 +67,9 @@ class BaseView:
         self.INSTANCE_ID: str = uuid.uuid4().hex
         # Owned handle to the background load task (cancelled on teardown).
         self._load_task: Future | None = None
+        # Set when we navigate away, so any in-flight async task stops touching
+        # the (replaced) page — prevents stale updates / leaked references.
+        self._closing: bool = False
         # Responsive plumbing: the live card to re-clamp on resize, and the prior
         # page resize handler to restore on pop.
         self._card: ft.Container | None = None
@@ -88,7 +89,7 @@ class BaseView:
         """REQUIRED for new-style screens. The body CONTENT as a flat list of
         `UIComponent` nodes — NO spacing/alignment/wrapping (the engine owns those)."""
         raise NotImplementedError(
-            f"{type(self).__name__} must implement get_content() or get_view_schema()"
+            f"{type(self).__name__} must implement get_content()"
         )
 
     def get_actions(self) -> "list[ui.UIComponent]":
@@ -109,13 +110,6 @@ class BaseView:
         """Flet services to attach to the View (e.g. an `ft.FilePicker`). Default: none."""
         return []
 
-    # ---- legacy seam (removed as each screen migrates to get_content) ----
-    def get_view_schema(self) -> "ui.ViewContent | None":
-        """Transitional: a not-yet-migrated screen returns its whole UI as a
-        `ViewContent`; `build()` renders it directly. New screens return None
-        (default) and implement `get_header`/`get_content`/`get_actions`."""
-        return None
-
     # ============================================================
     #  The ENGINE — the Template Method (screens NEVER override build)
     # ============================================================
@@ -133,20 +127,17 @@ class BaseView:
         self._card = responsive_card_of(view)
         return self._bind_lifecycle(view)
 
-    # ---- content resolution (legacy ViewContent OR the new node interface) ----
+    # ---- content resolution ----
 
     def _resolve_regions(self):
-        """Return (body, actions, banner, overlay, services) as built controls.
+        """Return (body, actions, banner, overlay, services) as built controls,
+        from the screen's pure-content interface (`get_header`/`get_content`/
+        `get_actions`/…) — the engine builds the standardized body itself.
 
         Fault-isolated to preserve the component ring of the two-layer backstop: a
         failing `get_content`/`get_header` degrades the body to the Error Component;
         a failing `get_actions`/banner/overlay/services degrades to none — `build()`
         never raises (only the body failure is visible, as before)."""
-        schema = self.get_view_schema()
-        if schema is not None:                                   # legacy path
-            rv = _RENDERER.render_content(schema)
-            return rv.body, rv.actions, rv.status_banner, rv.overlay, rv.services
-        # New path — the engine builds the standardized body from pure content.
         body = guard(self._render_body)                          # → Error Component on failure
         actions = self._safe(lambda: _RENDERER.render_all(self.get_actions()), [])
         banner = self._safe(lambda: self._render_node(self.get_status_banner()), None)
@@ -408,3 +399,27 @@ class BaseView:
             return self.page.route == self.ROUTE      # fallback (un-migrated)
         except Exception:  # noqa: BLE001 — a torn-down page reads as "not live"
             return False
+
+    # ============================================================
+    #  Navigation safety
+    # ============================================================
+    #  Shared by every screen that owns an in-flight async load and can be
+    #  popped/replaced mid-flight (chat, matches, …): `_closing` latches the
+    #  first navigation-away so a straggling task can't double-navigate or
+    #  push updates into a torn-down page.
+
+    def _safe_go(self, route: str) -> None:
+        """Navigate at most once — guards against a background task racing
+        the user (or itself) to `page.go` after this view started closing."""
+        if not self._closing:
+            self._closing = True
+            self.page.go(route)
+
+    def _safe_update(self) -> None:
+        """page.update() guarded against a view that's already navigated away."""
+        if self._closing:
+            return
+        try:
+            self.page.update()
+        except Exception:  # noqa: BLE001 — stale view after navigation
+            pass

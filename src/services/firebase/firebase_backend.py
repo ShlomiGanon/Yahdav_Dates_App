@@ -15,9 +15,9 @@ decoupling (engineering contract: "no god object"). Tracked as technical debt.
 from __future__ import annotations
 import logging
 
-from services.i_auth_service import IAuthService
-from services.i_profile_repository import IProfileRepository
-from services.i_messaging_service import IMessagingService
+from services.interfaces.i_auth_service import IAuthService
+from services.interfaces.i_profile_repository import IProfileRepository
+from services.interfaces.i_messaging_service import IMessagingService
 
 from utils.constants import FirebaseConfig, AuthConfig, MessageType
 from utils.validation import validate_email, validate_password

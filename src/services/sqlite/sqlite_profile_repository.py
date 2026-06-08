@@ -13,8 +13,8 @@ import sqlite3
 from contextlib import AbstractContextManager
 from datetime import date, datetime
 
-from services.i_profile_repository import IProfileRepository
-from services.sqlite_queries import connection, transaction, ProfileQueries
+from services.interfaces.i_profile_repository import IProfileRepository
+from services.sqlite.sqlite_queries import connection, transaction, ProfileQueries
 from utils.constants import MatchConfig, AssetPaths
 from utils.timeutils import utcnow_naive
 from models.user_profile import (

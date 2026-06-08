@@ -11,9 +11,9 @@ from __future__ import annotations
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.navigation import back_to_menu_button
-from utils.constants import TextSizes, ThemeColors
+from views.common.engine import renderer as ui
+from views.common.helpers.navigation import back_to_menu_button
+from style.design_system import DS
 
 
 class PlaceholderView(BaseView):
@@ -35,8 +35,8 @@ class PlaceholderView(BaseView):
         return [
             ui.text(
                 "התכונה הזו תהיה זמינה בקרוב 🙂",
-                size=TextSizes.INPUT,
-                color=ThemeColors.TEXT_MAIN,
+                size=DS.type.input,
+                color=DS.palette.text_main,
                 text_align=ft.TextAlign.CENTER,
             ),
         ]

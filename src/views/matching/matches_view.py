@@ -26,17 +26,19 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import BodyLayout
-from views.common import renderer as ui
-from views.common.navigation import back_to_menu_button
-from views.common.render import build_items_safe
-from views.common.load_flow import run_guarded_load, LoadGuard
+from views.common.engine.screen import BodyLayout
+from views.common.engine import renderer as ui
+from views.common.helpers.navigation import back_to_menu_button
+from views.common.helpers.safe_list import build_items_safe
+from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components.feedback import create_status_banner, show_status
 from style.design_system import DS
 from components.avatars import create_initial_avatar, create_unread_badge
 from components.cards import create_member_row_card
-from services.i_messaging_service import IMessagingService
-from services.i_profile_repository import IProfileRepository
+from services.interfaces.i_messaging_service import IMessagingService
+from services.interfaces.i_profile_repository import IProfileRepository
+from utils.session_keys import CURRENT_USER_ID, SELECTED_PEER_ID
+from utils import routes
 
 log = logging.getLogger(__name__)
 
@@ -44,14 +46,15 @@ log = logging.getLogger(__name__)
 class MatchesView(BaseView):
     """Vertical list of the user's chat threads, right-anchored for Hebrew."""
 
-    ROUTE = "/chat/history"
+    ROUTE = routes.CHAT_HISTORY
 
-    SESSION_USER_ID_KEY  = "current_user_id"
-    SELECTED_PEER_ID_KEY = "selected_peer_id"   # read by ChatView on open
+    # Aliases of the canonical `utils.session_keys` constants.
+    SESSION_USER_ID_KEY  = CURRENT_USER_ID
+    SELECTED_PEER_ID_KEY = SELECTED_PEER_ID   # read by ChatView on open
 
-    _CHAT_ROUTE  = "/chat/new"        # opening a thread → the chat screen
-    _MENU_ROUTE  = "/menu"            # the top "back" button
-    _DISCOVER_ROUTE = "/matching/discover"
+    _CHAT_ROUTE  = routes.CHAT_NEW    # opening a thread → the chat screen
+    _MENU_ROUTE  = routes.MENU        # the top "back" button
+    _DISCOVER_ROUTE = routes.DISCOVER
 
     _CARD_HEIGHT: int = DS.sizing.tile_h   # 86px row
     _PREVIEW_MAX_CHARS: int = 38
@@ -65,8 +68,6 @@ class MatchesView(BaseView):
         super().__init__(page)
         self.messaging = messaging
         self.profiles = profiles
-        # Set on navigate-away so an in-flight load stops touching the page.
-        self._closing: bool = False
 
     # ============================================================
     #  Layout
@@ -135,7 +136,7 @@ class MatchesView(BaseView):
             guards=[LoadGuard(
                 ok=bool(current),
                 message="אנא התחבר/י תחילה.",
-                bounce=lambda: self._safe_go("/auth/login"),
+                bounce=lambda: self._safe_go(routes.LOGIN),
             )],
             fetch=lambda: self._assemble_threads(current),
             on_success=_render,
@@ -231,15 +232,3 @@ class MatchesView(BaseView):
     #  Helpers
     # ============================================================
 
-    def _safe_go(self, route: str) -> None:
-        if not self._closing:
-            self._closing = True
-            self.page.go(route)
-
-    def _safe_update(self) -> None:
-        if self._closing:
-            return
-        try:
-            self.page.update()
-        except Exception:  # noqa: BLE001 — stale view after navigation
-            pass

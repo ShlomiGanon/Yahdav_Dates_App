@@ -3,7 +3,7 @@ token, weight, colour and RTL recipe are defined in ONE place instead of being
 hand-rolled per view."""
 import flet as ft
 
-from utils.constants import TextSizes, ThemeColors
+from style.design_system import DS
 
 
 def create_screen_heading(text: str, *, center: bool = True) -> ft.Text:
@@ -18,15 +18,15 @@ def create_screen_heading(text: str, *, center: bool = True) -> ft.Text:
 
     Args:
         center: pass `False` only for a right-aligned in-body heading that is
-            NOT the screen's title (e.g. an `ft.Text(size=TextSizes.H1, …)`
+            NOT the screen's title (e.g. an `ft.Text(size=DS.type.h1, …)`
             standing in for one inside a sub-section) — prefer
             `create_section_heading` for that.
     """
     return ft.Text(
         text,
-        size=TextSizes.H1,
+        size=DS.type.h1,
         weight=ft.FontWeight.BOLD,
-        color=ThemeColors.TEXT_MAIN,
+        color=DS.palette.text_main,
         rtl=True,
         text_align=ft.TextAlign.CENTER if center else ft.TextAlign.RIGHT,
     )
@@ -37,9 +37,9 @@ def create_section_heading(text: str, *, center: bool = False) -> ft.Text:
     heading, one size down. Provided for parity; use where an H2 is duplicated."""
     return ft.Text(
         text,
-        size=TextSizes.H2,
+        size=DS.type.h2,
         weight=ft.FontWeight.BOLD,
-        color=ThemeColors.TEXT_MAIN,
+        color=DS.palette.text_main,
         rtl=True,
         text_align=ft.TextAlign.CENTER if center else ft.TextAlign.RIGHT,
     )

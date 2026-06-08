@@ -23,30 +23,33 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.navigation import back_to_menu_button, back_button
+from views.common.engine import renderer as ui
+from views.common.helpers.navigation import back_to_menu_button, back_button
 from style.design_system import DS
-from views.common.photos import DEFAULT_PROFILE_IMAGE, extra_photo_urls, photo_thumb
-from views.common.photo_ops import save_photo_urls_or_rollback
-from views.common.load_flow import run_guarded_load, LoadGuard
+from views.common.helpers.photos import DEFAULT_PROFILE_IMAGE, extra_photo_urls, photo_thumb
+from views.common.helpers.photo_ops import pick_and_upload, save_photo_urls_or_rollback
+from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components import loading
 from components.buttons import create_primary_button, create_secondary_button
 from components.feedback import create_status_banner, show_status
-from services.i_profile_repository import IProfileRepository
-from services.i_storage_service import IStorageService
+from services.interfaces.i_profile_repository import IProfileRepository
+from services.interfaces.i_storage_service import IStorageService
 from models.user_profile import UserProfile
-from utils.constants import TextSizes, ThemeColors, StorageConfig
+from utils.constants import StorageConfig
+from utils.session_keys import CURRENT_USER_ID
+from utils import routes
 
 log = logging.getLogger(__name__)
 
 
 class AdditionalPhotosView(BaseView):
-    ROUTE = "/profile/photos"
+    ROUTE = routes.ADDITIONAL_PHOTOS
 
     EXPAND_BODY = True   # long photo grid → fill the viewport, scroll internally
 
-    SESSION_USER_ID_KEY = "current_user_id"
-    _PROFILE_ROUTE = "/profile/me"
+    # Alias of the canonical `utils.session_keys.CURRENT_USER_ID` constant.
+    SESSION_USER_ID_KEY = CURRENT_USER_ID
+    _PROFILE_ROUTE = routes.MY_PROFILE
     _THUMB_SIZE = DS.sizing.thumb
 
     def __init__(
@@ -87,8 +90,8 @@ class AdditionalPhotosView(BaseView):
             ui.text(
                 f"ניתן להוסיף עד {StorageConfig.MAX_EXTRA_PHOTOS} תמונות, "
                 f"בנוסף לתמונת הפרופיל הראשית.",
-                size=TextSizes.SMALL,
-                color=ThemeColors.TEXT_MAIN,
+                size=DS.type.small,
+                color=DS.palette.text_main,
             ),
             ui.raw(self._photos_area),
         ]
@@ -131,7 +134,7 @@ class AdditionalPhotosView(BaseView):
             if profile is None:
                 await show_status(self._status_banner, self._status_text,"לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False)
                 await asyncio.sleep(1.5)
-                self.page.go("/auth/login")
+                self.page.go(routes.LOGIN)
                 return
             self._current_profile = profile
             self._photo_urls = list(profile.photo_urls)[:StorageConfig.MAX_PROFILE_PHOTOS]
@@ -143,7 +146,7 @@ class AdditionalPhotosView(BaseView):
             guards=[LoadGuard(
                 ok=bool(current_user),
                 message="אנא התחבר/י תחילה.",
-                bounce=lambda: self._is_live() and self.page.go("/auth/login"),
+                bounce=lambda: self._is_live() and self.page.go(routes.LOGIN),
             )],
             fetch=lambda: self.profile_repo.get_profile(current_user),
             on_success=_populate,
@@ -171,14 +174,14 @@ class AdditionalPhotosView(BaseView):
         if not extras:
             tiles.append(ft.Text(
                 "עדיין לא הוספת תמונות נוספות.",
-                size=TextSizes.BODY, color=ThemeColors.TEXT_MAIN,
+                size=DS.type.body, color=DS.palette.text_main,
                 rtl=True, text_align=ft.TextAlign.RIGHT,
             ))
         for i, path in enumerate(extras):
             tiles.append(self._make_tile(path, i))
         if len(extras) < StorageConfig.MAX_EXTRA_PHOTOS:
             tiles.append(create_primary_button(
-                "הוסף תמונה נוספת", self._on_add_photo, text_size=TextSizes.INPUT,
+                "הוסף תמונה נוספת", self._on_add_photo, text_size=DS.type.input,
             ))
         self._photos_area.controls = tiles
         try:
@@ -191,15 +194,15 @@ class AdditionalPhotosView(BaseView):
         70px remove button filling the space to its left."""
         caption = ft.Text(
             f"תמונה {extra_index + 1}",
-            size=TextSizes.INPUT, weight=ft.FontWeight.W_500,
-            color=ThemeColors.TEXT_MAIN, rtl=True, text_align=ft.TextAlign.RIGHT,
+            size=DS.type.input, weight=ft.FontWeight.W_500,
+            color=DS.palette.text_main, rtl=True, text_align=ft.TextAlign.RIGHT,
         )
         remove_btn = create_secondary_button(
             "הסר תמונה",
             functools.partial(self._on_remove_photo, extra_index),
             width=None,
             height=DS.sizing.button_h,   # 70px tap target
-            text_size=TextSizes.INPUT,
+            text_size=DS.type.input,
         )
         info = ft.Column(
             controls=[caption, remove_btn],
@@ -230,34 +233,28 @@ class AdditionalPhotosView(BaseView):
             await show_status(self._status_banner, self._status_text,"בורר הקבצים אינו זמין כעת.", ok=False)
             return
 
-        try:
-            files = await self._file_picker.pick_files(
-                dialog_title="בחר/י תמונה",
-                file_type=ft.FilePickerFileType.IMAGE,
-                allow_multiple=False,
-                with_data=True,
-            )
-        except Exception:
-            log.exception("AdditionalPhotos: file picker failed")
-            await show_status(self._status_banner, self._status_text,"פתיחת בורר הקבצים נכשלה.", ok=False)
-            return
-        if not files:
-            return
-        data = files[0].bytes
-        if not data:
-            await show_status(self._status_banner, self._status_text,"טעינת התמונה נכשלה. נסה/י קובץ אחר.", ok=False)
-            return
-
+        # The shared pick → upload prologue (cancel returns None; any picker/
+        # read/upload failure raises and falls into the same try/except as the
+        # durable swap below — one banner covers the whole flow, as before.
         loading.show_loading(self.page)
-        stored_path: str | None = None
         try:
-            stored_path = await asyncio.to_thread(
-                self.storage.upload_file, data, files[0].name,
-            )
-            # Reserve index 0 for the main picture: if there's no real main yet,
-            # seed the default template so this extra lands at index >= 1.
-            base = list(self._photo_urls) or [DEFAULT_PROFILE_IMAGE]
-            new_list = base + [stored_path]
+            picked = await pick_and_upload(self._file_picker, self.storage, dialog_title="בחר/י תמונה")
+        except Exception:
+            loading.hide_loading(self.page)
+            log.exception("AdditionalPhotos: add failed user=%s",
+                          self._current_profile.user_id)
+            await show_status(self._status_banner, self._status_text,"שמירת התמונה נכשלה. אנא נסה/י שוב.", ok=False)
+            return
+        if picked is None:
+            loading.hide_loading(self.page)
+            return
+        _data, _name, stored_path = picked
+
+        # Reserve index 0 for the main picture: if there's no real main yet,
+        # seed the default template so this extra lands at index >= 1.
+        base = list(self._photo_urls) or [DEFAULT_PROFILE_IMAGE]
+        new_list = base + [stored_path]
+        try:
             # Shared durability kernel: UPSERT the new list, rolling the entity
             # back and deleting the just-uploaded orphan if the save fails.
             await save_photo_urls_or_rollback(

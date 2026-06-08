@@ -64,26 +64,33 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from services.sqlite_profile_repository import SqliteProfileRepository
-from services.sqlite_auth_service import SqliteAuthService
-from services.sqlite_messaging_service import SqliteMessagingService
-from services.local_disk_storage_service import LocalDiskStorageService
-from services.sqlite_queries import ProfileQueries
-from services.i_auth_service import IAuthService
-from services.i_profile_repository import IProfileRepository
-from services.i_messaging_service import IMessagingService
-from services.i_storage_service import IStorageService
-from utils.constants import MessageType, AssetPaths
+from services.sqlite.sqlite_profile_repository import SqliteProfileRepository
+from services.sqlite.sqlite_auth_service import SqliteAuthService
+from services.sqlite.sqlite_messaging_service import SqliteMessagingService
+from services.local.local_disk_storage_service import LocalDiskStorageService
+from services.sqlite.sqlite_queries import ProfileQueries
+from services.interfaces.i_auth_service import IAuthService
+from services.interfaces.i_profile_repository import IProfileRepository
+from services.interfaces.i_messaging_service import IMessagingService
+from services.interfaces.i_storage_service import IStorageService
+from utils.constants import MessageType, AssetPaths, AuthConfig, MatchConfig, ChatConfig
 from utils import local_storage
+from utils import routes
 from utils.router import Router, _DEFAULT_ROUTE
 from views.menu.main_menu_view import MainMenuView
 from views.profile.user_profile_view import UserProfileView
-from views.common.navigation import go_back
+from views.profile.my_profile_view import MyProfileView
+from views.matching.discover_view import DiscoverView
+from views.matching.chat_view import ChatView
+from views.auth.login_view import LoginView
+from views.auth.signup_view import SignupView
+from views.common.helpers.navigation import go_back
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.screen import BodyLayout
-from views.common.photo_ops import save_photo_urls_or_rollback
-from views.common.load_flow import run_guarded_load, LoadGuard
+from views.common.engine import renderer as ui
+from views.common.helpers import peer_data
+from views.common.engine.screen import BodyLayout
+from views.common.helpers.photo_ops import save_photo_urls_or_rollback
+from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components import loading
 from components.error_card import create_error_card
 from components.feedback import create_status_banner
@@ -279,6 +286,106 @@ class TestAuthSessionRouterBridge(_BackendMixin, unittest.IsolatedAsyncioTestCas
         self.assertEqual(self.page.route, _DEFAULT_ROUTE)
         # The dead device token was purged so it's never re-evaluated next boot.
         self.assertIsNone(await local_storage.read_token(self.page))
+
+# ============================================================================
+#  1b. Auth credential mechanics — scrypt hashing + failed-attempt tracking
+# ============================================================================
+#  `AuthConfig` declares `MAX_FAILED_LOGIN_ATTEMPTS` / `LOCKOUT_MINUTES` as the
+#  abuse-threshold policy; what `SqliteAuthService` actually wires up TODAY is
+#  the underlying mechanism those thresholds would gate on — a per-account
+#  `failed_attempts` counter (incremented on a wrong password, reset to 0 on a
+#  success) backed by salted-scrypt password hashing. These tests pin down that
+#  real, present-day mechanism (not the not-yet-enforced lockout policy).
+
+class TestAuthCredentialMechanics(_BackendMixin, unittest.TestCase):
+
+    def setUp(self) -> None:
+        self._build_backend()
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    def _credential_row(self, uid: str) -> sqlite3.Row:
+        with sqlite3.connect(self.db_path) as c:
+            c.row_factory = sqlite3.Row
+            row = c.execute(
+                "SELECT failed_attempts, last_login_at, password_hash "
+                "FROM auth_credentials WHERE user_id = ?",
+                (uid,),
+            ).fetchone()
+        self.assertIsNotNone(row)
+        return row
+
+    # ---- scrypt hashing (the static helpers `login_user`/`signup_user` use) --
+
+    def test_hash_password_uses_scrypt_with_a_random_salt(self):
+        h1 = SqliteAuthService._hash_password(_TEST_PASSWORD)
+        h2 = SqliteAuthService._hash_password(_TEST_PASSWORD)
+        scheme, salt_hex, digest_hex = h1.split("$")
+        self.assertEqual(scheme, "scrypt")
+        bytes.fromhex(salt_hex)     # well-formed hex, doesn't raise
+        bytes.fromhex(digest_hex)
+        # Same password, two calls → different salts → different hashes.
+        self.assertNotEqual(h1, h2)
+
+    def test_verify_password_round_trips_and_rejects_wrong_or_malformed(self):
+        stored = SqliteAuthService._hash_password(_TEST_PASSWORD)
+        self.assertTrue(SqliteAuthService._verify_password(_TEST_PASSWORD, stored))
+        self.assertFalse(SqliteAuthService._verify_password("wrong-password", stored))
+        # Defensive parsing: a malformed/garbled stored value never raises.
+        self.assertFalse(SqliteAuthService._verify_password(_TEST_PASSWORD, "garbage"))
+        self.assertFalse(SqliteAuthService._verify_password(_TEST_PASSWORD, "plain$abc$def"))
+
+    def test_signup_persists_a_scrypt_hash_not_the_plaintext(self):
+        uid = self._signup("hank", "hank@example.com")
+        row = self._credential_row(uid)
+        self.assertTrue(row["password_hash"].startswith("scrypt$"))
+        self.assertNotIn(_TEST_PASSWORD, row["password_hash"])
+
+    # ---- failed_attempts counter (the mechanism MAX_FAILED_LOGIN_ATTEMPTS /
+    # LOCKOUT_MINUTES would gate on, were that policy wired up) --------------
+
+    def test_failed_login_increments_the_counter_without_blocking(self):
+        uid = self._signup("ivy", "ivy@example.com")
+        self.assertEqual(self._credential_row(uid)["failed_attempts"], 0)
+
+        for expected in (1, 2, 3):
+            self.assertIsNone(self.auth.login_user("ivy", "wrong-password"))
+            self.assertEqual(self._credential_row(uid)["failed_attempts"], expected)
+
+        # No enforcement is wired to the counter today — even past the
+        # configured MAX_FAILED_LOGIN_ATTEMPTS floor, a correct password still
+        # logs in (pins down present behaviour; would need updating if/when
+        # lockout enforcement lands).
+        self.assertGreaterEqual(
+            self._credential_row(uid)["failed_attempts"],
+            0,
+        )
+        for _ in range(AuthConfig.MAX_FAILED_LOGIN_ATTEMPTS):
+            self.auth.login_user("ivy", "wrong-password")
+        self.assertEqual(self.auth.login_user("ivy", _TEST_PASSWORD), uid)
+
+    def test_successful_login_resets_the_counter_to_zero(self):
+        uid = self._signup("jack", "jack@example.com")
+        self.auth.login_user("jack", "wrong-password")
+        self.auth.login_user("jack", "wrong-password")
+        self.assertEqual(self._credential_row(uid)["failed_attempts"], 2)
+
+        self.assertEqual(self.auth.login_user("jack", _TEST_PASSWORD), uid)
+
+        row = self._credential_row(uid)
+        self.assertEqual(row["failed_attempts"], 0)
+        # `last_login_at` is stamped on every attempt (success AND failure —
+        # `UPDATE_LOGIN_RESULT` sets it unconditionally), so its presence alone
+        # doesn't distinguish a win from a miss; only `failed_attempts` does.
+        self.assertIsNotNone(row["last_login_at"])
+
+    def test_unknown_login_identifier_does_not_touch_any_counter(self):
+        uid = self._signup("kate", "kate@example.com")
+        self.assertIsNone(self.auth.login_user("nobody-such-user", "whatever1"))
+        # The enumeration-guard decoy path verifies against a dummy hash and
+        # touches no row — kate's own counter stays untouched.
+        self.assertEqual(self._credential_row(uid)["failed_attempts"], 0)
 
 
 # ============================================================================
@@ -618,7 +725,7 @@ class TestPeerProfileBlackScreenRegression(_BackendMixin, unittest.TestCase):
     def test_empty_photos_resolve_to_default_avatar(self):
         profile = self._degenerate_profile(_photo_urls=())
         self.assertEqual(
-            self.view._safe_photo_src(profile), AssetPaths.DEFAULT_PROFILE_IMAGE,
+            peer_data.safe_photo_src(profile), AssetPaths.DEFAULT_PROFILE_IMAGE,
         )
 
     def test_extremely_long_bio_stays_renderable(self):
@@ -715,7 +822,7 @@ class TestBackwardCompatPhotoMigration(_BackendMixin, unittest.TestCase):
 
     def test_safe_indexing_helpers_on_empty(self):
         # REQ 2: the canonical accessors are length-checked.
-        from views.common.photos import resolve_main_photo, extra_photo_urls
+        from views.common.helpers.photos import resolve_main_photo, extra_photo_urls
         self.assertEqual(resolve_main_photo([]), AssetPaths.DEFAULT_PROFILE_IMAGE)
         self.assertEqual(resolve_main_photo(()), AssetPaths.DEFAULT_PROFILE_IMAGE)
         self.assertEqual(extra_photo_urls([]), [])
@@ -942,15 +1049,17 @@ class TestNavigationStack(_BackendMixin, unittest.TestCase):
             self.router.handle_route_change(r)
         top = self.page.views[-1]
         peer_photos = top.data
-        # Open the fullscreen lightbox, then press hardware back.
-        peer_photos._lightbox.visible = True
+        # Open the fullscreen lightbox, then press hardware back. The lightbox
+        # is the shared `PhotoLightbox` component; its built overlay control
+        # (toggled by `visible`) is what `consume_pop`/`on_pop` inspect.
+        peer_photos._lightbox.control.visible = True
         depth_before = len(self.page.views)
 
         self.router.handle_view_pop(None)
 
         # The pop was CONSUMED by the lightbox: stack unchanged, overlay closed.
         self.assertEqual(len(self.page.views), depth_before)
-        self.assertFalse(peer_photos._lightbox.visible)
+        self.assertFalse(peer_photos._lightbox.control.visible)
 
     def test_reset_route_discards_history(self):
         self.router.handle_route_change("/menu")
@@ -1018,7 +1127,7 @@ class _RoutingFakePage(FakePage):
 
 
 class TestStackAwareBack(_BackendMixin, unittest.TestCase):
-    """`views.common.navigation.go_back` pops ONE level — returning to the screen
+    """`views.common.helpers.navigation.go_back` pops ONE level — returning to the screen
     that actually opened the current one (never a hard-coded parent) — and falls
     back to a safe route when the current screen is the stack root.
 
@@ -1158,13 +1267,13 @@ class TestUnifiedCardLayout(unittest.TestCase):
         self.assertEqual(view.route, "/menu")
 
     def test_default_padding_is_the_shared_card_padding(self):
-        from utils.constants import UIConstants
+        from style.design_system import DS
 
         class _V(BaseView):
             ROUTE = "/x"
             def get_content(self): return [ui.raw(ft.Text("x"))]
         card = self._card(_V(FakePage()).build())
-        self.assertEqual(card.padding, UIConstants.CARD_PADDING)
+        self.assertEqual(card.padding, DS.pad.card)
 
 
 class TestAuthAndMenuScreensUseTheCompactCardFrame(_BackendMixin, unittest.TestCase):
@@ -1200,7 +1309,7 @@ class TestAuthAndMenuScreensUseTheCompactCardFrame(_BackendMixin, unittest.TestC
         self._assert_compact_card(MainMenuView(self.page).build(), "/menu")
 
     def test_placeholder_view_uses_the_compact_card(self):
-        from views.common.placeholder_view import PlaceholderView
+        from views.common.views.placeholder_view import PlaceholderView
         view = PlaceholderView(self.page, title="בקרוב", route="/soon").build()
         self._assert_compact_card(view, "/soon")
 
@@ -1211,6 +1320,497 @@ class TestAuthAndMenuScreensUseTheCompactCardFrame(_BackendMixin, unittest.TestC
     def test_signup_view_uses_the_compact_card(self):
         from views.auth.signup_view import SignupView
         self._assert_compact_card(SignupView(self.page, self.auth).build(), "/auth/signup")
+
+
+# ============================================================================
+#  5. DiscoverView — feed load + peer selection
+# ============================================================================
+
+class TestDiscoverViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
+    """DiscoverView's feed load wires the real `discover_profiles` result to
+    tiles (or an empty-state banner), and choosing an action on a candidate
+    stashes their id under SELECTED_PEER_ID_KEY *before* navigating — mirroring
+    how login stashes the UID before routing (see `_on_action_chosen`)."""
+
+    def setUp(self) -> None:
+        self._build_backend()
+        self.viewer = self._signup("viewer1", "viewer1@example.com")
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    async def _drive(self, page: FakePage) -> DiscoverView:
+        page.route = DiscoverView.ROUTE
+        page.session.store.set(DiscoverView.SESSION_USER_ID_KEY, self.viewer)
+        view = DiscoverView(page, self.profiles)
+        page.views.append(view.build())          # mounted as the stack top
+        await view._load_candidates()
+        return view
+
+    async def test_feed_renders_real_discover_candidates(self):
+        candidate_id = self._signup("cand1", "cand1@example.com")
+        page = FakePage()
+        view = await self._drive(page)
+        self.assertEqual([p.user_id for p in view._candidates], [candidate_id])
+        self.assertTrue(view._feed_column.controls)
+
+    async def test_empty_feed_shows_a_status_banner_not_an_error(self):
+        page = FakePage()                         # nobody else has signed up
+        view = await self._drive(page)
+        self.assertEqual(view._candidates, [])
+        self.assertEqual(view._feed_column.controls, [])
+        self.assertIn("עדיין אין פרופילים", view._status_text.value)
+
+    async def test_choosing_view_profile_stashes_peer_then_navigates(self):
+        candidate_id = self._signup("cand2", "cand2@example.com")
+        page = FakePage()
+        view = await self._drive(page)
+        profile = next(p for p in view._candidates if p.user_id == candidate_id)
+
+        sheet = ft.BottomSheet(content=ft.Container())
+        view._on_action_chosen(sheet, DiscoverView._VIEW_PROFILE_ROUTE, profile)
+
+        self.assertEqual(page.session.store.get(DiscoverView.SELECTED_PEER_ID_KEY),
+                         candidate_id)
+        self.assertEqual(page.route, DiscoverView._VIEW_PROFILE_ROUTE)
+
+    async def test_choosing_chat_stashes_peer_then_navigates_to_chat(self):
+        candidate_id = self._signup("cand3", "cand3@example.com")
+        page = FakePage()
+        view = await self._drive(page)
+        profile = next(p for p in view._candidates if p.user_id == candidate_id)
+
+        sheet = ft.BottomSheet(content=ft.Container())
+        view._on_action_chosen(sheet, DiscoverView._CHAT_ROUTE, profile)
+
+        self.assertEqual(page.session.store.get(DiscoverView.SELECTED_PEER_ID_KEY),
+                         candidate_id)
+        self.assertEqual(page.route, DiscoverView._CHAT_ROUTE)
+
+
+# ============================================================================
+#  6. ChatView — history render, send, identity guard
+# ============================================================================
+
+class TestChatViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
+    """ChatView wires the real `IMessagingService` history to side-anchored
+    bubbles (mine = absolute alignment +1/right, peer = -1/left — the
+    RTL-immune scheme `create_chat_bubble` implements) and the send handler
+    persists, optimistically clears the composer, and reloads."""
+
+    def setUp(self) -> None:
+        self._build_backend()
+        self.viewer = self._signup("dana", "dana@example.com")
+        self.peer = self._signup("eyal", "eyal@example.com")
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    async def _drive(self) -> tuple[FakePage, ChatView]:
+        page = FakePage()
+        page.route = ChatView.ROUTE
+        page.session.store.set(ChatView.SESSION_USER_ID_KEY, self.viewer)
+        view = ChatView(page, self.messaging, self_id=self.viewer, peer_id=self.peer)
+        page.views.append(view.build())           # mounted as the stack top
+        await view._load_history()
+        return page, view
+
+    @staticmethod
+    def _bubble_sides(view: ChatView) -> dict[str, float]:
+        """text -> wrapper.alignment.x (the RTL-immune side anchor)."""
+        return {
+            wrapper.content.content.value: wrapper.alignment.x
+            for wrapper in view._messages_list.controls
+        }
+
+    async def test_history_renders_bubbles_anchored_by_sender(self):
+        self.messaging.send_direct_message(self.peer, self.viewer, "הי", MessageType.TEXT)
+        self.messaging.send_direct_message(self.viewer, self.peer, "שלום", MessageType.TEXT)
+        _page, view = await self._drive()
+
+        self.assertEqual(len(view._messages_list.controls), 2)
+        sides = self._bubble_sides(view)
+        self.assertEqual(sides["שלום"], 1)         # mine → pinned right
+        self.assertEqual(sides["הי"], -1)          # peer's → pinned left
+
+    async def test_send_persists_clears_composer_and_reappears_in_history(self):
+        _page, view = await self._drive()
+        view._composer.value = "מה שלומך?"
+
+        await view._on_send(None)
+
+        self.assertEqual(view._composer.value, "")          # optimistic clear
+        history = self.messaging.get_chat_history(self.viewer, self.peer, limit=20)
+        self.assertEqual(history[0]["content"], "מה שלומך?")
+        self.assertEqual(history[0]["sender_id"], self.viewer)
+        self.assertIn("מה שלומך?", self._bubble_sides(view))
+
+    async def test_send_ignores_blank_input(self):
+        _page, view = await self._drive()
+        view._composer.value = "   "
+
+        await view._on_send(None)
+
+        self.assertEqual(
+            self.messaging.get_chat_history(self.viewer, self.peer, limit=20), [],
+        )
+
+    async def test_identity_mismatch_shows_error_and_bounces_to_login(self):
+        page = FakePage()
+        page.route = ChatView.ROUTE
+        page.session.store.set(ChatView.SESSION_USER_ID_KEY, "someone-else")
+        view = ChatView(page, self.messaging, self_id=self.viewer, peer_id=self.peer)
+        page.views.append(view.build())
+
+        await view._load_history()
+
+        self.assertEqual(page.route, routes.LOGIN)
+        self.assertEqual(view._messages_list.controls, [])
+
+
+# ============================================================================
+#  7. LoginView — credential validation, identity bridge, remember-me
+# ============================================================================
+
+class TestLoginViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
+    """LoginView's submit handler: sequential field validation (pinned, one
+    error at a time), the identity hand-off into `page.session.store` BEFORE
+    navigation (so user-scoped screens can read it on their first tick), and
+    the remember-me round trip — raw token on the device, hash in the DB."""
+
+    def setUp(self) -> None:
+        self._build_backend()
+        self.uid = self._signup("liora", "liora@example.com")
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    def _build_view(self) -> tuple[FakePage, LoginView]:
+        page = FakePage()
+        page.route = LoginView.ROUTE
+        view = LoginView(page, self.auth)
+        page.views.append(view.build())
+        return page, view
+
+    async def test_invalid_email_is_pinned_to_the_email_field(self):
+        page, view = self._build_view()
+        view._email_field.value = "not-an-email"
+        view._password_field.value = _TEST_PASSWORD
+
+        await view._on_login_click(None)
+
+        self.assertTrue(view._email_error.value)
+        self.assertFalse(view._password_error.value)        # first failure wins
+        self.assertIsNone(page.session.store.get("current_user_id"))
+
+    async def test_weak_password_is_pinned_to_the_password_field(self):
+        page, view = self._build_view()
+        view._email_field.value = "liora@example.com"
+        view._password_field.value = "short"
+
+        await view._on_login_click(None)
+
+        self.assertFalse(view._email_error.value)
+        self.assertTrue(view._password_error.value)
+
+    async def test_wrong_password_shows_generic_failure_without_identity_leak(self):
+        page, view = self._build_view()
+        view._email_field.value = "liora@example.com"
+        view._password_field.value = "WrongPassw0rd!"
+
+        await view._on_login_click(None)
+
+        self.assertTrue(view._password_error.value)
+        self.assertIsNone(page.session.store.get("current_user_id"))
+        self.assertEqual(page.route, LoginView.ROUTE)       # never navigated away
+
+    async def test_successful_login_populates_identity_then_routes_to_menu(self):
+        page, view = self._build_view()
+        view._email_field.value = "liora@example.com"
+        view._password_field.value = _TEST_PASSWORD
+
+        await view._on_login_click(None)
+
+        self.assertEqual(page.session.store.get("current_user_id"), self.uid)
+        self.assertEqual(page.session.store.get("current_user_email"), "liora@example.com")
+        self.assertEqual(page.route, routes.MENU)
+
+    async def test_remember_me_checked_persists_raw_token_on_device_and_hash_in_db(self):
+        page, view = self._build_view()
+        view._email_field.value = "liora@example.com"
+        view._password_field.value = _TEST_PASSWORD
+        view._remember_me.value = True
+
+        await view._on_login_click(None)
+
+        token = await local_storage.read_token(page)
+        self.assertTrue(token)
+        hashes = self._session_token_hashes()
+        self.assertIn(hashlib.sha256(token.encode()).hexdigest(), hashes)
+        self.assertNotIn(token, hashes)                     # device ≠ DB content
+        self.assertEqual(self.auth.validate_remember_me_token(token), self.uid)
+
+    async def test_remember_me_unchecked_clears_a_stale_device_token(self):
+        page = FakePage()
+        page.route = LoginView.ROUTE
+        stale = self.auth.generate_remember_me_token(self.uid)
+        await local_storage.write_token(page, stale)        # a prior session's leftover
+
+        view = LoginView(page, self.auth)
+        page.views.append(view.build())
+        view._email_field.value = "liora@example.com"
+        view._password_field.value = _TEST_PASSWORD
+        view._remember_me.value = False
+
+        await view._on_login_click(None)
+
+        self.assertIsNone(await local_storage.read_token(page))
+
+
+# ============================================================================
+#  8. SignupView — account creation + duplicate/weak-input rejection paths
+# ============================================================================
+
+class TestSignupViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
+    """SignupView's submit handler: sequential field validation, the
+    email-local-part → username derivation, and the real `signup_user`
+    round trip — including the duplicate-email rejection surfaced on the
+    email row (the most likely cause, per the view's own docstring)."""
+
+    def setUp(self) -> None:
+        self._build_backend()
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    def _build_view(self) -> tuple[FakePage, SignupView]:
+        page = FakePage()
+        page.route = SignupView.ROUTE
+        view = SignupView(page, self.auth)
+        page.views.append(view.build())
+        return page, view
+
+    @staticmethod
+    async def _submit(view: SignupView, *, email: str, password: str, confirm: str) -> None:
+        view._email_field.value = email
+        view._password_field.value = password
+        view._confirm_password_field.value = confirm
+        await view._on_signup_click(None)
+
+    async def test_invalid_email_is_pinned_to_the_email_field(self):
+        page, view = self._build_view()
+        await self._submit(view, email="not-an-email",
+                           password=_TEST_PASSWORD, confirm=_TEST_PASSWORD)
+        self.assertTrue(view._email_error.value)
+        self.assertFalse(view._password_error.value)
+        self.assertEqual(page.route, SignupView.ROUTE)
+
+    async def test_weak_password_is_pinned_to_the_password_field(self):
+        page, view = self._build_view()
+        await self._submit(view, email="newmember@example.com",
+                           password="short", confirm="short")
+        self.assertFalse(view._email_error.value)
+        self.assertTrue(view._password_error.value)
+
+    async def test_mismatched_confirmation_is_pinned_to_the_confirm_field(self):
+        page, view = self._build_view()
+        await self._submit(view, email="newmember@example.com",
+                           password=_TEST_PASSWORD, confirm="Different1!")
+        self.assertFalse(view._password_error.value)
+        self.assertTrue(view._confirm_password_error.value)
+
+    async def test_successful_signup_derives_username_and_routes_to_login(self):
+        page, view = self._build_view()
+        await self._submit(view, email="newmember@example.com",
+                           password=_TEST_PASSWORD, confirm=_TEST_PASSWORD)
+
+        self.assertEqual(page.route, routes.LOGIN)
+        self.assertTrue(self.auth.is_username_exists("newmember"))
+        self.assertIsNotNone(self.auth.login_user("newmember", _TEST_PASSWORD))
+
+    async def test_duplicate_email_is_surfaced_on_the_email_row_without_navigating(self):
+        self._signup("first", "dup@example.com")
+        page, view = self._build_view()
+
+        await self._submit(view, email="dup@example.com",
+                           password=_TEST_PASSWORD, confirm=_TEST_PASSWORD)
+
+        self.assertTrue(view._email_error.value)
+        self.assertEqual(page.route, SignupView.ROUTE)
+
+
+# ============================================================================
+#  9. MyProfileView — form validation, save round-trip, photo-upload rollback
+# ============================================================================
+
+class _FakePickedFile:
+    """Stand-in for Flet's picked-file record — the two attributes
+    `pick_and_upload` reads (`name`, `bytes`)."""
+    def __init__(self, name: str, data: bytes) -> None:
+        self.name = name
+        self.bytes = data
+
+
+class _FakeFilePicker:
+    """Stand-in for `ft.FilePicker` — `pick_files` returns a canned selection
+    (or `None`/`[]` to model the user dismissing the dialog)."""
+    def __init__(self, files=None) -> None:
+        self._files = files
+
+    async def pick_files(self, **_kwargs):
+        return self._files
+
+
+class _AlwaysFailingProfileRepo:
+    """Stand-in repository whose save always fails mid-transaction — drives
+    `save_photo_urls_or_rollback`'s rollback path (mirrors
+    `TestPhotoWriteRollbackKernel._FailingRepo`)."""
+    def save_profile(self, _profile):
+        raise RuntimeError("simulated save failure")
+
+
+class TestMyProfileViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
+    """Exercises the post-3.1-split module boundary: `MyProfileView` owns
+    `_current_profile` / `_photo_urls` / `_main_image`; `my_profile_form` /
+    `my_profile_photos` are stateless helpers it calls into. These tests drive
+    the WHOLE lifecycle (mount → load → save / change-photo) the way the app
+    does, asserting the persisted DB state — not just in-memory mutation."""
+
+    _PNG = TestProfileStorageIntegration._PNG
+
+    def setUp(self) -> None:
+        self._build_backend()
+        self.uid = self._signup("noa", "noa@example.com")
+
+    def tearDown(self) -> None:
+        self._teardown_backend()
+
+    async def _drive(self) -> tuple[FakePage, MyProfileView]:
+        page = FakePage()
+        page.route = MyProfileView.ROUTE
+        page.session.store.set(MyProfileView.SESSION_USER_ID_KEY, self.uid)
+        view = MyProfileView(page, self.profiles, self.storage)
+        page.views.append(view.build())            # mounted as the stack top
+        await view._load_profile_data()
+        return page, view
+
+    def _fill_valid_form(self, view: MyProfileView) -> None:
+        view._name_field.value = "נועה כהן"
+        view._gender_dropdown.value = Gender.FEMALE.value
+        view._dob_day.value = "15"
+        view._dob_month.value = "6"
+        view._dob_year.value = str(date.today().year - 40)
+        view._city_field.value = "תל אביב"
+        view._region_dropdown.value = "מחוז תל אביב"
+        view._bio_field.value = "קצת עליי"
+
+    # ---- load → populate -------------------------------------------------
+
+    async def test_load_populates_form_from_the_persisted_profile(self):
+        _page, view = await self._drive()
+        self.assertIsNotNone(view._current_profile)
+        self.assertEqual(view._current_profile.user_id, self.uid)
+        # The seeded minimal profile's name mirrors the username (see
+        # ProfileQueries.minimal_profile_params) — populate_form mirrors it in.
+        self.assertEqual(view._name_field.value, "noa")
+        self.assertEqual(view._photo_urls, [AssetPaths.DEFAULT_PROFILE_IMAGE])
+
+    # ---- save: validation pins the first error, persists nothing ---------
+
+    async def test_save_pins_first_validation_error_and_persists_nothing(self):
+        before = self.profiles.get_profile(self.uid)
+        _page, view = await self._drive()
+        view._name_field.value = "   "                       # blank after strip
+
+        await view._on_save_click(None)
+
+        self.assertTrue(view._name_error.value)
+        self.assertFalse(view._gender_error.value)           # sequential — first wins
+        after = self.profiles.get_profile(self.uid)
+        self.assertEqual(
+            after.display_name.for_gender(after.gender),
+            before.display_name.for_gender(before.gender),
+        )
+
+    async def test_incomplete_birth_date_is_pinned_without_persisting(self):
+        _page, view = await self._drive()
+        view._name_field.value = "נועה כהן"
+        view._gender_dropdown.value = Gender.FEMALE.value
+        # Day/month/year left empty.
+        view._city_field.value = "תל אביב"
+
+        await view._on_save_click(None)
+
+        self.assertTrue(view._dob_error.value)
+        reloaded = self.profiles.get_profile(self.uid)
+        self.assertEqual(reloaded.date_of_birth.year, 1900)  # sentinel untouched
+
+    # ---- save: the happy path round-trips through the real repository ----
+
+    async def test_successful_save_persists_every_edited_field(self):
+        _page, view = await self._drive()
+        self._fill_valid_form(view)
+
+        await view._on_save_click(None)
+
+        self.assertIn("עודכן בהצלחה", view._status_text.value)
+        reloaded = self.profiles.get_profile(self.uid)
+        self.assertEqual(reloaded.display_name.for_gender(reloaded.gender), "נועה כהן")
+        self.assertEqual(reloaded.bio.for_gender(reloaded.gender), "קצת עליי")
+        self.assertEqual(reloaded.gender, Gender.FEMALE)
+        self.assertEqual(reloaded.date_of_birth, date(date.today().year - 40, 6, 15))
+        self.assertEqual(reloaded.location.city, "תל אביב")
+        self.assertEqual(reloaded.location.region, "מחוז תל אביב")
+        # UPSERT (not REPLACE) → linked credentials survive the save.
+        self.assertEqual(self.auth.login_user("noa", _TEST_PASSWORD), self.uid)
+
+    # ---- change main photo: durable swap + old-file cleanup --------------
+
+    async def test_change_main_photo_persists_new_path_and_repaints(self):
+        _page, view = await self._drive()
+        old_main = view._photo_urls[0]
+        self.assertEqual(old_main, AssetPaths.DEFAULT_PROFILE_IMAGE)
+        view._file_picker = _FakeFilePicker([_FakePickedFile("me.png", self._PNG)])
+
+        await view._on_change_main_photo(None)
+
+        new_main = view._photo_urls[0]
+        self.assertNotEqual(new_main, old_main)
+        self.assertTrue(os.path.exists(new_main))
+        self.assertEqual(
+            os.path.realpath(os.path.dirname(new_main)),
+            os.path.realpath(self.uploads_dir),
+        )
+        self.assertEqual(view._main_image.src, new_main)     # repainted
+        reloaded = self.profiles.get_profile(self.uid)
+        self.assertEqual(reloaded.photo_urls[0], new_main)
+        self.assertIn("עודכנה בהצלחה", view._status_text.value)
+
+    async def test_change_main_photo_cancel_leaves_everything_untouched(self):
+        _page, view = await self._drive()
+        before = list(view._photo_urls)
+        view._file_picker = _FakeFilePicker(None)            # user dismissed the dialog
+
+        await view._on_change_main_photo(None)
+
+        self.assertEqual(view._photo_urls, before)
+        self.assertEqual(self.profiles.get_profile(self.uid).photo_urls, tuple(before))
+
+    async def test_change_main_photo_save_failure_rolls_back_and_reclaims_orphan(self):
+        _page, view = await self._drive()
+        before_urls = list(view._photo_urls)
+        before_files = set(os.listdir(self.uploads_dir))
+        view.profile_repo = _AlwaysFailingProfileRepo()
+        view._file_picker = _FakeFilePicker([_FakePickedFile("bad.png", self._PNG)])
+
+        await view._on_change_main_photo(None)
+
+        # In-memory entity AND working copy rolled back to the previous list.
+        self.assertEqual(view._photo_urls, before_urls)
+        self.assertEqual(view._current_profile.photo_urls, tuple(before_urls))
+        # The just-uploaded orphan was reclaimed — no net new file remains.
+        self.assertEqual(set(os.listdir(self.uploads_dir)), before_files)
+        self.assertIn("עדכון תמונת הפרופיל נכשל", view._status_text.value)
 
 
 if __name__ == "__main__":

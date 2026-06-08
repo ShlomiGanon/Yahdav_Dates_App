@@ -21,12 +21,13 @@ from pathlib import Path
 
 import flet as ft
 
-from utils.constants import DBConfig, StorageConfig, AssetPaths, ThemeColors
+from style.design_system import DS
+from utils.constants import DBConfig, StorageConfig, AssetPaths
 from utils.router import Router
-from services.sqlite_profile_repository import SqliteProfileRepository
-from services.sqlite_auth_service import SqliteAuthService
-from services.sqlite_messaging_service import SqliteMessagingService
-from services.local_disk_storage_service import LocalDiskStorageService
+from services.sqlite.sqlite_profile_repository import SqliteProfileRepository
+from services.sqlite.sqlite_auth_service import SqliteAuthService
+from services.sqlite.sqlite_messaging_service import SqliteMessagingService
+from services.local.local_disk_storage_service import LocalDiskStorageService
 
 
 async def main(page: ft.Page):
@@ -69,7 +70,7 @@ async def main(page: ft.Page):
     # one ever fails/lags, the page must fall back to this — NOT to an unset
     # background, which the Flet desktop client renders black. Belt to the
     # background_screen() suspenders.
-    page.bgcolor = ThemeColors.BACKGROUND
+    page.bgcolor = DS.palette.background
     page.rtl = True                                  # whole UI is right-to-left
     page.padding = 0
     page.vertical_alignment   = ft.MainAxisAlignment.CENTER

@@ -4,7 +4,7 @@ UX: each input has its own adjacent Hebrew error label so seniors see
 exactly which field failed and why.
 
 On successful authentication, the user's UID is written to
-`page.session.store["current_user_id"]` BEFORE navigating, so user-scoped
+`page.session.store[SESSION_USER_ID_KEY]` BEFORE navigating, so user-scoped
 screens (MyProfileView, ChatView, etc.) can identify "who am I" without
 issuing a second backend call.
 
@@ -17,27 +17,29 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.session import safe_remove
+from views.common.engine import renderer as ui
+from views.common.helpers.session import safe_remove
 from components import loading
 from components.inputs import create_hebrew_text_field
 from components.feedback import create_field_error_label, set_field_error, clear_field_errors
-from services.i_auth_service import IAuthService
+from services.interfaces.i_auth_service import IAuthService
 from utils import local_storage
-from utils.constants import TextSizes, ThemeColors
+from utils import routes
+from style.design_system import DS
+from utils.session_keys import CURRENT_USER_ID, CURRENT_USER_EMAIL
 
 log = logging.getLogger(__name__)
 
 
-# Session-store keys that hold per-user identity. Read by user-scoped
-# views; centralising the strings avoids silent typo drift between
-# writer (this file) and readers (e.g. MyProfileView, ChatView).
-SESSION_USER_ID_KEY    = "current_user_id"
-SESSION_USER_EMAIL_KEY = "current_user_email"
+# Local aliases of the canonical `utils.session_keys` constants — kept so
+# call sites can use the shorter `self.SESSION_USER_ID_KEY` form. The string
+# values live in exactly one place (`utils/session_keys.py`).
+SESSION_USER_ID_KEY    = CURRENT_USER_ID
+SESSION_USER_EMAIL_KEY = CURRENT_USER_EMAIL
 
 
 class LoginView(BaseView):
-    ROUTE = "/auth/login"
+    ROUTE = routes.LOGIN
 
     def __init__(self, page: ft.Page, auth: IAuthService) -> None:
         super().__init__(page)
@@ -74,8 +76,8 @@ class LoginView(BaseView):
         self._remember_me = ft.Checkbox(
             label="הישאר מחובר במכשיר זה",
             value=False,
-            label_style=ft.TextStyle(size=TextSizes.INPUT),   # 25px — matches inputs
-            active_color=ThemeColors.PRIMARY,
+            label_style=ft.TextStyle(size=DS.type.input),   # 25px — matches inputs
+            active_color=DS.palette.primary,
             check_color=ft.Colors.WHITE,
             rtl=True,
         )
@@ -93,7 +95,7 @@ class LoginView(BaseView):
         # cancel/navigation, per the action hierarchy.
         return [
             ui.primary_button("התחבר", self._on_login_click),
-            ui.secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
+            ui.secondary_button("ביטול", lambda _: self.page.go(routes.WELCOME)),
         ]
 
     # ============================================================
@@ -160,7 +162,7 @@ class LoginView(BaseView):
 
             # Land on the Main Menu (post-login selection screen), not straight
             # into the profile editor.
-            self.page.go("/menu")
+            self.page.go(routes.MENU)
         else:
             # Generic backend failure → pin to password field (typical cause)
             set_field_error(

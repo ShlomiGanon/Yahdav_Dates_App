@@ -22,15 +22,15 @@ view = background_screen(self.ROUTE, <layout-containing-card>)       # full-blee
 
 - **No view paints its own background.** `background_screen` owns the `BG.png`
   fill (`BoxFit.FILL`, STRETCH width, expand height) **and** the black-screen
-  guard: a solid `bgcolor=ThemeColors.BACKGROUND` sits *behind* the image, so a
+  guard: a solid `bgcolor=DS.palette.background` sits *behind* the image, so a
   missing/slow asset never falls through to an unset (black) page background.
-  `app.py` also sets `page.bgcolor = ThemeColors.BACKGROUND` as a belt to that
+  `app.py` also sets `page.bgcolor = DS.palette.background` as a belt to that
   suspenders.
 - **No view invents structural margins/padding.** Use `translucent_card`'s
-  params. The opacity is `UIConstants.FORM_OVERLAY_OPACITY` (0.5), the radius is
-  `UIConstants.CORNER_RADIUS`, the default padding is `UIConstants.CARD_PADDING`.
+  params. The opacity is `DS.opacity.form_overlay` (0.5), the radius is
+  `DS.radius.card`, the default padding is `DS.pad.card`.
   One definition, tuned in one place.
-- **Photo tiles** reuse `views/common/photos.py::photo_thumb(src, size=…)` — the
+- **Photo tiles** reuse `views/common/helpers/photos.py::photo_thumb(src, size=…)` — the
   single rounded/clipped image tile with a broken-image `error_content` fallback.
 - **Auth screens use the same shell.** Login, Signup and Welcome are ordinary
   `BaseView`s (§1.5) — there is NO bespoke auth modal/scrim. They provide
@@ -233,23 +233,23 @@ expects "go back one screen".
 
 ## 2. Typography & Inputs
 
-Text uses **only** the sizes from `TextSizes` (`utils/constants.py`):
+Text uses **only** the sizes from `DS.type` (`style/design_system.py`):
 
 | Token | px | Use |
 |---|---|---|
-| `TextSizes.H1` | 50 | screen titles |
-| `TextSizes.H2` | 25 | card/section titles, error-card headings, avatar initials |
-| `TextSizes.BUTTON` | 40 | button labels (lower per-button only when a long label must wrap) |
-| `TextSizes.INPUT` | 25 | field labels, typed text, dropdown options, inline errors, status banners |
-| `TextSizes.BODY` | 16 | secondary lines only — meta lines, message previews, hints |
-| `TextSizes.SMALL` | 13 | the smallest hints (e.g. "tap to change photo") |
+| `DS.type.h1` | 50 | screen titles |
+| `DS.type.h2` | 25 | card/section titles, error-card headings, avatar initials |
+| `DS.type.button` | 40 | button labels (lower per-button only when a long label must wrap) |
+| `DS.type.input` | 25 | field labels, typed text, dropdown options, inline errors, status banners |
+| `DS.type.body` | 16 | secondary lines only — meta lines, message previews, hints |
+| `DS.type.small` | 13 | the smallest hints (e.g. "tap to change photo") |
 
-`BODY`/`SMALL` are for secondary hint lines — never for inputs or primary actions.
+`body`/`small` are for secondary hint lines — never for inputs or primary actions.
 
 **All form inputs go through `components/inputs.py::create_hebrew_text_field`.**
 It is the single source of input geometry: `rtl=True`,
-`text_size=TextSizes.INPUT` (oversized typed text), `width=UIConstants.INPUT_WIDTH`,
-a fixed 70px tap height (`UIConstants.INPUT_HEIGHT`) for single-line fields
+`text_size=DS.type.input` (oversized typed text), `width=DS.sizing.input_w`,
+a fixed 70px tap height (`DS.sizing.input_h`) for single-line fields
 (multiline fields grow), `password`/`can_reveal_password` wired together, and the
 RTL alignment rule below. **Never construct a raw `ft.TextField` in a view.**
 
@@ -263,7 +263,7 @@ self._email = create_hebrew_text_field("אימייל")        # Latin → stays 
 
 **Dropdowns** (gender, region, day/month/year) are deliberately preferred over
 free-text for the 50+ audience — nothing to mistype. Use `MyProfileView._make_dropdown`
-(oversized label + `text_size=TextSizes.INPUT`, fixed width). Birth date is three
+(oversized label + `text_size=DS.type.input`, fixed width). Birth date is three
 dropdowns, never a calendar grid.
 
 ### 2.1 Shared content primitives (`src/components/`)
@@ -273,9 +273,9 @@ COMPOSES them and never hand-rolls the styling. Using the primitive IS complying
 
 | Primitive | Module | Use |
 |---|---|---|
-| `create_screen_heading(text, *, center=True)` | `typography.py` | the screen H1 — centres by default (the one heading rule, every screen alike); pass `center=False` only for a right-aligned in-body heading that is NOT the screen's title. **Never inline an `ft.Text(size=TextSizes.H1, …)` heading in a view.** |
+| `create_screen_heading(text, *, center=True)` | `typography.py` | the screen H1 — centres by default (the one heading rule, every screen alike); pass `center=False` only for a right-aligned in-body heading that is NOT the screen's title. **Never inline an `ft.Text(size=DS.type.h1, …)` heading in a view.** |
 | `create_section_heading(text, *, center=False)` | `typography.py` | an H2 subsection heading (parity with the screen heading). |
-| `create_field_error_label()` / `set_field_error(label, msg)` / `clear_field_errors(*labels)` | `feedback.py` | per-field validation error labels (colour `ThemeColors.FIELD_ERROR`). Replaces every view-local `_make_error_label`/`_set_error`. |
+| `create_field_error_label()` / `set_field_error(label, msg)` / `clear_field_errors(*labels)` | `feedback.py` | per-field validation error labels (colour `DS.palette.field_error`). Replaces every view-local `_make_error_label`/`_set_error`. |
 | `create_status_banner(*, width=None)` → `(container, text)` / `show_status(banner, text, msg, *, ok, auto_hide_sec=0.0)` | `feedback.py` | the inline status banner + its async show/hide helper. Replaces every view-local status `Container` and `_show_status`. |
 | `create_chat_bubble(text, *, mine)` | `chat.py` | a single chat bubble with the RTL-immune absolute side-anchoring. |
 | `create_initial_avatar(name, *, diameter, online=None)` / `create_photo_avatar(src, name, *, diameter)` / `create_unread_badge(count)` | `avatars.py` | initials/photo avatars and the unread-count badge (Discover, Matches, peer profile). |
@@ -286,7 +286,7 @@ COMPOSES them and never hand-rolls the styling. Using the primitive IS complying
 All geometry these atoms use (`STATUS_BANNER_PADDING`, `BUBBLE_PADDING`,
 `BUBBLE_RADIUS`, `LIST_TILE_PADDING`, the card-frame tokens like
 `CONTENT_CARD_PADDING_TALL`) is defined ONCE in the Design System
-(`DS.pad.*`/`DS.spacing.*`, exposed via `UIConstants` in `utils/constants.py`);
+(`DS.pad.*`/`DS.spacing.*` in `style/design_system.py`);
 `screen.py` owns no re-exported geometry of its own — `BaseView` and the
 components read the tokens directly.
 
@@ -328,18 +328,18 @@ Color carries meaning; it is never decorative. Two button primitives, two roles:
 
 | Primitive | Color | Meaning | Examples |
 |---|---|---|---|
-| `create_primary_button` | `ThemeColors.PRIMARY` (brand red) | **constructive** content actions | "שמור שינויים", "התחבר", "הירשם", "תמונות נוספות", "הוסף תמונה נוספת", "שלח" |
-| `create_secondary_button` | `ThemeColors.SECONDARY` (blue-grey) | **secondary / session-exit / navigation** | "ביטול", "התנתק מהמערכת", "חזור", "חזור לתפריט הראשי", "הסר תמונה", "סגירה" |
+| `create_primary_button` | `DS.palette.primary` (brand red) | **constructive** content actions | "שמור שינויים", "התחבר", "הירשם", "תמונות נוספות", "הוסף תמונה נוספת", "שלח" |
+| `create_secondary_button` | `DS.palette.secondary` (blue-grey) | **secondary / session-exit / navigation** | "ביטול", "התנתק מהמערכת", "חזור", "חזור לתפריט הראשי", "הסר תמונה", "סגירה" |
 
 - A save and a logout/back must **never** share a color — a divider separates them
   (see `MyProfileView`, `MainMenuView`, `ChatView`).
-- Both primitives keep the 70px tap target (`UIConstants.BUTTON_HEIGHT`) and a
-  centered, RTL-aware, bold label. `text_size` drops to `TextSizes.INPUT` only for
+- Both primitives keep the 70px tap target (`DS.sizing.button_h`) and a
+  centered, RTL-aware, bold label. `text_size` drops to `DS.type.input` only for
   long labels that must fit on the button.
-- **No raw hex strings anywhere.** All colors come from `ThemeColors`, including
-  the presence dots (`ONLINE` = bright `GREEN_ACCENT_400`, deliberately *not*
-  `SUCCESS`; `OFFLINE` = `GREY_400`) and the chat bubbles (`BUBBLE_SELF` =
-  `GREEN_100`, `BUBBLE_PEER` = `GREY_200`).
+- **No raw hex strings anywhere.** All colors come from `DS.palette`, including
+  the presence dots (`online` = bright `GREEN_ACCENT_400`, deliberately *not*
+  `success`; `offline` = `GREY_400`) and the chat bubbles (`bubble_self` =
+  `GREEN_100`, `bubble_peer` = `GREY_200`).
 
 Buttons render inline at the card's tail — the same single column as the header
 and content (§1.5), never a separate bar. On an `EXPAND_BODY` screen, only the
@@ -352,12 +352,12 @@ away no matter how far the form has scrolled.
 ## 5. Status & feedback
 
 Screens surface state through an **inline status banner** built by
-`components/feedback.py::create_status_banner()` (a `ThemeColors.SUCCESS` green or
-`ThemeColors.DANGER` red fill), driven by the shared async
+`components/feedback.py::create_status_banner()` (a `DS.palette.success` green or
+`DS.palette.danger` red fill), driven by the shared async
 `show_status(banner, text, msg, *, ok, auto_hide_sec=0.0)` — never `page.snack_bar`
 (unreliable across Flet versions) and never a hand-rolled per-view banner/helper.
 Per-field validation uses `create_field_error_label()` (a hidden, RTL,
-`ThemeColors.FIELD_ERROR` label) adjacent to each field, set via
+`DS.palette.field_error` label) adjacent to each field, set via
 `set_field_error`/`clear_field_errors`, shown one-at-a-time (first failure wins,
 so a senior isn't overwhelmed). Success banners auto-fade (`auto_hide_sec`); error
 banners persist until the next action. Empty states ("עדיין אין שיחות", "עדיין אין
@@ -370,8 +370,8 @@ banners persist until the next action. Empty states ("עדיין אין שיחו
 A profile picture is **never null**. `views/common/photos.py::resolve_main_photo`
 returns `photo_urls[0]` when it's a usable non-empty string, else the bundled
 `AssetPaths.DEFAULT_PROFILE_IMAGE` (`UNDEFINED_PROFILE.png`). Every avatar /
-main-picture render goes through it (or, in the read-only peer view, the
-length-guarded `_safe_photo_src`), so a missing photo shows the template — never
+main-picture render goes through it (or, in the read-only peer views, the
+shared length-guarded `views/common/peer_data.py::safe_photo_src`), so a missing photo shows the template — never
 an empty `src` (which Flet draws as nothing). Image controls that render a
 user-supplied `src` set an `error_content` fallback (initials or an icon) and sit
 on a solid `bgcolor`, so a stale/unreadable path can never fail the render tree to
@@ -422,15 +422,15 @@ and failing that, a bare last-resort view — never a black page.
    - [ ] Screen title via `create_screen_heading`; field errors via `create_field_error_label`/`set_field_error`; status via `create_status_banner` + `show_status` — no inline H1, error label, or status `Container` in the view.
    - [ ] Columns `STRETCH`; Text `text_align=RIGHT` + `rtl=True`; Row anchors first; chat bubbles use absolute `ft.Alignment(±1,0)`.
    - [ ] Buttons via the two button primitives; constructive = red, exit/nav = blue-grey, separated by a divider.
-   - [ ] No raw hex; no raw `ft.TextField` / `ft.View`; colors from `ThemeColors`.
+   - [ ] No raw hex; no raw `ft.TextField` / `ft.View`; colors from `DS.palette`.
    - [ ] Untrusted/feed data read via `_safe_*`; list rows built in isolated try/except; main picture via `resolve_main_photo`.
    - [ ] Status via the inline banner (SUCCESS/DANGER), not `page.snack_bar`.
 3. **Audit grep** — these should return nothing in `src/views/` (except `_base.py`):
    - `ft.TextField(` (use the primitive) · `CrossAxisAlignment.END` · `MainAxisAlignment.END`
      · `rtl=False` · raw `#` hex color literals · `bgcolor=` on a top-level view container.
-   - `def build(` (only `_base.py` defines it) · `size=TextSizes.H1` (use `create_screen_heading`)
+   - `def build(` (only `_base.py` defines it) · `size=DS.type.h1` (use `create_screen_heading`)
      · `_make_error_label` / `_show_status` (use the `feedback.py` primitives) · `padding=14`
-     (use `UIConstants.STATUS_BANNER_PADDING`) · `ft.Colors.RED_ACCENT` (use `ThemeColors.FIELD_ERROR`)
+     (use `DS.pad.status_banner`) · `ft.Colors.RED_ACCENT` (use `DS.palette.field_error`)
      · `auth_modal` / `auth_card` (deleted — Login is a plain `BaseView`, the same as Welcome).
 4. **Status quo:** auth, menu, profile, additional-photos, discover, chat, matches,
    the read-only peer profile, the cold-boot spinner, and the router error view all

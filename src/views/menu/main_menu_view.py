@@ -22,11 +22,13 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.session import safe_remove
+from views.common.engine import renderer as ui
+from views.common.helpers.session import safe_remove
 from components.dividers import create_action_divider
 from style.design_system import DS
 from utils import local_storage
+from utils.session_keys import CURRENT_USER_ID, CURRENT_USER_EMAIL
+from utils import routes
 
 log = logging.getLogger(__name__)
 
@@ -34,18 +36,19 @@ log = logging.getLogger(__name__)
 class MainMenuView(BaseView):
     """Senior-friendly selection screen: three large primary buttons + logout."""
 
-    ROUTE = "/menu"
+    ROUTE = routes.MENU
 
     # Destination routes for the three options. Centralised here so the menu's
     # targets are obvious and editable in one place.
-    _PROFILE_ROUTE  = "/profile/me"
-    _DISCOVER_ROUTE = "/matching/discover"
-    _CHAT_HISTORY_ROUTE = "/chat/history"
+    _PROFILE_ROUTE  = routes.MY_PROFILE
+    _DISCOVER_ROUTE = routes.DISCOVER
+    _CHAT_HISTORY_ROUTE = routes.CHAT_HISTORY
 
     # Session-store identity keys, cleared on logout. Service singletons
     # (auth/profiles/messaging) are NOT touched — they must survive logout.
-    SESSION_USER_ID_KEY    = "current_user_id"
-    SESSION_USER_EMAIL_KEY = "current_user_email"
+    # Aliases of the canonical `utils.session_keys` constants.
+    SESSION_USER_ID_KEY    = CURRENT_USER_ID
+    SESSION_USER_EMAIL_KEY = CURRENT_USER_EMAIL
 
     def get_header(self) -> ui.UIComponent:
         return ui.heading("תפריט ראשי")             # engine centres it (HUB) via the DS
@@ -103,4 +106,4 @@ class MainMenuView(BaseView):
 
         # 3. View stack — kill history, then go.
         self.page.views.clear()
-        self.page.go("/auth/welcome")
+        self.page.go(routes.WELCOME)

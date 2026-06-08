@@ -25,14 +25,14 @@ from components.feedback import (
     create_status_banner, show_status,
 )
 from components.chat import create_chat_bubble
-from utils.constants import TextSizes, ThemeColors, UIConstants
+from style.design_system import DS
 
 
 class TestScreenHeading(unittest.TestCase):
     def test_uses_h1_token(self):
         h = create_screen_heading("שלום")
-        self.assertEqual(h.size, TextSizes.H1)
-        self.assertEqual(h.color, ThemeColors.TEXT_MAIN)
+        self.assertEqual(h.size, DS.type.h1)
+        self.assertEqual(h.color, DS.palette.text_main)
         self.assertTrue(h.rtl)
 
     def test_centres_by_default_and_can_opt_into_right_alignment(self):
@@ -52,8 +52,8 @@ class TestFieldErrorLabel(unittest.TestCase):
         label = create_field_error_label()
         self.assertFalse(label.visible)
         self.assertEqual(label.value, "")
-        self.assertEqual(label.color, ThemeColors.FIELD_ERROR)
-        self.assertEqual(label.size, TextSizes.INPUT)
+        self.assertEqual(label.color, DS.palette.field_error)
+        self.assertEqual(label.size, DS.type.input)
 
     def test_set_and_clear_toggle_visibility(self):
         label = create_field_error_label()
@@ -77,26 +77,26 @@ class TestStatusBanner(unittest.TestCase):
         self.assertIsInstance(text, ft.Text)
         self.assertIs(banner.content, text)              # text is the banner body
         self.assertFalse(banner.visible)
-        self.assertEqual(banner.padding, UIConstants.STATUS_BANNER_PADDING)
-        self.assertEqual(banner.border_radius, UIConstants.CORNER_RADIUS)
+        self.assertEqual(banner.padding, DS.pad.status_banner)
+        self.assertEqual(banner.border_radius, DS.radius.card)
         self.assertIsNone(banner.width)
 
     def test_width_is_applied_when_given(self):
-        banner, _text = create_status_banner(width=UIConstants.INPUT_WIDTH)
-        self.assertEqual(banner.width, UIConstants.INPUT_WIDTH)
+        banner, _text = create_status_banner(width=DS.sizing.input_w)
+        self.assertEqual(banner.width, DS.sizing.input_w)
 
     def test_show_status_ok_is_success_green(self):
         banner, text = create_status_banner()
         asyncio.run(show_status(banner, text, "נשמר", ok=True))
         self.assertTrue(banner.visible)
         self.assertEqual(text.value, "נשמר")
-        self.assertEqual(banner.bgcolor, ThemeColors.SUCCESS)
+        self.assertEqual(banner.bgcolor, DS.palette.success)
 
     def test_show_status_not_ok_is_danger_red(self):
         banner, text = create_status_banner()
         asyncio.run(show_status(banner, text, "נכשל", ok=False))
         self.assertTrue(banner.visible)
-        self.assertEqual(banner.bgcolor, ThemeColors.DANGER)
+        self.assertEqual(banner.bgcolor, DS.palette.danger)
 
     def test_show_status_auto_hide_hides_after_delay(self):
         banner, text = create_status_banner()
@@ -112,14 +112,14 @@ class TestChatBubble(unittest.TestCase):
     def test_mine_anchors_right_with_self_fill(self):
         wrapper = create_chat_bubble("היי", mine=True)
         self.assertEqual(wrapper.alignment, ft.Alignment(1, 0))   # right (RTL-immune)
-        self.assertEqual(wrapper.content.bgcolor, ThemeColors.BUBBLE_SELF)
-        self.assertEqual(wrapper.content.padding, UIConstants.BUBBLE_PADDING)
-        self.assertEqual(wrapper.content.border_radius, UIConstants.BUBBLE_RADIUS)
+        self.assertEqual(wrapper.content.bgcolor, DS.palette.bubble_self)
+        self.assertEqual(wrapper.content.padding, DS.pad.bubble)
+        self.assertEqual(wrapper.content.border_radius, DS.radius.bubble)
 
     def test_peer_anchors_left_with_peer_fill(self):
         wrapper = create_chat_bubble("שלום", mine=False)
         self.assertEqual(wrapper.alignment, ft.Alignment(-1, 0))  # left
-        self.assertEqual(wrapper.content.bgcolor, ThemeColors.BUBBLE_PEER)
+        self.assertEqual(wrapper.content.bgcolor, DS.palette.bubble_peer)
 
 
 if __name__ == "__main__":

@@ -23,8 +23,8 @@ if str(_SRC) not in sys.path:
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.screen import responsive_card_of
+from views.common.engine import renderer as ui
+from views.common.engine.screen import responsive_card_of
 from style.design_system import DS
 
 

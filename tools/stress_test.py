@@ -22,10 +22,10 @@ sys.path.insert(0, str(_ROOT / "src"))
 import flet as ft
 
 from utils.constants import DBConfig, StorageConfig, AssetPaths, ThemeColors
-from services.sqlite_profile_repository import SqliteProfileRepository
-from services.sqlite_auth_service import SqliteAuthService
-from services.sqlite_messaging_service import SqliteMessagingService
-from services.local_disk_storage_service import LocalDiskStorageService
+from services.sqlite.sqlite_profile_repository import SqliteProfileRepository
+from services.sqlite.sqlite_auth_service import SqliteAuthService
+from services.sqlite.sqlite_messaging_service import SqliteMessagingService
+from services.local.local_disk_storage_service import LocalDiskStorageService
 
 WHICH = (sys.argv[1] if len(sys.argv) > 1 else "login").lower()
 

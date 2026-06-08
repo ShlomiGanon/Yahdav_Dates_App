@@ -4,10 +4,12 @@ from __future__ import annotations
 import flet as ft
 
 from components.buttons import create_secondary_button
+from utils.routes import MENU
 
-# Canonical Main Menu route. Kept as a literal here (mirrors MainMenuView.ROUTE)
-# so this lightweight helper module need not import a whole view class.
-MENU_ROUTE = "/menu"
+# Canonical Main Menu route. Alias of `utils.routes.MENU` (mirrors
+# MainMenuView.ROUTE) so this lightweight helper module need not import a
+# whole view class.
+MENU_ROUTE = MENU
 
 
 def back_to_menu_button(page: ft.Page) -> ft.Button:

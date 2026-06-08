@@ -26,9 +26,45 @@ from __future__ import annotations
 import asyncio
 from typing import Sequence
 
-from services.i_profile_repository import IProfileRepository
-from services.i_storage_service import IStorageService
+import flet as ft
+
+from services.interfaces.i_profile_repository import IProfileRepository
+from services.interfaces.i_storage_service import IStorageService
 from models.user_profile import UserProfile
+
+
+async def pick_and_upload(
+    file_picker: ft.FilePicker,
+    storage: IStorageService,
+    *,
+    dialog_title: str,
+) -> tuple[bytes, str, str] | None:
+    """Pick an image and upload it — the shared prologue every photo-add/change
+    flow runs before the durable swap (`save_photo_urls_or_rollback`, above).
+
+    Returns ``(data, original_name, stored_path)`` on success, or ``None`` if
+    the user dismissed the picker without choosing a file. Propagates any
+    picker, read, or upload failure as-is — the caller's existing try/except
+    around the whole pick-through-save flow shows its own status banner,
+    exactly as before this prologue was centralised.
+
+    In Flet 0.84 ``pick_files`` is awaitable and returns the selection
+    DIRECTLY (no ``on_result`` callback); ``with_data=True`` reads the raw
+    bytes so the upload needs no follow-up disk read.
+    """
+    files = await file_picker.pick_files(
+        dialog_title=dialog_title,
+        file_type=ft.FilePickerFileType.IMAGE,
+        allow_multiple=False,
+        with_data=True,
+    )
+    if not files:                    # user dismissed the dialog
+        return None
+    data = files[0].bytes
+    if not data:
+        raise ValueError("picked file has no readable data")
+    stored_path = await asyncio.to_thread(storage.upload_file, data, files[0].name)
+    return data, files[0].name, stored_path
 
 
 async def save_photo_urls_or_rollback(

@@ -12,8 +12,8 @@ from __future__ import annotations
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.screen import error_component, DEFAULT_ERROR_MESSAGE
+from views.common.engine import renderer as ui
+from views.common.engine.screen import error_component, DEFAULT_ERROR_MESSAGE
 
 
 class SystemHubView(BaseView):

@@ -32,36 +32,39 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.navigation import back_to_menu_button
-from views.common.render import build_items_safe
-from views.common.load_flow import run_guarded_load, LoadGuard
+from views.common.engine import renderer as ui
+from views.common.helpers.navigation import back_to_menu_button
+from views.common.helpers.safe_list import build_items_safe
+from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components.buttons import create_primary_button, create_secondary_button
 from components.feedback import create_status_banner, show_status
 from components.discover import create_candidate_tile
-from services.i_profile_repository import IProfileRepository
+from services.interfaces.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender, AccountStatus
 from style.design_system import DS
-from utils.constants import TextSizes, ThemeColors, MatchConfig
+from utils.constants import MatchConfig
+from utils.session_keys import CURRENT_USER_ID, SELECTED_PEER_ID
+from utils import routes
 
 log = logging.getLogger(__name__)
 
 
 class DiscoverView(BaseView):
-    ROUTE = "/matching/discover"
+    ROUTE = routes.DISCOVER
 
-    # Identity token written by login_view on success; read here. Centralised
-    # so a typo can't silently desync writer and reader.
-    SESSION_USER_ID_KEY = "current_user_id"
+    # Identity token written by login_view on success; read here. Alias of the
+    # canonical `utils.session_keys.CURRENT_USER_ID` constant.
+    SESSION_USER_ID_KEY = CURRENT_USER_ID
 
     # Set when the user picks a candidate, so the (placeholder) destination
     # screens can later load the right person. Written here; read by the future
-    # "view profile" / "chat" screens.
-    SELECTED_PEER_ID_KEY = "selected_peer_id"
+    # "view profile" / "chat" screens. Alias of the canonical
+    # `utils.session_keys.SELECTED_PEER_ID` constant.
+    SELECTED_PEER_ID_KEY = SELECTED_PEER_ID
 
     # Placeholder routes the two selection actions navigate to.
-    _VIEW_PROFILE_ROUTE = "/discover/profile"   # view another member's profile
-    _CHAT_ROUTE         = "/chat/new"           # start a chat with them
+    _VIEW_PROFILE_ROUTE = routes.PEER_PROFILE   # view another member's profile
+    _CHAT_ROUTE         = routes.CHAT_NEW       # start a chat with them
 
     def __init__(self, page: ft.Page, profile_repo: IProfileRepository) -> None:
         super().__init__(page)
@@ -79,8 +82,9 @@ class DiscoverView(BaseView):
 
     def get_content(self) -> list[ui.UIComponent]:
         # HUB centered card (like the Main Menu): the feed is a plain Column the
-        # hub card AUTO-scrolls, and the status banner lives IN the card (HUB has
-        # no sticky action bar). Both are populated at runtime → pre-built + raw().
+        # hub card AUTO-scrolls, and the status banner renders inline in the card
+        # via get_status_banner() (BaseView's region model — no separate action
+        # bar). Both are populated at runtime → pre-built + raw().
         self._feed_column = ft.Column(
             controls=[],
             spacing=DS.spacing.element,
@@ -120,7 +124,7 @@ class DiscoverView(BaseView):
                 return
             # Build each tile in isolation so one malformed candidate is SKIPPED
             # with a log line rather than blanking the whole feed (Peer Layout
-            # Boundary Rule §4; see views/common/render.py).
+            # Boundary Rule §4; see views/common/safe_list.py).
             self._feed_column.controls = build_items_safe(
                 candidates,
                 self._candidate_tile,
@@ -135,7 +139,7 @@ class DiscoverView(BaseView):
                 ok=bool(current_user_id),
                 message="אנא התחבר/י תחילה",
                 # Don't yank a viewer who already left during the banner.
-                bounce=lambda: self._is_live() and self.page.go("/auth/login"),
+                bounce=lambda: self._is_live() and self.page.go(routes.LOGIN),
             )],
             fetch=lambda: self.profile_repo.discover_profiles(
                 current_user_id, MatchConfig.DISCOVER_PAGE_SIZE,
@@ -188,7 +192,7 @@ class DiscoverView(BaseView):
         """RTL bottom sheet: WHO was tapped + exactly two large PRIMARY action
         buttons (view profile / start chat), plus a neutral Close.
 
-        The action labels are long, so the buttons drop to TextSizes.INPUT
+        The action labels are long, so the buttons drop to DS.type.input
         (25px) — still senior-readable — to sit cleanly on the full-width button
         while staying high-contrast brand-red.
         """
@@ -198,24 +202,24 @@ class DiscoverView(BaseView):
         # ---- Who: name + meta line so the senior knows whom they picked ----
         title = ft.Text(
             name,
-            size=TextSizes.H2,
+            size=DS.type.h2,
             weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_MAIN,
+            color=DS.palette.text_main,
             rtl=True,
             text_align=ft.TextAlign.CENTER,
         )
         subtitle = ft.Text(
             self._meta_line(profile),
-            size=TextSizes.INPUT,
-            color=ThemeColors.SECONDARY,
+            size=DS.type.input,
+            color=DS.palette.secondary,
             rtl=True,
             text_align=ft.TextAlign.CENTER,
         )
         prompt = ft.Text(
             "מה תרצו לעשות?",
-            size=TextSizes.INPUT,
+            size=DS.type.input,
             weight=ft.FontWeight.W_600,
-            color=ThemeColors.TEXT_MAIN,
+            color=DS.palette.text_main,
             rtl=True,
             text_align=ft.TextAlign.CENTER,
         )
@@ -224,12 +228,12 @@ class DiscoverView(BaseView):
         view_button = create_primary_button(
             "צפייה בפרופיל שלו / שלה",
             lambda _e: self._on_action_chosen(sheet, self._VIEW_PROFILE_ROUTE, profile),
-            text_size=TextSizes.INPUT,
+            text_size=DS.type.input,
         )
         chat_button = create_primary_button(
             "התחל שיחה / שלח הודעה",
             lambda _e: self._on_action_chosen(sheet, self._CHAT_ROUTE, profile),
-            text_size=TextSizes.INPUT,
+            text_size=DS.type.input,
         )
         # Neutral dismiss — secondary (blue-grey), never the brand red.
         close_button = create_secondary_button(
@@ -238,7 +242,7 @@ class DiscoverView(BaseView):
 
         sheet.content = ft.Container(
             padding=DS.pad.section,
-            bgcolor=ThemeColors.SURFACE,
+            bgcolor=DS.palette.surface,
             content=ft.Column(
                 controls=[
                     title,

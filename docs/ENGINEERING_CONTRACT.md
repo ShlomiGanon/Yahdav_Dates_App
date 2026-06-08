@@ -50,14 +50,14 @@ own class, decoupled (sharing only a `db_path` / root-dir `str`, never a base cl
 
 | Interface | Concrete class | File |
 |---|---|---|
-| `IAuthService` | `SqliteAuthService` | `services/sqlite_auth_service.py` |
-| `IProfileRepository` | `SqliteProfileRepository` | `services/sqlite_profile_repository.py` |
-| `IMessagingService` | `SqliteMessagingService` | `services/sqlite_messaging_service.py` |
-| `IStorageService` | `LocalDiskStorageService` | `services/local_disk_storage_service.py` |
+| `IAuthService` | `SqliteAuthService` | `services/sqlite/sqlite_auth_service.py` |
+| `IProfileRepository` | `SqliteProfileRepository` | `services/sqlite/sqlite_profile_repository.py` |
+| `IMessagingService` | `SqliteMessagingService` | `services/sqlite/sqlite_messaging_service.py` |
+| `IStorageService` | `LocalDiskStorageService` | `services/local/local_disk_storage_service.py` |
 
 **The query ledger.** Every raw SQL string, DDL/index, UPSERT, pragma, and the
 `connection()` / `transaction()` context managers live in ONE module,
-`services/sqlite_queries.py` (`AuthQueries` / `ProfileQueries` / `MessagingQueries`).
+`services/sqlite/sqlite_queries.py` (`AuthQueries` / `ProfileQueries` / `MessagingQueries`).
 The concrete SQLite services hold **zero inline SQL**. Value-object
 serialization (Location / Lifestyle / LocalizedText / IceBreaker / photo paths /
 extras → JSON, `ensure_ascii=False` so Hebrew is stored verbatim) lives in
@@ -99,21 +99,26 @@ src/
 │   ├── user_profile.py                 Abstract UserProfile (ABC) + value objects + enums + DI Protocols.
 │   └── sqlite_user_profile.py          SQLiteUserProfile concrete dataclass (data carrier; typed setters).
 │
-├── services/                           Four role-interfaces + concrete backends + ledger.
-│   ├── i_auth_service.py               IAuthService          (ABC)
-│   ├── i_profile_repository.py         IProfileRepository    (ABC)
-│   ├── i_messaging_service.py          IMessagingService     (ABC)
-│   ├── i_storage_service.py            IStorageService       (ABC)
-│   ├── sqlite_queries.py               Query ledger: ALL SQL + connection/transaction wrappers + pragmas.
-│   ├── sqlite_auth_service.py          SqliteAuthService(IAuthService)
-│   ├── sqlite_profile_repository.py    SqliteProfileRepository(IProfileRepository) — fail-soft JSON (de)serialization.
-│   ├── sqlite_messaging_service.py     SqliteMessagingService(IMessagingService)
-│   ├── local_disk_storage_service.py   LocalDiskStorageService(IStorageService) — media under data/uploads/.
-│   └── firebase_backend.py             Monolith stub — left as-is for a future cloud backend.
+├── services/                           Four role-interfaces + concrete backends + ledger, by role.
+│   ├── interfaces/
+│   │   ├── i_auth_service.py           IAuthService          (ABC)
+│   │   ├── i_profile_repository.py     IProfileRepository    (ABC)
+│   │   ├── i_messaging_service.py      IMessagingService     (ABC)
+│   │   └── i_storage_service.py        IStorageService       (ABC)
+│   ├── sqlite/
+│   │   ├── sqlite_queries.py           Query ledger: ALL SQL + connection/transaction wrappers + pragmas.
+│   │   ├── sqlite_auth_service.py      SqliteAuthService(IAuthService)
+│   │   ├── sqlite_profile_repository.py SqliteProfileRepository(IProfileRepository) — fail-soft JSON (de)serialization.
+│   │   └── sqlite_messaging_service.py SqliteMessagingService(IMessagingService)
+│   ├── local/
+│   │   └── local_disk_storage_service.py LocalDiskStorageService(IStorageService) — media under data/uploads/.
+│   └── firebase/
+│       └── firebase_backend.py         Monolith stub — left as-is for a future cloud backend.
 │
 ├── utils/                              constants, validation, router, device storage, time.
-│   ├── constants.py                    TextSizes, UIConstants, ThemeColors, AssetPaths, DBConfig, StorageConfig,
-│   │                                   AuthConfig, FirebaseConfig, ChatConfig, MatchConfig, MessageType, MessageStatus.
+│   ├── constants.py                    AssetPaths, DBConfig, StorageConfig, AuthConfig, FirebaseConfig,
+│   │                                   ChatConfig, MatchConfig, MessageType, MessageStatus. (Visual tokens
+│   │                                   live in style/design_system.py — see DS below.)
 │   ├── validation.py                   validate_email, validate_password.
 │   ├── timeutils.py                    utcnow_naive() — the ONE UTC source (no deprecated datetime API).
 │   ├── local_storage.py                Device "Remember Me" token seam (page.shared_preferences; raw token only).
@@ -189,9 +194,9 @@ handler — use `asyncio.sleep`. Async work kicked off on mount uses
 - Reuse `create_hebrew_text_field`. Latin inputs (email/password) keep
   `text_align=LEFT`; Hebrew-content fields pass `hebrew_content=True` to override
   to `RIGHT`.
-- Sizes from `TextSizes` (H1=50, H2=25, BUTTON=40, INPUT=25; BODY=16/SMALL=13 for
+- Sizes from `DS.type` (h1=50, h2=25, button=40, input=25; body=16/small=13 for
   secondary hints only) — oversized **on purpose** for the 50+ audience. Colors
-  from `ThemeColors` — never a raw `"#RRGGBB"`.
+  from `DS.palette` — never a raw `"#RRGGBB"`.
 - Gender-inflected strings use `LocalizedText.for_gender(viewer.gender)`.
 
 > **⚠️ The RTL right-alignment gotcha (read before you align anything).** In this
@@ -207,10 +212,10 @@ handler — use `asyncio.sleep`. Async work kicked off on mount uses
 ### Rule 3.5 — One shared screen shell for every screen
 Every screen is built from two helpers in **`views/common/screen.py`**:
 `background_screen(route, content)` (full-screen `BG.png`, `BoxFit.FILL`, with a
-solid `bgcolor=ThemeColors.BACKGROUND` behind it as the black-screen guard) and
+solid `bgcolor=DS.palette.background` behind it as the black-screen guard) and
 `translucent_card(content, *, expand, margin, padding)` (50%-white card via
-`UIConstants.FORM_OVERLAY_OPACITY`, shared corner radius). Navigation helpers live
-in `views/common/navigation.py` (`back_to_menu_button`) and session helpers in
+`DS.opacity.form_overlay`, shared corner radius). Navigation helpers live
+in `views/common/helpers/navigation.py` (`back_to_menu_button`) and session helpers in
 `views/common/session.py` (`safe_remove`). Photo helpers live in
 `views/common/photos.py`. This shell is shared by **every** screen, including
 auth (Login/Signup/Welcome are plain `BaseView`s, sharing the one card frame
@@ -230,11 +235,12 @@ every screen renders through) and the router's own error view.
 > wherever untrusted data is shown (canonically `user_profile_view.py`, and the
 > matching feeds):
 >
-> 1. **Total safe accessors.** Read every field through a `_safe_*` helper that
->    NEVER raises (returns a safe default). The render builder is then a pure,
->    total function — fewer fields on bad data, never an exception. Photo `src`
->    goes through an explicit length-guarded `_safe_photo_src` that falls back to
->    the default template.
+> 1. **Total safe accessors.** Read every field through a `safe_*` helper (shared
+>    by the peer-facing views via `views/common/peer_data.py`) that NEVER raises
+>    (returns a safe default). The render builder is then a pure, total function —
+>    fewer fields on bad data, never an exception. Photo `src` goes through an
+>    explicit length-guarded `safe_photo_src` that falls back to the default
+>    template.
 > 2. **Bounded layout.** Content lives in `background_screen(translucent_card(…))`
 >    with ONE `expand=True` scroll region; Columns are `STRETCH`, Text is
 >    `text_align=RIGHT`+`rtl=True` and wraps (`overflow=CLIP` on values), so a
@@ -297,7 +303,7 @@ shell with a secondary "חזרה לתפריט הראשי" button. After Layer 2,
 mathematically unreachable.
 
 A second structural guard backs this at the page level: `app.py` sets
-`page.bgcolor = ThemeColors.BACKGROUND`, and `background_screen` paints a solid
+`page.bgcolor = DS.palette.background`, and `background_screen` paints a solid
 `bgcolor` behind the `BG.png` image — so even a missing/slow background asset
 never falls through to an unset (black) page background.
 
@@ -431,8 +437,8 @@ Photos are a first-class subsystem behind `IStorageService`, isolated from
      fetched profile's `photo_urls` is **never empty**.
   2. *Safe accessors* — `views/common/photos.py::resolve_main_photo` (length-checked
      index 0 → default) and `extra_photo_urls` (slice → `[]`, empties dropped) are
-     the read paths; no view indexes the raw list. The read-only peer view adds its
-     own `_safe_photo_src` length guard.
+     the read paths; no view indexes the raw list. The read-only peer views add the
+     shared `views/common/peer_data.py::safe_photo_src` length guard.
   3. *Lazy migration — decoupled from the read path.*
      `IProfileRepository.ensure_default_photo(user_id)` is a conditional,
      idempotent, best-effort `UPDATE` (`ProfileQueries.HEAL_MISSING_PHOTOS` heals
@@ -599,7 +605,7 @@ raises) on error so the feed degrades to an empty-state banner; `limit` clamped 
 `MatchConfig.MAX_DISCOVER_PAGE_SIZE`, called with `DISCOVER_PAGE_SIZE` (30). The
 SQLite path does it in one round-trip (correlated subquery on the `user_blocks`
 PK, no N+1). Defensive identity check + shared shell + RTL row recipe (avatar far
-right) + presence dot (`ThemeColors.ONLINE`/`OFFLINE`) + 86px tap targets opening
+right) + presence dot (`DS.palette.online`/`offline`) + 86px tap targets opening
 an RTL selection sheet (view profile / start chat, both stashing
 `selected_peer_id`). Each tile is built in an isolated try/except (Rule 5.4).
 

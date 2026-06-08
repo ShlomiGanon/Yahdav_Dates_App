@@ -18,7 +18,7 @@ import logging
 import flet as ft
 
 from style.design_system import DS
-from utils.constants import AssetPaths, UIConstants, ThemeColors, TextSizes
+from utils.constants import AssetPaths
 
 log = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def background_screen(route: str, content: ft.Control) -> ft.View:
                 # instead of falling through to an unset page background — which
                 # the Flet desktop client renders BLACK. This single line is the
                 # structural guard against the "completely black screen".
-                bgcolor=ThemeColors.BACKGROUND,
+                bgcolor=DS.palette.background,
                 image=ft.DecorationImage(
                     src=AssetPaths.BG_IMAGE,
                     fit=ft.BoxFit.FILL,
@@ -66,7 +66,7 @@ def translucent_card(
 ) -> ft.Container:
     """A semi-transparent white card so `content` stays readable over the BG.
 
-    Uses `UIConstants.FORM_OVERLAY_OPACITY` (white at 50%) and the standard
+    Uses `DS.opacity.form_overlay` (white at 50%) and the standard
     corner radius, so the background image shows through while text stays
     legible — identical to the My Profile form card.
     """
@@ -74,11 +74,11 @@ def translucent_card(
         content=content,
         expand=expand,
         margin=margin,
-        padding=UIConstants.CARD_PADDING if padding is None else padding,
+        padding=DS.pad.card if padding is None else padding,
         bgcolor=ft.Colors.with_opacity(
-            UIConstants.FORM_OVERLAY_OPACITY, ThemeColors.SURFACE,
+            DS.opacity.form_overlay, DS.palette.surface,
         ),
-        border_radius=UIConstants.CORNER_RADIUS,
+        border_radius=DS.radius.card,
     )
 
 
@@ -109,12 +109,12 @@ def error_component(message: str = DEFAULT_ERROR_MESSAGE) -> ft.Control:
     wherever a body, action, or sub-section fails to build."""
     return ft.Column(
         controls=[
-            ft.Icon(ft.Icons.ERROR_OUTLINE, size=DS.sizing.icon_lg, color=ThemeColors.DANGER),
+            ft.Icon(ft.Icons.ERROR_OUTLINE, size=DS.sizing.icon_lg, color=DS.palette.danger),
             ft.Text(
                 message,
-                size=TextSizes.H2,
+                size=DS.type.h2,
                 weight=ft.FontWeight.BOLD,
-                color=ThemeColors.TEXT_MAIN,
+                color=DS.palette.text_main,
                 rtl=True,
                 text_align=ft.TextAlign.CENTER,
             ),
@@ -172,8 +172,8 @@ def clamp_hub_width(page_width: float | None) -> float | None:
     yet (first frame) so the card stays content-sized until the first resize."""
     if not page_width:
         return None
-    available = page_width - 2 * UIConstants.HUB_SIDE_MARGIN
-    return max(UIConstants.CARD_MIN_WIDTH, min(UIConstants.CARD_MAX_WIDTH, available))
+    available = page_width - 2 * DS.sizing.hub_margin
+    return max(DS.sizing.card_min, min(DS.sizing.card_max, available))
 
 
 def responsive_card(
@@ -198,7 +198,7 @@ def responsive_card(
     card = translucent_card(
         card_content,
         expand=expand,
-        padding=UIConstants.CARD_PADDING if padding is None else padding,
+        padding=DS.pad.card if padding is None else padding,
     )
     card.width = width
     card.data = _HUB_CARD_TAG
@@ -237,7 +237,7 @@ def stress_report(
             "window": w,
             "card_width": card_w,
             "centered": True,
-            "stretched": bool(card_w and card_w > UIConstants.CARD_MAX_WIDTH),
+            "stretched": bool(card_w and card_w > DS.sizing.card_max),
             "fits": bool(card_w and card_w <= w),
         })
     return report

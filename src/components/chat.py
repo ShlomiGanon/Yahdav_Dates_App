@@ -3,7 +3,7 @@ fill, padding, radius and (critically) its RTL-immune side-anchoring live in a
 single component instead of inline in the chat view."""
 import flet as ft
 
-from utils.constants import TextSizes, ThemeColors, UIConstants
+from style.design_system import DS
 
 
 def create_chat_bubble(text: str, *, mine: bool) -> ft.Control:
@@ -17,15 +17,15 @@ def create_chat_bubble(text: str, *, mine: bool) -> ft.Control:
     bubble = ft.Container(
         content=ft.Text(
             text,
-            size=TextSizes.INPUT,
-            color=ThemeColors.TEXT_MAIN,
+            size=DS.type.input,
+            color=DS.palette.text_main,
             rtl=True,
             text_align=ft.TextAlign.RIGHT,
             selectable=True,
         ),
-        padding=UIConstants.BUBBLE_PADDING,
-        border_radius=UIConstants.BUBBLE_RADIUS,
-        bgcolor=ThemeColors.BUBBLE_SELF if mine else ThemeColors.BUBBLE_PEER,
+        padding=DS.pad.bubble,
+        border_radius=DS.radius.bubble,
+        bgcolor=DS.palette.bubble_self if mine else DS.palette.bubble_peer,
     )
     return ft.Container(
         content=bubble,

@@ -21,13 +21,13 @@ if str(_SRC) not in sys.path:
 
 import flet as ft
 
-from utils.constants import TextSizes, ThemeColors, UIConstants
-from views.common.renderer import (
+from style.design_system import DS
+from views.common.engine.renderer import (
     Kind, UIComponent, ViewContent, ViewRenderer,
     heading, primary_button, secondary_button, text_field, field_error,
     chat_bubble, profile_field, column, row, text, checkbox, listview, raw,
 )
-from views.common.screen import error_component
+from views.common.engine.screen import error_component
 
 
 class TestFactoryBackedKinds(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestFactoryBackedKinds(unittest.TestCase):
         right = self.r.render(heading("שלום"))
         centered = self.r.render(heading("שלום", center=True))
         self.assertIsInstance(right, ft.Text)
-        self.assertEqual(right.size, TextSizes.H1)
+        self.assertEqual(right.size, DS.type.h1)
         self.assertTrue(right.rtl)
         self.assertEqual(right.text_align, ft.TextAlign.RIGHT)
         self.assertEqual(centered.text_align, ft.TextAlign.CENTER)
@@ -47,7 +47,7 @@ class TestFactoryBackedKinds(unittest.TestCase):
         clicks: list = []
         btn = self.r.render(primary_button("התחבר", lambda e: clicks.append(e)))
         self.assertIsInstance(btn, ft.Button)
-        self.assertEqual(btn.height, UIConstants.BUTTON_HEIGHT)
+        self.assertEqual(btn.height, DS.sizing.button_h)
         self.assertIsNotNone(btn.on_click)
         btn.on_click("evt")
         self.assertEqual(clicks, ["evt"])
@@ -55,7 +55,7 @@ class TestFactoryBackedKinds(unittest.TestCase):
     def test_secondary_button_height(self) -> None:
         btn = self.r.render(secondary_button("ביטול", lambda e: None))
         self.assertIsInstance(btn, ft.Button)
-        self.assertEqual(btn.width, UIConstants.BUTTON_WIDTH)
+        self.assertEqual(btn.width, DS.sizing.button_w)
 
     def test_text_field_passes_password_and_submit(self) -> None:
         submit = lambda e: None
@@ -68,7 +68,7 @@ class TestFactoryBackedKinds(unittest.TestCase):
         lbl = self.r.render(field_error())
         self.assertIsInstance(lbl, ft.Text)
         self.assertFalse(lbl.visible)
-        self.assertEqual(lbl.color, ThemeColors.FIELD_ERROR)
+        self.assertEqual(lbl.color, DS.palette.field_error)
 
     def test_chat_bubble_side_is_absolute_alignment(self) -> None:
         mine = self.r.render(chat_bubble("היי", mine=True))

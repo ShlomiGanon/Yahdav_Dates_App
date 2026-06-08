@@ -2,7 +2,7 @@
 
 Reached from DiscoverView's selection sheet (route `/discover/profile`). That
 sheet stashes the chosen member's id in
-`page.session.store["selected_peer_id"]` BEFORE navigating here; this view reads
+`page.session.store[SELECTED_PEER_ID_KEY]` BEFORE navigating here; this view reads
 it, loads the profile via `IProfileRepository`, and renders every field as
 STATIC text (this is someone else's profile — nothing is editable).
 
@@ -38,28 +38,23 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.navigation import back_button
+from views.common.engine import renderer as ui
+from views.common.helpers import peer_data
+from views.common.helpers.navigation import back_button
 from style.design_system import DS
-from views.common.photos import extra_photo_urls
+from views.common.helpers.photos import extra_photo_urls
 from components import loading
 from components.buttons import create_primary_button
 from components.typography import create_screen_heading
 from components.profile_fields import create_profile_field
 from components.avatars import create_photo_avatar
 from components.error_card import create_error_card
-from services.i_profile_repository import IProfileRepository
+from services.interfaces.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender
-from utils.constants import TextSizes, AssetPaths
+from utils.session_keys import SELECTED_PEER_ID
+from utils import routes
 
 log = logging.getLogger(__name__)
-
-# Gender → Hebrew label for the read-only display.
-_GENDER_LABELS: dict[Gender, str] = {
-    Gender.MALE:   "זכר",
-    Gender.FEMALE: "נקבה",
-    Gender.OTHER:  "אחר",
-}
 
 # Shown whenever a peer's name can't be resolved (null/blank localization).
 _FALLBACK_NAME = "משתמש/ת"
@@ -70,11 +65,12 @@ _LOAD_ERROR_MSG = "משהו השתבש בטעינת הפרופיל"
 class UserProfileView(BaseView):
     """Read-only display of another member's profile."""
 
-    ROUTE = "/discover/profile"
+    ROUTE = routes.PEER_PROFILE
 
-    SELECTED_PEER_ID_KEY = "selected_peer_id"
-    _DISCOVER_ROUTE = "/matching/discover"
-    _PEER_PHOTOS_ROUTE = "/discover/peer_photos"   # the album + lightbox screen
+    # Alias of the canonical `utils.session_keys.SELECTED_PEER_ID` constant.
+    SELECTED_PEER_ID_KEY = SELECTED_PEER_ID
+    _DISCOVER_ROUTE = routes.DISCOVER
+    _PEER_PHOTOS_ROUTE = routes.PEER_PHOTOS   # the album + lightbox screen
     _AVATAR_DIAMETER = DS.sizing.avatar_lg
 
     def __init__(
@@ -120,7 +116,7 @@ class UserProfileView(BaseView):
         self._album_button = create_primary_button(
             "להצגת תמונות נוספות",
             self._on_view_album,
-            text_size=TextSizes.INPUT,   # the label is long → step down from BUTTON
+            text_size=DS.type.input,   # the label is long → step down from BUTTON
         )
         self._album_button.visible = False
         return [ui.raw(self._avatar_slot), ui.raw(self._heading),
@@ -259,22 +255,22 @@ class UserProfileView(BaseView):
         name = self._safe_name(profile)
         blocks: list[ft.Control] = []
 
-        gender_label = self._safe_gender_label(profile)
+        gender_label = peer_data.safe_gender_label(profile)
         if gender_label:
             blocks.append(create_profile_field("מין", gender_label))
 
-        age = self._safe_age(profile)
+        age = peer_data.safe_age(profile)
         if age:
             blocks.append(create_profile_field("גיל", age))
-        dob = self._safe_dob(profile)
+        dob = peer_data.safe_dob(profile)
         if dob:
             blocks.append(create_profile_field("תאריך לידה", dob))
 
-        location = self._safe_location(profile)
+        location = peer_data.safe_location(profile)
         if location:
             blocks.append(create_profile_field("מיקום", location))
 
-        bio = self._safe_bio(profile)
+        bio = peer_data.safe_bio(profile)
         if bio and bio != name:        # suppress the username placeholder
             blocks.append(create_profile_field("קצת עליי", bio))
 
@@ -289,78 +285,20 @@ class UserProfileView(BaseView):
         `create_photo_avatar`; this method only resolves the (always-safe) src
         and the initials fallback name."""
         return create_photo_avatar(
-            self._safe_photo_src(profile),
+            peer_data.safe_photo_src(profile),
             self._safe_name(profile),
             diameter=self._AVATAR_DIAMETER,
         )
 
     # ============================================================
-    #  Safe accessors — TOTAL (never raise); the heart of the fix
+    #  Safe accessors — TOTAL (never raise); shared with PeerPhotosView via
+    #  views.common.helpers.peer_data (the Peer Layout Boundary Rule's reusable form)
     # ============================================================
 
     @staticmethod
-    def _safe_str(value: object) -> str:
-        return value.strip() if isinstance(value, str) else ""
-
-    def _safe_name(self, profile: UserProfile) -> str:
-        try:
-            return self._safe_str(profile.display_name.for_gender(profile.gender)) or _FALLBACK_NAME
-        except Exception:  # noqa: BLE001
-            return _FALLBACK_NAME
-
-    def _safe_bio(self, profile: UserProfile) -> str:
-        try:
-            return self._safe_str(profile.bio.for_gender(profile.gender))
-        except Exception:  # noqa: BLE001
-            return ""
-
-    @staticmethod
-    def _safe_gender_label(profile: UserProfile) -> str | None:
-        try:
-            return _GENDER_LABELS.get(profile.gender)
-        except Exception:  # noqa: BLE001
-            return None
-
-    @staticmethod
-    def _safe_age(profile: UserProfile) -> str | None:
-        try:
-            dob = profile.date_of_birth
-            if dob and dob.year > 1900:          # skip the un-onboarded sentinel
-                return str(profile.age)
-        except Exception:  # noqa: BLE001
-            pass
-        return None
-
-    @staticmethod
-    def _safe_dob(profile: UserProfile) -> str | None:
-        try:
-            dob = profile.date_of_birth
-            if dob and dob.year > 1900:
-                return dob.strftime("%d/%m/%Y")
-        except Exception:  # noqa: BLE001
-            pass
-        return None
-
-    @staticmethod
-    def _safe_location(profile: UserProfile) -> str:
-        try:
-            loc = profile.location
-            parts = [p for p in (
-                (loc.city or "").strip(), (loc.region or "").strip(),
-            ) if p]
-            return ", ".join(parts)
-        except Exception:  # noqa: BLE001
-            return ""
-
-    @staticmethod
-    def _safe_photo_src(profile: UserProfile) -> str:
-        """Resolve the MAIN picture src with an EXPLICIT length guard — never
-        assume the photo list coming from the DB is populated. If it's missing,
-        empty, or position 0 isn't a usable string, force the default template."""
-        try:
-            photos = profile.photo_urls
-            if photos and len(photos) >= 1 and isinstance(photos[0], str) and photos[0].strip():
-                return photos[0]
-        except Exception:  # noqa: BLE001 — any access issue → default
-            pass
-        return AssetPaths.DEFAULT_PROFILE_IMAGE
+    def _safe_name(profile: UserProfile) -> str:
+        """Always non-empty — unlike `peer_data.safe_display_name` (which
+        returns `""` so PeerPhotosView can show a different generic heading
+        when the name is absent), this view always needs a real label for its
+        title/avatar, so it applies the local fallback on top."""
+        return peer_data.safe_display_name(profile) or _FALLBACK_NAME

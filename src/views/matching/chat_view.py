@@ -26,18 +26,20 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.screen import BodyLayout
-from views.common import renderer as ui
-from views.common.navigation import go_back
-from views.common.render import build_items_safe
-from views.common.load_flow import run_guarded_load, LoadGuard
+from views.common.engine.screen import BodyLayout
+from views.common.engine import renderer as ui
+from views.common.helpers.navigation import go_back
+from views.common.helpers.safe_list import build_items_safe
+from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components.inputs import create_hebrew_text_field
 from components.dividers import create_action_divider
 from components.feedback import create_status_banner, show_status
 from components.chat import create_chat_bubble
-from services.i_messaging_service import IMessagingService
+from services.interfaces.i_messaging_service import IMessagingService
 from style.design_system import DS
 from utils.constants import MessageType, ChatConfig
+from utils.session_keys import CURRENT_USER_ID
+from utils import routes
 
 log = logging.getLogger(__name__)
 
@@ -49,14 +51,15 @@ class ChatView(BaseView):
     DB access. The router injects the dependency and both identities.
     """
 
-    ROUTE = "/chat/new"
+    ROUTE = routes.CHAT_NEW
 
     # Written by login_view / boot; read here to validate that the injected
-    # `self_id` really is the logged-in user.
-    SESSION_USER_ID_KEY = "current_user_id"
+    # `self_id` really is the logged-in user. Alias of the canonical
+    # `utils.session_keys.CURRENT_USER_ID` constant.
+    SESSION_USER_ID_KEY = CURRENT_USER_ID
 
     # Where "back" returns to (the Discover feed the chat was opened from).
-    _DISCOVER_ROUTE = "/matching/discover"
+    _DISCOVER_ROUTE = routes.DISCOVER
 
     def __init__(
         self,
@@ -69,9 +72,6 @@ class ChatView(BaseView):
         self.messaging = messaging
         self.self_id = self_id
         self.peer_id = peer_id
-        # Set when we navigate away, so any in-flight async task stops touching
-        # the (replaced) page — prevents stale updates / leaked references.
-        self._closing: bool = False
 
     # ============================================================
     #  Layout
@@ -158,7 +158,7 @@ class ChatView(BaseView):
                 LoadGuard(
                     ok=identity_ok,
                     message="אירעה שגיאת זיהוי. אנא התחבר/י מחדש.",
-                    bounce=lambda: self._safe_go("/auth/login"),
+                    bounce=lambda: self._safe_go(routes.LOGIN),
                 ),
                 LoadGuard(
                     ok=bool(self.peer_id),
@@ -204,7 +204,7 @@ class ChatView(BaseView):
         # (missing/renamed key, a NULL content on a non-text message) is skipped
         # with a log line rather than aborting the whole render and leaving the
         # chat stuck behind a dismissed spinner (shared render-seam helper;
-        # see views/common/render.py).
+        # see views/common/safe_list.py).
         self._messages_list.controls = build_items_safe(
             msgs,
             self._bubble,
@@ -262,17 +262,3 @@ class ChatView(BaseView):
         # Matches. Falls back to Discover only if chat is somehow the root view.
         self._closing = True
         go_back(self.page, fallback=self._DISCOVER_ROUTE)
-
-    def _safe_go(self, route: str) -> None:
-        if not self._closing:
-            self._closing = True
-            self.page.go(route)
-
-    def _safe_update(self) -> None:
-        """page.update() guarded against a view that's already navigated away."""
-        if self._closing:
-            return
-        try:
-            self.page.update()
-        except Exception:  # noqa: BLE001 — stale view after navigation
-            pass

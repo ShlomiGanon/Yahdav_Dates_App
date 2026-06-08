@@ -13,8 +13,8 @@ import sqlite3
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 
-from services.i_auth_service import IAuthService
-from services.sqlite_queries import (
+from services.interfaces.i_auth_service import IAuthService
+from services.sqlite.sqlite_queries import (
     connection, transaction, AuthQueries, ProfileQueries,
 )
 from utils.constants import AuthConfig

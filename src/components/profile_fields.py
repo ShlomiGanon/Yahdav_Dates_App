@@ -4,7 +4,6 @@ live in one place."""
 import flet as ft
 
 from style.design_system import DS
-from utils.constants import TextSizes, ThemeColors
 
 
 def create_profile_field(label: str, value: str) -> ft.Control:
@@ -15,16 +14,16 @@ def create_profile_field(label: str, value: str) -> ft.Control:
         controls=[
             ft.Text(
                 label,
-                size=TextSizes.BODY,
+                size=DS.type.body,
                 weight=ft.FontWeight.W_600,
-                color=ThemeColors.SECONDARY,
+                color=DS.palette.secondary,
                 rtl=True,
                 text_align=ft.TextAlign.RIGHT,
             ),
             ft.Text(
                 value,
-                size=TextSizes.INPUT,
-                color=ThemeColors.TEXT_MAIN,
+                size=DS.type.input,
+                color=DS.palette.text_main,
                 rtl=True,
                 text_align=ft.TextAlign.RIGHT,
                 selectable=True,
@@ -36,9 +35,3 @@ def create_profile_field(label: str, value: str) -> ft.Control:
         spacing=DS.spacing.xxs,
         horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
     )
-
-
-def create_text(label: str, value: str) -> ft.Control:
-    """Public 'text display' factory (requested API): a read-only label/value
-    block. Thin alias of `create_profile_field` so the styling stays single-sourced."""
-    return create_profile_field(label, value)

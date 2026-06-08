@@ -7,7 +7,6 @@ ONE card geometry and ONE row layout instead of each view re-painting its own
 import flet as ft
 
 from style.design_system import DS
-from utils.constants import TextSizes, ThemeColors, UIConstants
 
 
 def create_tile_card(
@@ -25,9 +24,9 @@ def create_tile_card(
     return ft.Container(
         content=content,
         height=height,
-        bgcolor=ThemeColors.SURFACE,
-        border_radius=UIConstants.CORNER_RADIUS,
-        padding=UIConstants.LIST_TILE_PADDING,
+        bgcolor=DS.palette.surface,
+        border_radius=DS.radius.card,
+        padding=DS.pad.list_tile,
         ink=True,
         on_click=on_click,
     )
@@ -54,9 +53,9 @@ def create_member_row_card(
     """
     title_text = ft.Text(
         title,
-        size=TextSizes.INPUT,
+        size=DS.type.input,
         weight=ft.FontWeight.BOLD,
-        color=ThemeColors.TEXT_MAIN,
+        color=DS.palette.text_main,
         rtl=True,
         text_align=ft.TextAlign.RIGHT,
         max_lines=1,
@@ -64,8 +63,8 @@ def create_member_row_card(
     )
     subtitle_text = ft.Text(
         subtitle,
-        size=TextSizes.BODY,
-        color=ThemeColors.SECONDARY,
+        size=DS.type.body,
+        color=DS.palette.secondary,
         rtl=True,
         text_align=ft.TextAlign.RIGHT,
         max_lines=1,

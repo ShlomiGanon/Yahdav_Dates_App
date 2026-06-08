@@ -3,9 +3,9 @@
 A screen describes its UI as DATA — a tree of `UIComponent` nodes wrapped in a
 `ViewContent` — and the renderer materialises that data into Flet controls by
 delegating to the shared component factories (`src/components/*`) and the screen
-primitives (`views/common/photos`, `views/common/screen`). The screen never
+primitives (`views/common/helpers/photos`, `views/common/engine/screen`). The screen never
 touches Flet construction directly; the renderer is the single place that knows
-how a `Kind` becomes a control, so the RTL recipe and `UIConstants` live in ONE
+how a `Kind` becomes a control, so the RTL recipe and the `DS` tokens live in ONE
 place.
 
 Design (locked with the project owner)
@@ -25,11 +25,12 @@ Fault tolerance (Engineering Contract §3 / Peer Layout Boundary Rule)
 ---------------------------------------------------------------------
 Every node is built through `screen.guard(...)`, so a node that fails to
 construct degrades to the shared Error Component in place instead of bubbling up
-and blanking the screen — the same component ring `ScreenShell` already applies
-to `get_body`. The renderer only materialises STATIC, build()-time scaffolding;
-dynamically-loaded list rows (Discover candidates, Chat bubbles, Matches threads)
-keep flowing through `views.common.render.build_items_safe` into a PRE-BUILT
-container embedded via `raw(...)`, so the per-row isolation is unchanged.
+and blanking the screen — the same component ring `BaseView` already applies to
+its body region (`guard(self._render_body)`). The renderer only materialises
+STATIC, build()-time scaffolding; dynamically-loaded list rows (Discover
+candidates, Chat bubbles, Matches threads) keep flowing through
+`views.common.helpers.safe_list.build_items_safe` into a PRE-BUILT container embedded
+via `raw(...)`, so the per-row isolation is unchanged.
 """
 from __future__ import annotations
 
@@ -52,8 +53,8 @@ from components.feedback import create_field_error_label, create_status_banner
 from components.inputs import create_hebrew_text_field
 from components.profile_fields import create_profile_field
 from components.typography import create_screen_heading, create_section_heading
-from views.common.photos import photo_thumb
-from views.common.screen import DEFAULT_ERROR_MESSAGE, error_component, guard
+from views.common.helpers.photos import photo_thumb
+from views.common.engine.screen import DEFAULT_ERROR_MESSAGE, error_component, guard
 
 
 class Kind(enum.Enum):

@@ -13,15 +13,16 @@ import asyncio
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
+from views.common.engine import renderer as ui
 from components import loading
 from components.inputs import create_hebrew_text_field
 from components.feedback import create_field_error_label, set_field_error, clear_field_errors
-from services.i_auth_service import IAuthService
+from services.interfaces.i_auth_service import IAuthService
+from utils import routes
 
 
 class SignupView(BaseView):
-    ROUTE = "/auth/signup"
+    ROUTE = routes.SIGNUP
 
     def __init__(self, page: ft.Page, auth: IAuthService) -> None:
         super().__init__(page)
@@ -60,7 +61,7 @@ class SignupView(BaseView):
         # Primary (red) = constructive signup; secondary (blue-grey) = cancel.
         return [
             ui.primary_button("הירשם", self._on_signup_click),
-            ui.secondary_button("ביטול", lambda _: self.page.go("/auth/welcome")),
+            ui.secondary_button("ביטול", lambda _: self.page.go(routes.WELCOME)),
         ]
 
     # ============================================================
@@ -117,7 +118,7 @@ class SignupView(BaseView):
             # Account created. Onboarding isn't built yet, so route to the LOGIN
             # screen to sign in with the new credentials — NOT the unregistered
             # /onboarding/profile route, which silently bounced to /auth/welcome.
-            self.page.go("/auth/login")
+            self.page.go(routes.LOGIN)
         else:
             # Most common backend rejection: email or derived-username taken.
             set_field_error(

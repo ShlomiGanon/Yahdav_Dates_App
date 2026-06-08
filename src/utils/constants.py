@@ -1,68 +1,5 @@
 from enum import Enum
 from pathlib import Path
-import flet as ft
-
-# Single source of truth for ALL visual/structural layout tokens. The classes
-# below (TextSizes / UIConstants / ThemeColors) are now a thin BACK-COMPAT SHIM
-# that re-exports the design-system values under their legacy names, so the ~50
-# existing import sites keep working while the codebase migrates to reading `DS`
-# directly. Edit `src/style/design_system.py` (not here) to change the look.
-from style.design_system import DS
-
-
-class TextSizes:
-    H1 = DS.type.h1        # Main welcome titles
-    H2 = DS.type.h2        # Card titles
-    BUTTON = DS.type.button    # Button text
-    BODY = DS.type.body      # Standard labels
-    INPUT = DS.type.input     # Input text
-    SMALL = DS.type.small     # Descriptions or error messages
-
-class UIConstants:
-    CARD_WIDTH = DS.sizing.card_w       # base hub-card width (before padding)
-    # Hub-card responsive bounds. The centered hub card (Welcome/Login/Signup/
-    # Menu) is width-CAPPED at CARD_MAX_WIDTH so it never stretches on a wide
-    # window, and floored at CARD_MIN_WIDTH so it stays usable when narrow; the
-    # engine clamps the live width to (window - 2*HUB_SIDE_MARGIN) between them.
-    CARD_MAX_WIDTH = DS.sizing.card_max   # = CARD_WIDTH (400) + 2 * CARD_PADDING (30)
-    CARD_MIN_WIDTH = DS.sizing.card_min
-    HUB_SIDE_MARGIN = DS.sizing.hub_margin
-    BUTTON_WIDTH = DS.sizing.button_w  # Buttons width
-    BUTTON_HEIGHT = DS.sizing.button_h # Buttons height
-    INPUT_WIDTH = DS.sizing.input_w    # Inputs width
-    INPUT_HEIGHT = DS.sizing.input_h   # Inputs height
-    CARD_PADDING = DS.pad.card
-    ELEMENT_SPACING = DS.spacing.element
-    CORNER_RADIUS = DS.radius.card
-    # Shared implicit-animation duration (ms). Matches the 300ms button state
-    # animation (components/buttons.py) so layout transitions feel of-a-piece.
-    # Used by the action bar's animate= (BaseView).
-    ANIM_MS = DS.motion.anim_ms
-
-    # --- Content-screen frame geometry ---
-    CONTENT_CARD_PADDING      = DS.pad.content_card
-    # A taller top padding for screens whose heading must clear the BG top logo
-    # (the read-only peer profile and the peer photo album).
-    CONTENT_CARD_PADDING_TALL = DS.pad.content_card_tall
-    CONTENT_BODY_SPACING      = DS.spacing.body   # gap between body controls in the card
-
-    # --- Inline status banner (components/feedback.py) ---
-    STATUS_BANNER_PADDING = DS.pad.status_banner   # interior padding of the success/error banner
-
-    # --- Chat bubble (components/chat.py) ---
-    BUBBLE_PADDING = DS.pad.bubble   # interior padding of a chat bubble
-    BUBBLE_RADIUS  = DS.radius.bubble   # corner radius of a chat bubble
-
-    # --- List tile (components/cards.py — discover/matches member rows) ---
-    LIST_TILE_PADDING = DS.pad.list_tile   # interior padding of a member card
-
-    # --- My Profile view ---
-    # Translucency of the form card floating over the full-screen BG image.
-    FORM_OVERLAY_OPACITY = DS.opacity.form_overlay
-    # Birth-date dropdown widths (day / month share one; year is a touch wider
-    # for the 4-digit value). Their sum + row spacing stays within INPUT_WIDTH.
-    DOB_PART_WIDTH = DS.sizing.dob_part_w   # day and month dropdowns
-    DOB_YEAR_WIDTH = DS.sizing.dob_year_w   # year dropdown
 
 
 class AssetPaths:
@@ -79,34 +16,6 @@ class AssetPaths:
     # missing/null and seeded as the main picture at registration. It is NOT a
     # data/uploads file, so the storage layer never deletes it.
     DEFAULT_PROFILE_IMAGE = "UNDEFINED_PROFILE.png"
-
-class ThemeColors:
-    """Back-compat shim — colours now live in `DS.palette` (design_system.py)."""
-
-    # --- הליבה (The Core) ---
-    PRIMARY = DS.palette.primary
-    SECONDARY = DS.palette.secondary
-
-    # --- מצבים (States) ---
-    SUCCESS = DS.palette.success
-    DANGER = DS.palette.danger
-    WARNING = DS.palette.warning
-    INFO = DS.palette.info
-    FIELD_ERROR = DS.palette.field_error
-
-    # --- ניטרליים (Neutrals) ---
-    BACKGROUND = DS.palette.background
-    SURFACE = DS.palette.surface
-    TEXT_MAIN = DS.palette.text_main
-    TEXT_ON_PRIMARY = DS.palette.text_on_primary
-
-    # --- נוכחות (Presence indicators) ---
-    ONLINE  = DS.palette.online
-    OFFLINE = DS.palette.offline
-
-    # --- בועות צ'אט (Chat bubbles) ---
-    BUBBLE_SELF = DS.palette.bubble_self
-    BUBBLE_PEER = DS.palette.bubble_peer
 
 
 class DBConfig:

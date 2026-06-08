@@ -7,7 +7,6 @@ once instead of inline per view."""
 import flet as ft
 
 from style.design_system import DS
-from utils.constants import TextSizes, ThemeColors
 
 
 def create_photo_avatar(src: str, name: str, *, diameter: float) -> ft.Control:
@@ -23,7 +22,7 @@ def create_photo_avatar(src: str, name: str, *, diameter: float) -> ft.Control:
         width=diameter,
         height=diameter,
         border_radius=diameter / 2,
-        bgcolor=ThemeColors.PRIMARY,
+        bgcolor=DS.palette.primary,
         alignment=ft.Alignment(0, 0),
         clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
         content=ft.Image(
@@ -33,9 +32,9 @@ def create_photo_avatar(src: str, name: str, *, diameter: float) -> ft.Control:
             fit=ft.BoxFit.COVER,
             error_content=ft.Text(
                 initial,
-                size=TextSizes.H1,
+                size=DS.type.h1,
                 weight=ft.FontWeight.BOLD,
-                color=ThemeColors.TEXT_ON_PRIMARY,
+                color=DS.palette.text_on_primary,
             ),
         ),
     )
@@ -61,13 +60,13 @@ def create_initial_avatar(
         width=diameter,
         height=diameter,
         border_radius=diameter / 2,
-        bgcolor=ThemeColors.PRIMARY,
+        bgcolor=DS.palette.primary,
         alignment=ft.Alignment(0, 0),
         content=ft.Text(
             initial,
-            size=TextSizes.H2,
+            size=DS.type.h2,
             weight=ft.FontWeight.BOLD,
-            color=ThemeColors.TEXT_ON_PRIMARY,
+            color=DS.palette.text_on_primary,
         ),
     )
     if online is None:
@@ -76,9 +75,9 @@ def create_initial_avatar(
         width=dot_diameter,
         height=dot_diameter,
         border_radius=dot_diameter / 2,
-        bgcolor=ThemeColors.ONLINE if online else ThemeColors.OFFLINE,
+        bgcolor=DS.palette.online if online else DS.palette.offline,
         # White ring lifts the dot off the avatar regardless of its colour.
-        border=ft.border.all(DS.sizing.ring, ThemeColors.SURFACE),
+        border=ft.border.all(DS.sizing.ring, DS.palette.surface),
     )
     return ft.Stack(
         controls=[
@@ -97,11 +96,11 @@ def create_unread_badge(count: int, *, diameter: float = DS.sizing.unread_badge)
         width=diameter,
         height=diameter,
         border_radius=diameter / 2,
-        bgcolor=ThemeColors.DANGER,
+        bgcolor=DS.palette.danger,
         alignment=ft.Alignment(0, 0),
         content=ft.Text(
             str(count),
-            size=TextSizes.BODY,
+            size=DS.type.body,
             weight=ft.FontWeight.BOLD,
             color=ft.Colors.WHITE,
         ),

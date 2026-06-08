@@ -5,7 +5,6 @@ instead of hand-rolled per screen. All styling comes from the Design System."""
 import flet as ft
 
 from style.design_system import DS
-from utils.constants import TextSizes, ThemeColors
 
 
 def create_error_card(
@@ -15,21 +14,21 @@ def create_error_card(
 ) -> ft.Container:
     """A styled, RTL error card shown inside the translucent shell."""
     return ft.Container(
-        bgcolor=ft.Colors.with_opacity(DS.opacity.error_card, ThemeColors.DANGER),
+        bgcolor=ft.Colors.with_opacity(DS.opacity.error_card, DS.palette.danger),
         border_radius=DS.radius.card,
         padding=DS.pad.section,
         content=ft.Column(
             controls=[
                 ft.Icon(ft.Icons.ERROR_OUTLINE, size=DS.sizing.icon_lg,
-                        color=ThemeColors.DANGER),
+                        color=DS.palette.danger),
                 ft.Text(
-                    message, size=TextSizes.INPUT, weight=ft.FontWeight.W_600,
-                    color=ThemeColors.TEXT_MAIN, rtl=True,
+                    message, size=DS.type.input, weight=ft.FontWeight.W_600,
+                    color=DS.palette.text_main, rtl=True,
                     text_align=ft.TextAlign.CENTER,
                 ),
                 ft.Text(
-                    hint, size=TextSizes.BODY,
-                    color=ThemeColors.TEXT_MAIN, rtl=True,
+                    hint, size=DS.type.body,
+                    color=DS.palette.text_main, rtl=True,
                     text_align=ft.TextAlign.CENTER,
                 ),
             ],

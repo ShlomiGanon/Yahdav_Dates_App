@@ -29,13 +29,13 @@ via `asyncio.to_thread(storage.upload_file, ...)`, and the updated path list is
 persisted through `IProfileRepository.save_profile` (UPSERT, never REPLACE).
 
 The view itself pulls the current user_id from `page.session.store` under
-the key `"current_user_id"` — populated by `login_view` on successful login.
+the key `SESSION_USER_ID_KEY` — populated by `login_view` on successful login.
 If that key is missing, the view bounces the user back to `/auth/login`
 instead of rendering a broken form.
 
 UX
 --
-Senior-friendly: oversized labels/inputs from `TextSizes`/`UIConstants`,
+Senior-friendly: oversized labels/inputs from `DS.type`/`DS.sizing`,
 RTL throughout, sequential field validation, dedicated red error label
 under the affected field, a green success banner that auto-fades, and a
 clearly-labelled "חזור לתפריט הראשי" button using the secondary brand colour
@@ -56,35 +56,28 @@ from datetime import date
 import flet as ft
 
 from views._base import BaseView
-from views.common import renderer as ui
-from views.common.navigation import back_to_menu_button
-from views.common.photos import resolve_main_photo
-from views.common.photo_ops import save_photo_urls_or_rollback
-from views.common.load_flow import run_guarded_load, LoadGuard
+from views.common.engine import renderer as ui
+from views.common.helpers.navigation import back_to_menu_button
+from views.common.helpers.load_flow import run_guarded_load, LoadGuard
+from views.profile import my_profile_form as profile_form
+from views.profile import my_profile_photos as profile_photos
 from components import loading
-from components.buttons import create_primary_button
 from components.dividers import create_action_divider
-from components.inputs import create_hebrew_text_field
 from style.design_system import DS
-from components.feedback import (
-    create_field_error_label, set_field_error, clear_field_errors,
-    create_status_banner, show_status,
-)
-from services.i_profile_repository import IProfileRepository
-from services.i_storage_service import IStorageService
-from models.user_profile import UserProfile, LocalizedText, Gender, Location
-from utils.constants import (
-    TextSizes, UIConstants, ThemeColors, StorageConfig, AssetPaths,
-)
+from components.feedback import set_field_error, create_status_banner, show_status
+from services.interfaces.i_profile_repository import IProfileRepository
+from services.interfaces.i_storage_service import IStorageService
+from models.user_profile import UserProfile, Gender, GENDER_LABELS_HE
+from utils.constants import StorageConfig
+from utils.session_keys import CURRENT_USER_ID, CURRENT_USER_EMAIL
+from utils import routes
 
 log = logging.getLogger(__name__)
 
 # Gender dropdown options — key = Gender.value (persisted), text = Hebrew label.
-_GENDER_OPTIONS: tuple[tuple[Gender, str], ...] = (
-    (Gender.MALE,   "זכר"),
-    (Gender.FEMALE, "נקבה"),
-    (Gender.OTHER,  "אחר"),
-)
+# Derived from the canonical `GENDER_LABELS_HE` map (preserves its
+# MALE → FEMALE → OTHER insertion order).
+_GENDER_OPTIONS: tuple[tuple[Gender, str], ...] = tuple(GENDER_LABELS_HE.items())
 
 # Israeli districts for the Location/Region dropdown. Stored verbatim as the
 # free-text `Location.region`.
@@ -103,15 +96,15 @@ _MAX_AGE_YEARS = 100
 # ----------------------------------------------------------------------------
 
 class MyProfileView(BaseView):
-    ROUTE = "/profile/me"
+    ROUTE = routes.MY_PROFILE
 
     EXPAND_BODY = True   # long profile form → fill the viewport, scroll internally
 
     # Session-store keys holding the currently logged-in user's identity.
     # Written by login_view on success; read here; cleared on logout.
-    # Centralising the strings avoids silent typo drift across files.
-    SESSION_USER_ID_KEY    = "current_user_id"
-    SESSION_USER_EMAIL_KEY = "current_user_email"
+    # Aliases of the canonical `utils.session_keys` constants.
+    SESSION_USER_ID_KEY    = CURRENT_USER_ID
+    SESSION_USER_EMAIL_KEY = CURRENT_USER_EMAIL
 
     # Bio is intentionally capped: keeps storage reasonable and the
     # rendered card readable for the 50+ audience.
@@ -120,7 +113,7 @@ class MyProfileView(BaseView):
     # Route to the additional-photos section, opened by the "תמונות נוספות"
     # button (kept as a literal per the per-view route convention; mirrors
     # AdditionalPhotosView.ROUTE).
-    _ADDITIONAL_PHOTOS_ROUTE = "/profile/photos"
+    _ADDITIONAL_PHOTOS_ROUTE = routes.ADDITIONAL_PHOTOS
     # Main profile-picture display size.
     _MAIN_PHOTO_SIZE = DS.sizing.main_photo
 
@@ -175,71 +168,32 @@ class MyProfileView(BaseView):
         # the profile is hydrated. The section embeds the mutated _main_image, so
         # it is pre-built and embedded via raw().
         self._file_picker = ft.FilePicker()
-        photo_section = self._build_photo_section()
+        self._main_image, photo_section = profile_photos.build_photo_section(
+            photo_urls=self._photo_urls,
+            size=self._MAIN_PHOTO_SIZE,
+            on_change_main_photo=self._on_change_main_photo,
+            on_open_additional=lambda _e: self.page.go(self._ADDITIONAL_PHOTOS_ROUTE),
+        )
 
-        # ---- Name (Hebrew content → RIGHT-aligned via the shared primitive) ----
-        self._name_field = create_hebrew_text_field(
-            "שם מלא", hebrew_content=True, on_submit=self._on_save_click,
+        # ---- Form fields — built via the stateless `my_profile_form` factories;
+        # the resulting refs are OUR instance attributes (single source of truth
+        # the load/save handlers mutate). ----
+        self._name_field, self._name_error = profile_form.build_name_field(
+            self._on_save_click,
         )
-        self._name_error = create_field_error_label()
-
-        # ---- Bio (multi-line, Hebrew content) ----
-        self._bio_field = create_hebrew_text_field(
-            "קצת עליי", hebrew_content=True,
-            multiline=True, min_lines=4, max_lines=8,
-            max_length=self._BIO_MAX_CHARS,
+        self._bio_field, self._bio_error = profile_form.build_bio_field(
+            self._BIO_MAX_CHARS,
         )
-        self._bio_error = create_field_error_label()
-
-        # ---- Gender (large dropdown — no free typing for the 50+ audience) ----
-        self._gender_dropdown = self._make_dropdown(
-            label="מין",
-            options=[ft.dropdown.Option(key=g.value, text=t)
-                     for g, t in _GENDER_OPTIONS],
-            width=UIConstants.INPUT_WIDTH,
+        self._gender_dropdown, self._gender_error = profile_form.build_gender_dropdown(
+            _GENDER_OPTIONS,
         )
-        self._gender_error = create_field_error_label()
-
-        # ---- Birth date — three large dropdowns (day / month / year). ----
-        # Deliberately NOT a calendar picker: three simple dropdowns are far
-        # easier for seniors than navigating a month grid, and can't produce a
-        # malformed date (we still validate the day/month combination on save).
-        today = date.today()
-        # NOTE on keys vs. text: the option KEY is always the plain integer
-        # string (e.g. "9") so it matches `str(date.month/day)` on load and
-        # parses straight back via `int(...)` on save. Only the displayed TEXT
-        # is zero-padded for a tidy "01..12" look — the stored/parsed value is
-        # unaffected.
-        self._dob_day = self._make_dropdown(
-            label="יום",
-            options=[ft.dropdown.Option(key=str(d), text=str(d))
-                     for d in range(1, 32)],
-            width=UIConstants.DOB_PART_WIDTH,   # wider: room for value + arrow
+        (self._dob_day, self._dob_month, self._dob_year,
+         self._dob_error) = profile_form.build_dob_dropdowns(
+            _MIN_AGE_YEARS, _MAX_AGE_YEARS,
         )
-        self._dob_month = self._make_dropdown(
-            label="חודש",
-            options=[ft.dropdown.Option(key=str(i), text=f"{i:02d}")
-                     for i in range(1, 13)],    # "01".."12" — numbers, not names
-            width=UIConstants.DOB_PART_WIDTH,
-        )
-        self._dob_year = self._make_dropdown(
-            label="שנה",
-            options=[ft.dropdown.Option(key=str(y), text=str(y))
-                     for y in range(today.year - _MIN_AGE_YEARS,
-                                    today.year - _MAX_AGE_YEARS - 1, -1)],
-            width=UIConstants.DOB_YEAR_WIDTH,
-        )
-        self._dob_error = create_field_error_label()
-
-        # ---- Location: city (text) + region (dropdown of Israeli districts) ----
-        self._city_field = create_hebrew_text_field(
-            "עיר", hebrew_content=True, on_submit=self._on_save_click,
-        )
-        self._city_error = create_field_error_label()
-        self._region_dropdown = self._make_dropdown(
-            label="אזור",
-            options=[ft.dropdown.Option(key=r, text=r) for r in _REGIONS_HE],
-            width=UIConstants.INPUT_WIDTH,
+        (self._city_field, self._city_error,
+         self._region_dropdown) = profile_form.build_location_fields(
+            self._on_save_click, _REGIONS_HE,
         )
 
         # The scrollable form fields, top → bottom: identity, then demographics,
@@ -248,8 +202,8 @@ class MyProfileView(BaseView):
             ui.raw(photo_section),
             ui.raw(self._name_field),     ui.raw(self._name_error),
             ui.raw(self._gender_dropdown), ui.raw(self._gender_error),
-            ui.text("תאריך לידה", size=TextSizes.BODY,
-                    weight=ft.FontWeight.W_600, color=ThemeColors.TEXT_MAIN),
+            ui.text("תאריך לידה", size=DS.type.body,
+                    weight=ft.FontWeight.W_600, color=DS.palette.text_main),
             ui.row(
                 [ui.raw(self._dob_day), ui.raw(self._dob_month),
                  ui.raw(self._dob_year)],
@@ -310,7 +264,7 @@ class MyProfileView(BaseView):
                     "לא נמצא פרופיל. אנא התחבר/י מחדש.", ok=False,
                 )
                 await asyncio.sleep(1.5)
-                self.page.go("/auth/login")
+                self.page.go(routes.LOGIN)
                 return
 
             # Lazy migration — fully DECOUPLED, fire-and-forget AFTER the read.
@@ -325,7 +279,7 @@ class MyProfileView(BaseView):
             guards=[LoadGuard(
                 ok=bool(current_user),
                 message="אנא התחבר/י תחילה כדי לראות את הפרופיל שלך.",
-                bounce=lambda: self._is_live() and self.page.go("/auth/login"),
+                bounce=lambda: self._is_live() and self.page.go(routes.LOGIN),
             )],
             fetch=lambda: self.profile_repo.get_profile(current_user),
             on_success=_populate,
@@ -338,27 +292,16 @@ class MyProfileView(BaseView):
         )
 
     def _populate_form(self, profile: UserProfile) -> None:
-        """Fill every form field from the loaded profile (pure UI population)."""
-        self._name_field.value = profile.display_name.for_gender(profile.gender)
-        self._bio_field.value  = profile.bio.for_gender(profile.gender)
-
-        # Gender — dropdown key is the persisted Gender.value.
-        self._gender_dropdown.value = profile.gender.value
-
-        # Birth date — populate the three dropdowns, but skip the 1900-01-01
-        # sentinel a not-yet-onboarded profile carries, so the senior is
-        # prompted to actually pick their date rather than seeing a fake one.
-        dob = profile.date_of_birth
-        if dob.year > 1900:
-            self._dob_day.value   = str(dob.day)
-            self._dob_month.value = str(dob.month)
-            self._dob_year.value  = str(dob.year)
-
-        # Location — city verbatim; region only if it matches a known option
-        # (the underlying field is free-text and may hold a legacy value).
-        loc = profile.location
-        self._city_field.value = loc.city or ""
-        self._region_dropdown.value = loc.region if loc.region in _REGIONS_HE else None
+        """Fill every form field from the loaded profile (pure UI population),
+        then seed the photo working copy and repaint the main picture."""
+        profile_form.populate_form(
+            profile,
+            name_field=self._name_field, bio_field=self._bio_field,
+            gender_dropdown=self._gender_dropdown,
+            dob_day=self._dob_day, dob_month=self._dob_month, dob_year=self._dob_year,
+            city_field=self._city_field, region_dropdown=self._region_dropdown,
+            known_regions=_REGIONS_HE,
+        )
 
         # Photos — seed the working copy from the loaded profile and paint the
         # main picture. Capped defensively at MAX_PROFILE_PHOTOS in case a legacy
@@ -424,30 +367,13 @@ class MyProfileView(BaseView):
             )
             return
 
-        # ---- Safe mutation — PUBLIC setters only, edited fields only ----
-        # We mutate ONLY the fields the form owns and leave everything else on
-        # the loaded entity exactly as it was (user_id, email, registered_at,
-        # status, safety_flags, photos, lat/lon…). Combined with the repository's
-        # UPSERT (never REPLACE), saving a profile can never drop credentials,
-        # system IDs, or untouched columns. display_name / bio are first-person
-        # ("about me"), so the same string is mirrored across all three variants.
-        self._current_profile.display_name = LocalizedText(
-            he_male=name, he_female=name, he_neutral=name,
-        )
-        self._current_profile.bio = LocalizedText(
-            he_male=bio, he_female=bio, he_neutral=bio,
-        )
-        self._current_profile.gender = Gender(gender_key)
-        self._current_profile.date_of_birth = birth
-        # Preserve the geo fields the form doesn't edit (lat / lon / radius);
-        # only city + region come from the UI.
-        existing_loc = self._current_profile.location
-        self._current_profile.location = Location(
-            city=city,
-            region=self._region_dropdown.value or None,
-            lat=existing_loc.lat,
-            lon=existing_loc.lon,
-            visibility_radius_km=existing_loc.visibility_radius_km,
+        # ---- Apply the validated values onto the loaded entity (PUBLIC
+        # setters, edited fields only — see my_profile_form.apply_edits for
+        # why this can never drop credentials/system fields) ----
+        profile_form.apply_edits(
+            self._current_profile,
+            name=name, bio=bio, gender_key=gender_key, birth=birth,
+            city=city, region=self._region_dropdown.value or None,
         )
 
         # ---- Persist (blocking → off the UI thread) ----
@@ -478,234 +404,48 @@ class MyProfileView(BaseView):
         )
 
     def _validated_birth_date(self) -> date | None:
-        """Read the day/month/year dropdowns into a real `date`.
-
-        Returns the `date` on success; otherwise sets the birth-date error
-        label and returns None. Rejects an incomplete selection, an impossible
-        calendar date (e.g. 31 בפברואר), and ages outside the allowed bounds.
-        """
-        d = self._dob_day.value
-        m = self._dob_month.value
-        y = self._dob_year.value
-        if not (d and m and y):
-            set_field_error(
-                self._dob_error, "אנא בחר/י תאריך לידה מלא (יום, חודש ושנה)",
-            )
-            return None
-        try:
-            birth = date(int(y), int(m), int(d))
-        except ValueError:
-            set_field_error(self._dob_error, "התאריך שנבחר אינו קיים בלוח השנה")
-            return None
-        today = date.today()
-        age = today.year - birth.year - (
-            (today.month, today.day) < (birth.month, birth.day)
+        """Read the day/month/year dropdowns into a real `date`, or pin the
+        birth-date error label and return None. See `my_profile_form
+        .validated_birth_date` for the full validation rules."""
+        return profile_form.validated_birth_date(
+            self._dob_day, self._dob_month, self._dob_year, self._dob_error,
+            min_age_years=_MIN_AGE_YEARS, max_age_years=_MAX_AGE_YEARS,
         )
-        if age < _MIN_AGE_YEARS:
-            set_field_error(
-                self._dob_error,
-                f"הגיל המינימלי לשימוש באפליקציה הוא {_MIN_AGE_YEARS}",
-            )
-            return None
-        if age > _MAX_AGE_YEARS:
-            set_field_error(self._dob_error, "אנא בדוק/י את שנת הלידה שנבחרה")
-            return None
-        return birth
 
     # ============================================================
     #  Main profile picture + "additional photos" navigation
     # ============================================================
-
-    def _build_photo_section(self) -> ft.Control:
-        """The MAIN profile picture at the top (tappable to change/overwrite),
-        with the "תמונות נוספות" button directly underneath. The portfolio
-        extras themselves live on AdditionalPhotosView."""
-        # Start on the default template; _refresh_main_photo swaps in the real
-        # main picture once the profile is hydrated on mount.
-        self._main_image = ft.Image(
-            src=resolve_main_photo(self._photo_urls),
-            width=self._MAIN_PHOTO_SIZE,
-            height=self._MAIN_PHOTO_SIZE,
-            fit=ft.BoxFit.COVER,
-            error_content=ft.Icon(
-                ft.Icons.ACCOUNT_CIRCLE,
-                size=self._MAIN_PHOTO_SIZE,
-                color=ThemeColors.SECONDARY,
-            ),
-        )
-        # The whole picture is the tap target to change it (ink ripple + camera
-        # badge). One active picture: picking a new one OVERWRITES it.
-        main_picture = ft.Container(
-            width=self._MAIN_PHOTO_SIZE,
-            height=self._MAIN_PHOTO_SIZE,
-            border_radius=self._MAIN_PHOTO_SIZE / 2,   # circular avatar
-            bgcolor=ft.Colors.with_opacity(DS.opacity.tile_bg, ThemeColors.SECONDARY),
-            alignment=ft.Alignment(0, 0),
-            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-            ink=True,
-            on_click=self._on_change_main_photo,
-            tooltip="הקש/י כדי לעדכן את תמונת הפרופיל",
-            content=ft.Stack(
-                controls=[
-                    self._main_image,
-                    # Small camera badge, bottom-start, hinting "tap to change".
-                    ft.Container(
-                        alignment=ft.Alignment(0, 1),
-                        content=ft.Container(
-                            bgcolor=ft.Colors.with_opacity(DS.opacity.badge, ft.Colors.BLACK),
-                            padding=DS.pad.badge,
-                            content=ft.Icon(
-                                ft.Icons.PHOTO_CAMERA,
-                                size=DS.sizing.icon_sm,
-                                color=ft.Colors.WHITE,
-                            ),
-                        ),
-                    ),
-                ],
-                width=self._MAIN_PHOTO_SIZE,
-                height=self._MAIN_PHOTO_SIZE,
-            ),
-        )
-        change_hint = ft.Text(
-            "הקש/י על התמונה כדי לעדכן את תמונת הפרופיל",
-            size=TextSizes.SMALL,
-            color=ThemeColors.TEXT_MAIN,
-            rtl=True,
-            text_align=ft.TextAlign.CENTER,
-        )
-        # The existing photo button, relocated under the picture and relabelled.
-        additional_button = create_primary_button(
-            "תמונות נוספות",
-            lambda _e: self.page.go(self._ADDITIONAL_PHOTOS_ROUTE),
-            text_size=TextSizes.INPUT,
-        )
-        return ft.Column(
-            controls=[main_picture, change_hint, additional_button],
-            spacing=DS.spacing.md,
-            width=DS.sizing.input_w,
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        )
+    # The section layout, repaint, and change/upload flow are stateless
+    # helpers in `my_profile_photos` — WE remain the sole owner of
+    # `_main_image`/`_current_profile`/`_photo_urls` (passed in, mutated in
+    # place) so the load/save/photo handlers keep one shared source of truth.
 
     def _refresh_main_photo(self) -> None:
-        """Repaint the main picture from the current working copy (real main at
-        index 0, or the default template)."""
-        if self._main_image is None:
-            return
-        self._main_image.src = resolve_main_photo(self._photo_urls)
-        try:
-            self._main_image.update()
-        except Exception:
-            pass  # not yet mounted — the caller's page.update() will flush it
+        profile_photos.refresh_main_photo(self._main_image, self._photo_urls)
 
     async def _on_change_main_photo(self, e: ft.ControlEvent) -> None:
-        """Pick an image and OVERWRITE the single main picture (index 0).
-
-        Durability order: write the new file FIRST, then UPSERT the profile;
-        only after the save succeeds do we delete the OLD main file (never the
-        bundled default template). A save failure rolls back and deletes the
-        just-written orphan."""
-        if self._current_profile is None:
-            await show_status(self._status_banner, self._status_text,
-                "לא ניתן לעדכן תמונה — הפרופיל לא נטען. נסה/י לרענן את המסך.",
-                ok=False,
-            )
-            return
-        if self._file_picker is None:   # defensive: build() always sets it
-            await show_status(self._status_banner, self._status_text,"בורר הקבצים אינו זמין כעת.", ok=False)
-            return
-
-        # In Flet 0.84 `pick_files` is awaitable and returns the selection
-        # DIRECTLY (no on_result callback). with_data=True reads the raw bytes.
-        try:
-            files = await self._file_picker.pick_files(
-                dialog_title="בחר/י תמונת פרופיל",
-                file_type=ft.FilePickerFileType.IMAGE,
-                allow_multiple=False,
-                with_data=True,
-            )
-        except Exception:
-            log.exception("MyProfile: file picker failed")
-            await show_status(self._status_banner, self._status_text,"פתיחת בורר הקבצים נכשלה. אנא נסה/י שוב.", ok=False)
-            return
-        if not files:            # user cancelled the dialog
-            return
-        data = files[0].bytes
-        if not data:
-            await show_status(self._status_banner, self._status_text,"טעינת התמונה נכשלה. נסה/י קובץ אחר.", ok=False)
-            return
-
-        old_main = self._photo_urls[0] if self._photo_urls else None
-
-        loading.show_loading(self.page)
-        stored_path: str | None = None
-        try:
-            stored_path = await asyncio.to_thread(
-                self.storage.upload_file, data, files[0].name,
-            )
-            # Overwrite index 0 (or create it). Extras at index 1+ are untouched.
-            new_list = list(self._photo_urls)
-            if new_list:
-                new_list[0] = stored_path
-            else:
-                new_list = [stored_path]
-            # Shared durability kernel: UPSERT the new list, rolling the entity
-            # back and deleting the just-uploaded orphan if the save fails.
-            await save_photo_urls_or_rollback(
-                self.profile_repo, self._current_profile, new_list,
-                previous_photo_urls=self._photo_urls,
-                storage=self.storage, orphan_path=stored_path,
-            )
-        except Exception:
-            loading.hide_loading(self.page)
-            log.exception("MyProfile: change main photo failed for user=%s",
-                          self._current_profile.user_id)
-            await show_status(self._status_banner, self._status_text,"עדכון תמונת הפרופיל נכשל. אנא נסה/י שוב.", ok=False)
-            return
-        loading.hide_loading(self.page)
-
-        # Commit, then delete the OLD main file — but never the bundled default
-        # template (delete_file refuses it anyway, as it's outside the root).
-        if self._photo_urls:
-            self._photo_urls[0] = stored_path
-        else:
-            self._photo_urls = [stored_path]
-        if old_main and old_main != AssetPaths.DEFAULT_PROFILE_IMAGE:
-            await asyncio.to_thread(self.storage.delete_file, old_main)
-
-        self._refresh_main_photo()
-        await show_status(self._status_banner, self._status_text,"תמונת הפרופיל עודכנה בהצלחה!", ok=True, auto_hide_sec=3.0)
+        await profile_photos.on_change_main_photo(
+            page=self.page,
+            file_picker=self._file_picker,
+            profile_repo=self.profile_repo,
+            storage=self.storage,
+            current_profile=self._current_profile,
+            photo_urls=self._photo_urls,
+            status_banner=self._status_banner,
+            status_text=self._status_text,
+            refresh=self._refresh_main_photo,
+        )
 
     # ============================================================
     #  Error / status helpers
     # ============================================================
 
-    @staticmethod
-    def _make_dropdown(
-        *,
-        label: str,
-        options: list[ft.dropdown.Option],
-        width: float,
-    ) -> ft.Dropdown:
-        """Senior-friendly dropdown: oversized label + option text, fixed width.
-
-        A dropdown (closed list) is deliberately preferred over a free-text
-        field for gender / region / date parts — there is nothing to mistype,
-        and the large tap target suits the 50+ audience.
-        """
-        return ft.Dropdown(
-            label=label,
-            label_style=ft.TextStyle(size=TextSizes.INPUT),
-            options=options,
-            width=width,
-            text_size=TextSizes.INPUT,
-        )
-
     def _clear_errors(self) -> None:
-        clear_field_errors(
+        profile_form.clear_errors(
+            self.page,
             self._name_error,
             self._gender_error,
             self._dob_error,
             self._city_error,
             self._bio_error,
         )
-        self.page.update()

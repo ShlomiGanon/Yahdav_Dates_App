@@ -1,5 +1,6 @@
 from views._base import BaseView
-from views.common import renderer as ui
+from views.common.engine import renderer as ui
+from utils import routes
 
 
 class WelcomeView(BaseView):
@@ -10,7 +11,7 @@ class WelcomeView(BaseView):
     semi-transparent card — identical to Login, Signup and the Main Menu.
     """
 
-    ROUTE = "/auth/welcome"
+    ROUTE = routes.WELCOME
 
     def get_header(self) -> ui.UIComponent:
         return ui.heading("ברוכים הבאים ליחדיו")   # engine centres it (HUB) via the DS
@@ -20,6 +21,6 @@ class WelcomeView(BaseView):
 
     def get_actions(self) -> list[ui.UIComponent]:
         return [
-            ui.primary_button("התחבר", lambda _: self.page.go("/auth/login")),
-            ui.primary_button("הירשם", lambda _: self.page.go("/auth/signup")),
+            ui.primary_button("התחבר", lambda _: self.page.go(routes.LOGIN)),
+            ui.primary_button("הירשם", lambda _: self.page.go(routes.SIGNUP)),
         ]

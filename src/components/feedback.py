@@ -8,7 +8,7 @@ import asyncio
 
 import flet as ft
 
-from utils.constants import TextSizes, ThemeColors, UIConstants
+from style.design_system import DS
 
 
 # ----------------------------------------------------------------------------
@@ -21,11 +21,11 @@ def create_field_error_label() -> ft.Text:
 
     Shown beneath an input via `set_field_error`; one message at a time so a
     senior sees exactly which field failed and why. The colour comes from
-    `ThemeColors.FIELD_ERROR` (no raw hex in views)."""
+    `DS.palette.field_error` (no raw hex in views)."""
     return ft.Text(
         value="",
-        size=TextSizes.INPUT,
-        color=ThemeColors.FIELD_ERROR,
+        size=DS.type.input,
+        color=DS.palette.field_error,
         weight=ft.FontWeight.W_500,
         rtl=True,
         text_align=ft.TextAlign.RIGHT,
@@ -64,12 +64,12 @@ def create_status_banner(*, width: float | None = None) -> tuple[ft.Container, f
 
     The container starts hidden; `show_status` toggles its visibility and colour
     (SUCCESS green / DANGER red). Reliable across Flet versions — no dependency
-    on `page.snack_bar`. Pass `width` to pin it (e.g. `UIConstants.INPUT_WIDTH`);
+    on `page.snack_bar`. Pass `width` to pin it (e.g. `DS.sizing.input_w`);
     omit for a full-width banner.
     """
     text = ft.Text(
         value="",
-        size=TextSizes.INPUT,
+        size=DS.type.input,
         color=ft.Colors.WHITE,
         weight=ft.FontWeight.W_600,
         rtl=True,
@@ -77,9 +77,9 @@ def create_status_banner(*, width: float | None = None) -> tuple[ft.Container, f
     )
     banner = ft.Container(
         content=text,
-        bgcolor=ThemeColors.SUCCESS,
-        padding=UIConstants.STATUS_BANNER_PADDING,
-        border_radius=UIConstants.CORNER_RADIUS,
+        bgcolor=DS.palette.success,
+        padding=DS.pad.status_banner,
+        border_radius=DS.radius.card,
         visible=False,
         width=width,
         alignment=ft.Alignment(0, 0),
@@ -104,7 +104,7 @@ async def show_status(
     if banner is None or text is None:
         return
     text.value = message
-    banner.bgcolor = ThemeColors.SUCCESS if ok else ThemeColors.DANGER
+    banner.bgcolor = DS.palette.success if ok else DS.palette.danger
     banner.visible = True
     try:
         banner.update()
