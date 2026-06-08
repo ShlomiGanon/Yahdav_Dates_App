@@ -1,0 +1,305 @@
+================================================================================
+  BUG FIX: Discover — First Action Button Does Not Navigate (Chat / Profile)
+================================================================================
+
+Date:        2026-06-09
+Primary file: src/views/matching/discover_view.py
+Test file:    tests/test_component_orchestration.py
+Related:      bug_fix_plan.txt (Fix #2 — follow-up to Fix #1, already merged)
+
+
+================================================================================
+  1. Bug Description (Symptoms)
+================================================================================
+
+When a user opens the Discover screen ("אנשים שתרצו להכיר"), taps a candidate
+from the list, and the Bottom Sheet appears with two actions:
+  • "צפייה בפרופיל שלו / שלה"  (View profile)
+  • "התחל שיחה / שלח הודעה"     (Start chat)
+
+Observed broken behavior:
+  1. One of the two actions (usually the first one tapped) does not respond —
+     no screen opens.
+  2. The other action on the same sheet always works.
+  3. After returning to the main menu, the action that previously failed now
+     works on the next attempt.
+
+Reported reproduction paths:
+  • Discover → tap candidate → "Start chat"        → chat does NOT open
+  • Discover → tap candidate → "View profile"    → works → navigate back
+  • Discover → tap candidate → "Start chat" again  → now works
+
+The bug is isolated to the Discover + Bottom Sheet path. MatchesView (opening
+a chat from chat history) is not affected — an important clue when tracing the
+root cause.
+
+
+================================================================================
+  2. Context — What Was Already Fixed (Fix #1)
+================================================================================
+
+Fix #1 (merged) replaced non-existent page.open / page.close calls with the
+correct Flet 0.84 DialogControl API: show_dialog / pop_dialog.
+
+Result: the Bottom Sheet opens and closes as a real modal. All 150 unit tests
+pass.
+
+However, the underlying user-facing bug persists. Fix #1 was correct but
+insufficient. A second, deeper bug remains in the "close sheet, then navigate"
+sequence.
+
+
+================================================================================
+  3. Root Cause Analysis
+================================================================================
+
+------------------------------------------------------------------------------
+  3.1 [Primary] Race condition between pop_dialog() and page.go()
+------------------------------------------------------------------------------
+
+Problematic code — discover_view.py, _on_action_chosen (lines ~272-283):
+
+    def _on_action_chosen(self, sheet, route, profile):
+        self.page.session.store.set(self.SELECTED_PEER_ID_KEY, profile.user_id)
+        self._close_sheet()        # → page.pop_dialog(): sync; sends patch to Flutter
+        self.page.go(route)        # → fire-and-forget!
+
+What actually happens:
+
+  (a) _close_sheet() → page.pop_dialog()
+      Sends a synchronous patch to the Flutter client: "close the BottomSheet".
+
+  (b) page.go(route)
+      In Flet 0.84, page.go() is deprecated ("Use push_route() instead").
+      Its implementation is:
+          def go(self, route, ...):
+              asyncio.create_task(self.push_route(route, ...))
+      It only *schedules* an async task that later awaits an RPC round-trip
+      to the client (await self._invoke_method("push_route", ...)).
+      It does NOT synchronously update page.route or fire on_route_change.
+
+  → Two uncoordinated async operations run over the same client connection:
+     (a) dialog close  — patch sent immediately
+     (b) route push    — scheduled for a later event-loop tick
+
+  Result: a classic race condition. Depending on timing, the client may:
+    • Drop the route push on the first attempt
+    • Reorder the RPC messages incorrectly
+    • "Settle" after additional round-trips (e.g. after a successful unrelated
+      navigation such as viewing a profile and returning)
+
+This explains:
+  • Why MatchesView._open_chat (matches_view.py:224-229) is unaffected —
+    same page.go(), but no preceding pop_dialog(), so no race.
+  • Why "Start chat" works after a successful "View profile" round-trip.
+  • Why the bug is isolated to the Discover action-sheet path.
+
+
+------------------------------------------------------------------------------
+  3.2 [Secondary] _sheet_open cleared too early — stacked BottomSheet risk
+------------------------------------------------------------------------------
+
+The docstring on _on_candidate_tap (lines ~181-193) states that on_dismiss is
+the single place that clears _sheet_open.
+
+However, _close_sheet() (lines ~285-287) also does:
+    self._sheet_open = False
+    self.page.pop_dialog()
+
+  → The flag is cleared before the sheet dismiss animation completes on the
+    client.
+
+  Risk: if the user taps a candidate while the sheet is still closing, a second
+  sheet can be pushed onto the dialog stack. The first action-button press
+  calls pop_dialog(), which closes only the top sheet — it looks like nothing
+  happened. A second press closes the remaining sheet and navigates — it works.
+
+  This matches the symptom: "the first option does nothing; the second always
+  works" — especially when two sheets are stacked.
+
+  The guard in _on_candidate_tap (if self._sheet_open: return) prevents
+  double-tapping a row, but does not prevent reopening after _close_sheet has
+  already reset the flag prematurely.
+
+
+------------------------------------------------------------------------------
+  3.3 [Required for the fix] lambda will not await an async handler
+------------------------------------------------------------------------------
+
+Once _on_action_chosen becomes async (as required), wiring it via:
+    lambda _e: self._on_action_chosen(sheet, route, profile)
+will NOT work. Flet's _trigger_event only awaits handlers where
+inspect.iscoroutinefunction(handler) is True.
+
+A lambda wrapping an async def is still a sync lambda — it is never awaited.
+
+Solution: use functools.partial (same pattern as additional_photos_view.py:200-202):
+    functools.partial(self._on_action_chosen, sheet, route, profile)
+A partial of an async def reports iscoroutinefunction == True, so Flet awaits
+it correctly.
+
+
+================================================================================
+  4. Relevant Code (Current State)
+================================================================================
+
+discover_view.py — broken sequence:
+
+    def _on_action_chosen(self, sheet, route, profile):
+        self.page.session.store.set(self.SELECTED_PEER_ID_KEY, profile.user_id)
+        self._close_sheet()
+        self.page.go(route)                    # ← fire-and-forget race
+
+    def _close_sheet(self):
+        self._sheet_open = False               # ← cleared too early (see 3.2)
+        self.page.pop_dialog()
+
+discover_view.py — buttons wired with sync lambda:
+
+    view_button = create_primary_button(
+        "צפייה בפרופיל שלו / שלה",
+        lambda _e: self._on_action_chosen(sheet, self._VIEW_PROFILE_ROUTE, profile),
+        ...
+    )
+    chat_button = create_primary_button(
+        "התחל שיחה / שלח הודעה",
+        lambda _e: self._on_action_chosen(sheet, self._CHAT_ROUTE, profile),
+        ...
+    )
+
+matches_view.py — works (no sheet before navigation):
+
+    def _open_chat(self, peer_id):
+        self.page.session.store.set(self.SELECTED_PEER_ID_KEY, peer_id)
+        self.page.go(self._CHAT_ROUTE)       # no pop_dialog — no race
+
+route_table.py — session store is correct:
+  • DiscoverView writes SELECTED_PEER_ID before navigation
+  • build_chat / build_user_profile read selected_peer_id(page) at build time
+
+
+================================================================================
+  5. Implementation Steps
+================================================================================
+
+------------------------------------------------------------------------------
+  Step A — discover_view.py
+------------------------------------------------------------------------------
+
+  A.1  Add import:
+         import functools
+
+  A.2  Make _on_action_chosen async and await push_route:
+
+         async def _on_action_chosen(
+             self, sheet: ft.BottomSheet, route: str, profile: UserProfile,
+         ) -> None:
+             self.page.session.store.set(self.SELECTED_PEER_ID_KEY, profile.user_id)
+             self._close_sheet()
+             await self.page.push_route(route)    # NOT page.go()
+
+  A.3  Wire buttons with functools.partial (NOT lambda):
+
+         view_button = create_primary_button(
+             "צפייה בפרופיל שלו / שלה",
+             functools.partial(self._on_action_chosen, sheet,
+                               self._VIEW_PROFILE_ROUTE, profile),
+             text_size=DS.type.input,
+         )
+         chat_button = create_primary_button(
+             "התחל שיחה / שלח הודעה",
+             functools.partial(self._on_action_chosen, sheet,
+                               self._CHAT_ROUTE, profile),
+             text_size=DS.type.input,
+         )
+
+  A.4  [Recommended hardening] Do NOT clear _sheet_open in _close_sheet:
+
+         def _close_sheet(self) -> None:
+             self.page.pop_dialog()
+             # _sheet_open is cleared only in on_dismiss (line ~198):
+             #   sheet.on_dismiss = lambda _e: setattr(self, "_sheet_open", False)
+
+------------------------------------------------------------------------------
+  Step B — tests/test_component_orchestration.py
+------------------------------------------------------------------------------
+
+  B.1  Add push_route to FakePage (~line 160):
+
+         async def push_route(self, route: str) -> None:
+             self.route = route
+             self.go_calls.append(route)
+
+  B.2  Update test_choosing_view_profile_stashes_peer_then_navigates (~1396):
+         await view._on_action_chosen(sheet, DiscoverView._VIEW_PROFILE_ROUTE, profile)
+
+  B.3  Update test_choosing_chat_stashes_peer_then_navigates (~1409):
+         await view._on_action_chosen(sheet, DiscoverView._CHAT_ROUTE, profile)
+
+  B.4  Update test_tapping_a_candidate_opens_a_real_dialog_sheet_that_chat_closes (~1434):
+         BEFORE:  chat_button.on_click(None)
+         AFTER:   await chat_button.on_click(None)
+
+  B.5  [Recommended] Add an end-to-end integration test using _RoutingFakePage (~1140):
+         Discover → _on_candidate_tap → tap "Start chat"
+         → assert page.views[-1] is ChatView with correct peer_id / self_id
+         → same for "View profile" → UserProfileView
+         (_RoutingFakePage drives Router.handle_route_change like the real app)
+
+
+================================================================================
+  6. Out of Scope (Do Not Change)
+================================================================================
+
+  • matches_view.py — page.go() there is fine (no dialog precedes navigation)
+  • route_table.py / session store — already correct
+  • show_dialog / pop_dialog API — already correct since Fix #1
+  • create_primary_button / create_candidate_tile — unrelated to this bug
+
+
+================================================================================
+  7. Verification
+================================================================================
+
+------------------------------------------------------------------------------
+  7.1 Unit tests (required)
+------------------------------------------------------------------------------
+
+    python -m unittest discover -s tests
+
+  Must remain green (150+ tests; count grows only if new tests are added).
+
+------------------------------------------------------------------------------
+  7.2 Manual smoke tests (required — bug only manifests against live Flutter client)
+------------------------------------------------------------------------------
+
+  [ ] Log in → Discover → tap candidate → "התחל שיחה / שלח הודעה"
+      → chat MUST open on the first attempt
+
+  [ ] Back → Discover → tap candidate → "צפייה בפרופיל שלו / שלה"
+      → profile MUST open on the first attempt
+
+  [ ] Back → Discover → tap candidate → "סגירה" (Close)
+      → stays on Discover; sheet can be reopened
+
+  [ ] Discover → double-tap a candidate quickly → only one sheet; action button
+      works immediately
+
+  [ ] Discover → tap → first action button → if it fails, second button on the
+      same sheet (after fix A.4, stacked sheets should not occur)
+
+  [ ] Matches → open chat from history — still works (regression check)
+
+
+================================================================================
+  8. One-Line Summary
+================================================================================
+
+  Close the sheet (pop_dialog) → await push_route(route), not page.go().
+  Wire the async handler with functools.partial, not lambda.
+  Clear _sheet_open only in on_dismiss.
+
+
+================================================================================
+  END OF BUG_FIX.TXT
+================================================================================

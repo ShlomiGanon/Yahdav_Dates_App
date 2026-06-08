@@ -189,6 +189,10 @@ class FakePage:
         self.route = route
         self.go_calls.append(route)
 
+    async def push_route(self, route: str) -> None:
+        self.route = route
+        self.go_calls.append(route)
+
     def update(self) -> None:
         self.update_count += 1
 
@@ -1393,7 +1397,7 @@ class TestDiscoverViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
         profile = next(p for p in view._candidates if p.user_id == candidate_id)
 
         sheet = ft.BottomSheet(content=ft.Container())
-        view._on_action_chosen(sheet, DiscoverView._VIEW_PROFILE_ROUTE, profile)
+        await view._on_action_chosen(sheet, DiscoverView._VIEW_PROFILE_ROUTE, profile)
 
         self.assertEqual(page.session.store.get(DiscoverView.SELECTED_PEER_ID_KEY),
                          candidate_id)
@@ -1406,7 +1410,7 @@ class TestDiscoverViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
         profile = next(p for p in view._candidates if p.user_id == candidate_id)
 
         sheet = ft.BottomSheet(content=ft.Container())
-        view._on_action_chosen(sheet, DiscoverView._CHAT_ROUTE, profile)
+        await view._on_action_chosen(sheet, DiscoverView._CHAT_ROUTE, profile)
 
         self.assertEqual(page.session.store.get(DiscoverView.SELECTED_PEER_ID_KEY),
                          candidate_id)
@@ -1431,7 +1435,7 @@ class TestDiscoverViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
 
         buttons = [c for c in sheet.content.content.controls if isinstance(c, ft.Button)]
         chat_button = next(b for b in buttons if b.content.value == "התחל שיחה / שלח הודעה")
-        chat_button.on_click(None)
+        await chat_button.on_click(None)
 
         self.assertFalse(sheet.open)              # closed via page.pop_dialog()
         self.assertEqual(page.session.store.get(DiscoverView.SELECTED_PEER_ID_KEY),

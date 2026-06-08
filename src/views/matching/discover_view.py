@@ -27,6 +27,7 @@ name + details tightly to its left and fully right-aligned. Tapping a member
 opens an RTL selection sheet (view profile / start chat).
 """
 from __future__ import annotations
+import functools
 import logging
 
 import flet as ft
@@ -72,6 +73,8 @@ class DiscoverView(BaseView):
         # Candidates hydrated on mount; kept so the bottom-sheet preview can
         # read full fields without a second backend round-trip.
         self._candidates: list[UserProfile] = []
+        # Re-entrancy guard for the selection sheet — see `_on_candidate_tap`.
+        self._sheet_open = False
 
     # ============================================================
     #  Layout
@@ -178,9 +181,20 @@ class DiscoverView(BaseView):
 
     def _on_candidate_tap(self, profile: UserProfile) -> None:
         """Tapping a candidate opens a senior-friendly selection sheet offering
-        the two large action choices: view their profile, or start a chat."""
+        the two large action choices: view their profile, or start a chat.
+
+        Guarded against re-entrancy: a senior user often taps a row again
+        before the sheet has visibly appeared. Without this guard each tap
+        builds and shows its OWN `BottomSheet`, stacking them on the dialog
+        stack. One sheet at a time; `on_dismiss` is the single place that
+        clears the flag — NOT `_close_sheet`, which only calls `pop_dialog()`
+        and does not await the dismiss animation."""
+        if self._sheet_open:
+            return
+        self._sheet_open = True
         sheet = self._build_action_sheet(profile)
-        self.page.show_dialog(sheet)               # Flet 0.84 DialogControl API
+        sheet.on_dismiss = lambda _e: setattr(self, "_sheet_open", False)
+        self.page.show_dialog(sheet)              # Flet 0.84 DialogControl API
 
     def _build_action_sheet(self, profile: UserProfile) -> ft.BottomSheet:
         """RTL bottom sheet: WHO was tapped + exactly two large PRIMARY action
@@ -191,7 +205,7 @@ class DiscoverView(BaseView):
         while staying high-contrast brand-red.
         """
         name = profile.display_name.for_gender(profile.gender) or ""
-        sheet = ft.BottomSheet(content=ft.Container())   # filled below
+        sheet = ft.BottomSheet(content=ft.Container(), scrollable=True) # filled below
 
         # ---- Who: name + meta line so the senior knows whom they picked ----
         title = ft.Text(
@@ -221,12 +235,12 @@ class DiscoverView(BaseView):
         # ---- Exactly two distinct, large action buttons ----
         view_button = create_primary_button(
             "צפייה בפרופיל שלו / שלה",
-            lambda _e: self._on_action_chosen(sheet, self._VIEW_PROFILE_ROUTE, profile),
+            functools.partial(self._on_action_chosen, sheet, self._VIEW_PROFILE_ROUTE, profile),
             text_size=DS.type.input,
         )
         chat_button = create_primary_button(
             "התחל שיחה / שלח הודעה",
-            lambda _e: self._on_action_chosen(sheet, self._CHAT_ROUTE, profile),
+            functools.partial(self._on_action_chosen, sheet, self._CHAT_ROUTE, profile),
             text_size=DS.type.input,
         )
         # Neutral dismiss — secondary (blue-grey), never the brand red.
@@ -253,21 +267,29 @@ class DiscoverView(BaseView):
         )
         return sheet
 
-    def _on_action_chosen(
+    async def _on_action_chosen(
         self, sheet: ft.BottomSheet, route: str, profile: UserProfile,
+        _e: ft.ControlEvent | None = None,
     ) -> None:
         """Remember the picked peer, dismiss the sheet, then navigate.
 
         The peer id is stashed in `session.store` under SELECTED_PEER_ID_KEY so
-        the (currently placeholder) destination screens can load the right
-        person once they're built — mirroring how login stashes the UID before
-        routing."""
+        the destination screens can load the right person — mirroring how login
+        stashes the UID before routing.
+
+        `await push_route()` (not `page.go()`) is required here. In Flet 0.84,
+        `page.go()` is deprecated and implemented as
+        `asyncio.create_task(push_route(...))` — it only schedules the route
+        push for a later event-loop tick. When called immediately after
+        `pop_dialog()` (a sync patch to Flutter), the two async operations race
+        and the route push is silently dropped on the first attempt."""
         self.page.session.store.set(self.SELECTED_PEER_ID_KEY, profile.user_id)
         self._close_sheet()
-        self.page.go(route)
+        await self.page.push_route(route)
 
     def _close_sheet(self) -> None:
-        self.page.pop_dialog()                      # Flet 0.84 DialogControl API
+        self._sheet_open = False        # reset eagerly; on_dismiss covers scrim-tap
+        self.page.pop_dialog()          # Flet 0.84 DialogControl API
 
     # ============================================================
     #  Helpers
