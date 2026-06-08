@@ -32,11 +32,12 @@ from views._base import BaseView
 from views.common.engine import renderer as ui
 from views.common.views.system_views import error_view
 from views.common.engine.screen import (
-    BodyLayout, error_component, guard,
+    BodyLayout, background_screen, error_component, guard,
     responsive_card_of, clamp_hub_width, stress_report,
     DEFAULT_ERROR_MESSAGE,
 )
 from style.design_system import DS
+from utils.constants import AssetPaths
 
 
 # --------------------------------------------------------------------------
@@ -57,6 +58,14 @@ class FakePage:
         self.views = []
         self.route = None
         self.on_resize = None
+
+
+def _screen_root(view: ft.View) -> ft.Control:
+    """The screen's own composed root — `_compose_frame`'s output — as it sits
+    inside `background_screen`'s page-BG `ft.Hero` stack: `view.controls[0]` is
+    the outer full-bleed frame, `.content` the `[Hero(BG), Container(root)]`
+    `ft.Stack`, and `.controls[1].content` the foreground `root` itself."""
+    return view.controls[0].content.controls[1].content
 
 
 def _is_error_component(ctrl) -> bool:
@@ -134,7 +143,7 @@ class TestFaultTolerance(unittest.TestCase):
     def test_error_view_is_centred_in_the_compact_frame(self):
         view = error_view(FakePage(height=800), route="/error")
         self.assertEqual(view.route, "/error")
-        wrap = view.controls[0].content
+        wrap = _screen_root(view)
         shell = wrap.controls[0]
         self.assertIsInstance(shell, ft.Container)
         self.assertEqual(shell.alignment, ft.Alignment(0, 0))
@@ -142,7 +151,7 @@ class TestFaultTolerance(unittest.TestCase):
 
     def test_compact_center_shell_omits_height_when_viewport_unknown(self):
         view = _make_view(FakePage(), body=ft.Text("ok"))
-        shell = view.controls[0].content.controls[0]
+        shell = _screen_root(view).controls[0]
         self.assertIsInstance(shell, ft.Container)
         self.assertEqual(shell.alignment, ft.Alignment(0, 0))
         self.assertIsNone(shell.height)
@@ -192,7 +201,7 @@ class TestCardFrameStructure(unittest.TestCase):
         card = responsive_card_of(view)
         self.assertIsNotNone(card)                       # has a responsive card
         self.assertEqual(len(card.content.controls), 2)  # body + 1 action, no bar
-        self.assertEqual(view.controls[0].content.scroll, ft.ScrollMode.AUTO)
+        self.assertEqual(_screen_root(view).scroll, ft.ScrollMode.AUTO)
 
     def test_expand_card_is_responsive_too_and_actions_render_inline(self):
         action = ft.Container(width=400, height=70)
@@ -209,9 +218,52 @@ class TestCardFrameStructure(unittest.TestCase):
         view = _make_view(FakePage(), expand_body=True,
                           body=ft.ListView(expand=True), overlay=lightbox,
                           body_layout=BodyLayout.SELF_SCROLLING)
-        content = view.controls[0].content
+        content = _screen_root(view)
         self.assertIsInstance(content, ft.Stack)
         self.assertIs(content.controls[1], lightbox)     # overlay ON TOP
+
+
+# --------------------------------------------------------------------------
+# 4. Page background — stays visually fixed across navigation
+# --------------------------------------------------------------------------
+class TestPageBackgroundStaysFixed(unittest.TestCase):
+    """`background_screen` wraps the BG image in an `ft.Hero` carrying the
+    SAME tag on every route — Flutter's shared-element-transition primitive,
+    which (for an identically-positioned, full-bleed element) renders it as
+    ONE continuous control across navigation instead of animating it as part
+    of each view's slide transition. `content` is layered on top via
+    `ft.Stack` and keeps animating with the route as usual — page
+    transitions stay fully ON; nothing is disabled."""
+
+    @staticmethod
+    def _bg_hero(view):
+        return view.controls[0].content.controls[0]
+
+    def test_bg_is_hero_wrapped_with_a_tag_shared_across_routes(self):
+        a = background_screen("/a", ft.Text("A"))
+        b = background_screen("/b", ft.Text("B"))
+        hero_a, hero_b = self._bg_hero(a), self._bg_hero(b)
+        self.assertIsInstance(hero_a, ft.Hero)
+        self.assertIsInstance(hero_b, ft.Hero)
+        self.assertIsNotNone(hero_a.tag)
+        self.assertEqual(hero_a.tag, hero_b.tag)   # same tag ⇒ Flutter flies it as ONE element
+
+    def test_bg_image_and_black_screen_guard_are_preserved(self):
+        bg = self._bg_hero(background_screen("/x", ft.Text("X"))).content
+        self.assertEqual(bg.bgcolor, DS.palette.background)     # guard vs. black screen
+        self.assertEqual(bg.image.src, AssetPaths.BG_IMAGE)
+        self.assertEqual(bg.image.fit, ft.BoxFit.FILL)
+
+    def test_content_is_layered_above_the_bg_and_card_still_resolves(self):
+        marker = ft.Text("marker")
+        view = background_screen("/x", marker)
+        stack = view.controls[0].content
+        self.assertIsInstance(stack, ft.Stack)
+        self.assertIsInstance(stack.controls[0], ft.Hero)        # BG — behind, fixed
+        self.assertIs(stack.controls[1].content, marker)         # content — on top, animates
+
+        live = _make_view(FakePage(), body=ft.Text("ok"))
+        self.assertIsNotNone(responsive_card_of(live))           # wrapper stays transparent to it
 
 
 if __name__ == "__main__":

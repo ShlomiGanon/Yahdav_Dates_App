@@ -105,6 +105,14 @@ from models.user_profile import (
 _TEST_PASSWORD = "Passw0rd!"
 
 
+def _screen_root(view: ft.View) -> ft.Control:
+    """The screen's own composed root — `_compose_frame`'s output — as it sits
+    inside `background_screen`'s page-BG `ft.Hero` stack: `view.controls[0]` is
+    the outer full-bleed frame, `.content` the `[Hero(BG), Container(root)]`
+    `ft.Stack`, and `.controls[1].content` the foreground `root` itself."""
+    return view.controls[0].content.controls[1].content
+
+
 # ============================================================================
 #  Minimal Flet Page stand-in (records navigation; builds no views)
 # ============================================================================
@@ -1267,7 +1275,7 @@ class TestUnifiedCardLayout(unittest.TestCase):
             def get_content(self): return [ui.raw(c) for c in (t1, t2)]
         view = _V(FakePage()).build()
 
-        wrap = view.controls[0].content
+        wrap = _screen_root(view)
         self.assertIsInstance(wrap, ft.Column)
         self.assertEqual(wrap.horizontal_alignment, ft.CrossAxisAlignment.CENTER)
         self.assertEqual(len(wrap.controls), 1)               # ONE centering shell
@@ -1309,7 +1317,7 @@ class TestAuthAndMenuScreensUseTheCompactCardFrame(_BackendMixin, unittest.TestC
         self.assertEqual(view.route, route)
         # _bind_lifecycle sets view.data to the owning BaseView.
         self.assertIsNotNone(view.data, "build() must end with _bind_lifecycle")
-        wrap = view.controls[0].content
+        wrap = _screen_root(view)
         self.assertIsInstance(wrap, ft.Column)
         self.assertEqual(len(wrap.controls), 1)        # one centering shell
         shell = wrap.controls[0]
