@@ -18,7 +18,7 @@ import logging
 import flet as ft
 
 from style.design_system import DS
-from utils.constants import AssetPaths
+from utils.constants import AssetPaths, UIConfig
 
 log = logging.getLogger(__name__)
 
@@ -244,6 +244,55 @@ def responsive_card(
     card.width = width
     card.data = _HUB_CARD_TAG
     return card
+
+
+# ----------------------------------------------------------------------------
+# Card entrance animation — driven by UIConfig.TRANS_EFFECT
+# ----------------------------------------------------------------------------
+
+_CARD_ANIM = ft.Animation(duration=300, curve=ft.AnimationCurve.EASE_OUT)
+
+_SCALE_EFFECTS = {"zoom", "fade_forwards", "predictive"}
+_OFFSET_INIT: dict[str, tuple[float, float]] = {
+    "slide_up":   (0,    0.1),   # card starts 10% below, slides up
+    "slide_down": (0,   -0.1),   # card starts 10% above, slides down
+    "cupertino":  (0.2,  0.0),   # card starts 20% right, slides left (RTL forward)
+}
+
+
+def configure_card_entrance(card: ft.Container) -> None:
+    """Set initial hidden/offset state on the card at build time.
+
+    Must be called before the view is added to page.views so Flutter sees the
+    initial opacity=0 / scale / offset on the very first frame."""
+    effect = UIConfig.TRANS_EFFECT
+    if effect == "none":
+        return
+    card.animate_opacity = _CARD_ANIM
+    card.opacity = 0
+    if effect in _SCALE_EFFECTS:
+        card.animate_scale = _CARD_ANIM
+        card.scale = ft.Scale(0.88)
+    elif effect in _OFFSET_INIT:
+        x, y = _OFFSET_INIT[effect]
+        card.animate_offset = _CARD_ANIM
+        card.offset = ft.Offset(x, y)
+
+
+def trigger_card_entrance(card: "ft.Container | None") -> None:
+    """Animate the card to its final visible state.
+
+    Call from _framework_did_mount (after Flutter has mounted the view) so
+    the implicit animation triggers a smooth transition from the initial
+    hidden state set by configure_card_entrance."""
+    if card is None or UIConfig.TRANS_EFFECT == "none":
+        return
+    card.opacity = 1
+    if UIConfig.TRANS_EFFECT in _SCALE_EFFECTS:
+        card.scale = ft.Scale(1)
+    elif UIConfig.TRANS_EFFECT in _OFFSET_INIT:
+        card.offset = ft.Offset(0, 0)
+    card.update()
 
 
 def _find_tagged_card(ctrl: ft.Control) -> ft.Container | None:

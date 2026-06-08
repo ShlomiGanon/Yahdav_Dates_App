@@ -25,6 +25,7 @@ Every screen implements `get_header`/`get_content`/`get_actions` (pure content);
 from __future__ import annotations
 
 import logging
+import asyncio
 import uuid
 from concurrent.futures import Future
 
@@ -35,6 +36,7 @@ from views.common.engine.screen import (
     BodyLayout,
     background_screen, responsive_card, responsive_card_of,
     clamp_hub_width, guard,
+    configure_card_entrance, trigger_card_entrance,
 )
 from style.design_system import DS
 
@@ -257,6 +259,8 @@ class BaseView:
         """The outer layout column the card sits in: a compact card is centered
         with the page AUTO-scrolling around it (so a tall form scrolls instead
         of clipping); an expand card already fills the viewport on its own."""
+        configure_card_entrance(card)   # initial hidden/offset state for animation
+        self._animated_card = card      # reference for _framework_did_mount trigger
         if self.EXPAND_BODY:
             return ft.Column(
                 controls=[card],
@@ -302,13 +306,22 @@ class BaseView:
         return view
 
     def _framework_did_mount(self) -> None:
-        """Framework mount: start the live responsive clamp, then the view's own
-        `on_mount`. Guarded so a hook failure can't break the mount."""
+        """Framework mount: start the live responsive clamp, schedule the card
+        entrance animation (deferred so Flutter renders opacity=0 first),
+        then the view's own `on_mount`."""
         self._attach_responsive()
+        self.page.run_task(self._animate_card_in)
         try:
             self.on_mount()
         except Exception:  # noqa: BLE001 — a view hook must not break mounting
             log.exception("%s: on_mount failed", type(self).__name__)
+
+    async def _animate_card_in(self) -> None:
+        """Deferred card entrance: wait one Flutter render cycle (50 ms > one
+        frame at 60 fps) so the initial opacity=0 state is drawn before the
+        animation trigger arrives."""
+        await asyncio.sleep(0.05)
+        trigger_card_entrance(getattr(self, "_animated_card", None))
 
     def _framework_will_unmount(self) -> None:
         """Framework teardown: detach the responsive clamp, then the view's own

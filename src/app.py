@@ -66,6 +66,16 @@ async def main(page: ft.Page):
     # ============================================================
     page.title = "יחדיו"
     page.theme_mode = ft.ThemeMode.LIGHT
+    # Disable page-level route transitions on all platforms so the background
+    # image (ft.Hero) is the sole static element; card entrance animations
+    # (screen.py + _base.py) provide the per-effect motion.
+    page.theme = ft.Theme(
+        page_transitions=ft.PageTransitionsTheme(
+            android=ft.PageTransitionTheme.NONE, ios=ft.PageTransitionTheme.NONE,
+            linux=ft.PageTransitionTheme.NONE,   macos=ft.PageTransitionTheme.NONE,
+            windows=ft.PageTransitionTheme.NONE,
+        )
+    )
     # Global background guard: every view's shell paints its own BG image, but if
     # one ever fails/lags, the page must fall back to this — NOT to an unset
     # background, which the Flet desktop client renders black. Belt to the

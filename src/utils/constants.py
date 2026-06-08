@@ -156,3 +156,21 @@ class MatchConfig:
     DISCOVER_PAGE_SIZE     = 30    # senior-friendly: a browsable batch, not an endless wall
     MAX_DISCOVER_PAGE_SIZE = 100   # hard ceiling — clamps any caller-supplied limit
 
+
+# ============================================================================
+#  UI / Animation
+# ============================================================================
+
+class UIConfig:
+    # Screen-transition animation applied to the content card on every route
+    # change. The BG image stays static (ft.Hero), so only the card animates.
+    # Possible values:
+    #   "none"          – no animation
+    #   "fade"          – fade + slide up (Android O style)
+    #   "zoom"          – zoom/scale in (Material 3, Android Q style)
+    #   "slide_up"      – upward reveal with clipping (Android P style)
+    #   "cupertino"     – horizontal slide from right (iOS style)
+    #   "fade_forwards" – fade-forward (Android U style)
+    #   "predictive"    – predictive back gesture (Android 13+)
+    TRANS_EFFECT = "fade"
+
