@@ -24,7 +24,7 @@ def create_tile_card(
     return ft.Container(
         content=content,
         height=height,
-        bgcolor=DS.palette.surface,
+        bgcolor=DS.palette.tile,
         border_radius=DS.radius.card,
         padding=DS.pad.list_tile,
         ink=True,

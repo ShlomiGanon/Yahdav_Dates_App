@@ -44,8 +44,9 @@ class Palette:
     info: ft.Colors = ft.Colors.BLUE_400
     field_error: ft.Colors = ft.Colors.RED_ACCENT_700   # strong inline error red (50+ legibility)
     # Neutrals
-    background: ft.Colors = ft.Colors.GREY_50
-    surface: ft.Colors = ft.Colors.WHITE
+    background: ft.Colors = ft.Colors.RED
+    surface: ft.Colors = ft.Colors.GREY
+    tile: ft.Colors = ft.Colors.WHITE               # member-row bg (chat/discover tiles)
     text_main: ft.Colors = ft.Colors.GREY_900
     text_on_primary: ft.Colors = ft.Colors.WHITE
     # Presence

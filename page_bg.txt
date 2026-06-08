@@ -1,0 +1,219 @@
+TASK: Persistent page-level background (option G) — BG image stays fixed during
+view-transition animations; only foreground screen content (cards/UI) animates.
+
+GOAL
+----
+Today every screen rebuilds BG.png inside `background_screen()` (src/views/common/
+engine/screen.py). Each navigation push/replace creates a new painted background
+that animates with the view — that is why the image "moves". Move BG painting to
+the Page ONCE; make per-route Views transparent foreground layers only.
+
+Keep existing Flet page-transition animations UNCHANGED (do NOT set
+PageTransitionTheme.NONE).
+
+ARCHITECTURE (current → target)
+-------------------------------
+CURRENT per navigation:
+  ft.View
+    └── Container(bgcolor + DecorationImage BG.png)   ← repainted & animated
+          └── layout root (Column/Stack from _wrap_card)
+
+TARGET:
+  ft.Page  ← BG.png painted ONCE here (never in stack transitions)
+  ft.View (transparent)
+    └── Container(transparent, expand=True)
+          └── layout root (unchanged: card, centering shell, overlays)
+
+Files that MUST change (minimal surface):
+  1. src/views/common/engine/screen.py
+  2. src/app.py
+  3. src/views/_base.py (docstring only, optional)
+  4. tests that walk view.controls[0].content (see TESTS section)
+
+Files that MUST NOT change:
+  - src/utils/router.py
+  - src/utils/stack_navigator.py
+  - Individual views (login, matches, discover, etc.)
+  - BaseView card/centering logic (_wrap_card, _apply_responsive)
+  - components/loading.py (page.overlay stays on top)
+
+──────────────────────────────────────────────────────────────────────────────
+STEP 1 — Add `install_page_background()` in screen.py
+──────────────────────────────────────────────────────────────────────────────
+
+Add a new function next to `background_screen()`:
+
+    def install_page_background(page: ft.Page) -> None:
+        """Paint BG.png once at the Page level — survives all view transitions."""
+        decoration = ft.BoxDecoration(
+            color=DS.palette.background,          # black-screen guard under image
+            image=ft.DecorationImage(
+                src=AssetPaths.BG_IMAGE,
+                fit=ft.BoxFit.COVER,              # prefer COVER over FILL (stable focal point)
+                alignment=ft.Alignment(0, 1),     # anchor bottom (couple on bench)
+            ),
+        )
+        # Flet 0.24+ / 0.84: Page.decoration is the supported API.
+        if hasattr(page, "decoration"):
+            page.decoration = decoration
+        else:
+            # Fallback only if decoration missing — log warning; keep old per-view BG
+            log.warning("screen: page.decoration unavailable; keeping per-view BG")
+            return
+        page.bgcolor = ft.Colors.TRANSPARENT   # let decoration show through
+
+Call this EXACTLY ONCE from app.py (Step 2). Do not call from BaseView.build().
+
+──────────────────────────────────────────────────────────────────────────────
+STEP 2 — Wire once in app.py (composition root)
+──────────────────────────────────────────────────────────────────────────────
+
+In `async def main(page)`, section 3 (page defaults), AFTER `page.theme_mode`
+and BEFORE router wiring:
+
+    from views.common.engine.screen import install_page_background
+    install_page_background(page)
+
+Replace the old comment block about "every view's shell paints its own BG".
+New contract:
+  - Page owns BG image + DS.palette.background underlay
+  - Views are transparent foreground only
+  - page.bgcolor is set inside install_page_background (TRANSPARENT)
+
+Order must stay:
+  services → page defaults → install_page_background() → window size → router →
+  page.update() → await router.resolve_initial_route()
+
+Do NOT disable page_transitions / theme animations.
+
+──────────────────────────────────────────────────────────────────────────────
+STEP 3 — Make `background_screen()` a transparent foreground view
+──────────────────────────────────────────────────────────────────────────────
+
+Rewrite `background_screen(route, content)` in screen.py:
+
+    def background_screen(route: str, content: ft.Control) -> ft.View:
+        """Transparent foreground View — BG lives on the Page, not here."""
+        return ft.View(
+            route=route,
+            padding=DS.spacing.none,
+            bgcolor=ft.Colors.TRANSPARENT,
+            vertical_alignment=ft.MainAxisAlignment.START,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            controls=[
+                ft.Container(
+                    expand=True,
+                    bgcolor=ft.Colors.TRANSPARENT,
+                    content=content,
+                ),
+            ],
+        )
+
+REMOVE from this function:
+  - bgcolor=DS.palette.background on the inner container
+  - DecorationImage / BG.png
+
+Keep signature and call site unchanged:
+  BaseView._assemble() → background_screen(self.ROUTE, root)  (no view edits)
+
+Black-screen guard is now: Page BoxDecoration.color = DS.palette.background.
+If install_page_background() fallback triggers (no page.decoration), leave
+background_screen() painting per-view BG as today (feature-flag via early return
+in install_page_background).
+
+──────────────────────────────────────────────────────────────────────────────
+STEP 4 — Fix `responsive_card_of()` tree walk (CRITICAL for resize clamp)
+──────────────────────────────────────────────────────────────────────────────
+
+Current code assumes:
+  view.controls[0]          → image Container
+  view.controls[0].content  → layout root (Column / Stack)
+
+After Step 3:
+  view.controls[0]          → transparent Container
+  view.controls[0].content  → layout root   (still works)
+
+Actually the existing recursive `_find_tagged_card` path via
+`content = getattr(view.controls[0], "content", None)` STILL WORKS if you keep
+the transparent expand Container wrapper. No change strictly required.
+
+VERIFY after edit: BaseView._apply_responsive() still finds the card via
+responsive_card_of(view) on mount/resize. If you drop the Container wrapper and
+put layout directly in controls[0], update responsive_card_of to:
+
+    root = view.controls[0]
+    layout = root.controls[0] if isinstance(root, ft.Stack) else root
+    return _find_tagged_card(layout)
+
+Recommendation: keep the transparent expand Container wrapper so
+responsive_card_of() keeps working without changes.
+
+──────────────────────────────────────────────────────────────────────────────
+STEP 5 — Tests to update
+──────────────────────────────────────────────────────────────────────────────
+
+Tests currently reach layout via `view.controls[0].content` — that path remains
+valid with the transparent wrapper. Still add/adjust:
+
+A) New test in tests/test_screen_shell.py:
+   - `test_background_screen_is_transparent_foreground`
+   - Built compact view: outer container bgcolor is TRANSPARENT
+   - outer container has NO image decoration
+   - responsive_card_of(view) is not None
+
+B) New test (optional headless):
+   - After install_page_background(FakePage()), page.decoration is set OR
+     fallback logged (skip if FakePage lacks decoration attr)
+
+C) Grep and fix any test that asserts:
+   - view.controls[0].bgcolor == DS.palette.background  → remove/update
+   - view.controls[0].image is not None                 → remove/update
+
+Known files using `view.controls[0].content` (should stay green):
+  - tests/test_screen_shell.py
+  - tests/test_component_orchestration.py
+  - tests/test_base_template.py (uses responsive_card_of — should stay green)
+
+Do NOT change navigation-stack tests (router push/pop/unwind) — unaffected.
+
+Run:
+  .venv/Scripts/python.exe -m unittest discover -s tests
+Target: 151/151 green. No git operations.
+
+──────────────────────────────────────────────────────────────────────────────
+STEP 6 — Manual acceptance (keep animations ON)
+──────────────────────────────────────────────────────────────────────────────
+
+1. Boot → Welcome: BG image stable, card animates on navigate.
+2. Menu → Matches → back: BG does NOT slide/zoom; only card layer moves.
+3. Resize window: card width clamp still works (responsive_card_of + resize).
+4. Loading overlay (discover load): still appears above content (page.overlay).
+5. Lightbox (peer photos): per-view Stack overlay still works.
+6. Boot spinner + error view: transparent view over fixed page BG (no black flash).
+
+──────────────────────────────────────────────────────────────────────────────
+RISKS & MITIGATIONS
+──────────────────────────────────────────────────────────────────────────────
+
+RISK: page.decoration missing on some Flet build
+  → hasattr guard + fallback to current per-view BG; log warning.
+
+RISK: Transparent views show black if decoration not applied before first frame
+  → call install_page_background() before page.update() and before boot spinner.
+
+RISK: View default opaque bgcolor hides page decoration
+  → explicit bgcolor=TRANSPARENT on ft.View AND inner Container.
+
+RISK: BoxFit.FILL vs COVER visual change
+  → use COVER + Alignment(0,1) on PAGE decoration only; keeps couple anchored.
+  → translucent hub card unchanged (still DS.opacity.form_overlay + surface).
+
+RISK: responsive_card_of breaks → resize clamp dead
+  → verify in test + manual resize after implementation.
+
+DO NOT:
+  - Touch router.py / stack_navigator.py
+  - Touch individual view files
+  - Disable page transition animations
+  - Remove page.overlay loading behavior
+  - Git add/commit/push
