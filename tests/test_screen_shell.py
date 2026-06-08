@@ -50,9 +50,10 @@ class _Store:
 
 
 class FakePage:
-    def __init__(self, width=450):
+    def __init__(self, width=450, height=None):
         self.session = type("S", (), {"store": _Store()})()
         self.width = width
+        self.height = height
         self.views = []
         self.route = None
         self.on_resize = None
@@ -110,7 +111,8 @@ class TestFaultTolerance(unittest.TestCase):
 
     def test_failing_body_renders_error_component(self):
         view = _make_view(FakePage(), fail_content=True)
-        card = view.controls[0].content.controls[0]
+        card = responsive_card_of(view)
+        self.assertIsNotNone(card)
         self.assertTrue(_is_error_component(card.content.controls[0]))
 
     def test_failing_actions_degrade_to_none(self):
@@ -125,14 +127,25 @@ class TestFaultTolerance(unittest.TestCase):
             ROUTE = "/broken"
             def get_content(self): raise RuntimeError("boom")
         view = Broken(FakePage()).build()       # must NOT raise
-        card = view.controls[0].content.controls[0]
+        card = responsive_card_of(view)
+        self.assertIsNotNone(card)
         self.assertTrue(_is_error_component(card.content.controls[0]))
 
     def test_error_view_is_centred_in_the_compact_frame(self):
-        view = error_view(FakePage(), route="/error")
+        view = error_view(FakePage(height=800), route="/error")
         self.assertEqual(view.route, "/error")
-        centered = view.controls[0].content
-        self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
+        wrap = view.controls[0].content
+        shell = wrap.controls[0]
+        self.assertIsInstance(shell, ft.Container)
+        self.assertEqual(shell.alignment, ft.Alignment(0, 0))
+        self.assertEqual(shell.height, 800)
+
+    def test_compact_center_shell_omits_height_when_viewport_unknown(self):
+        view = _make_view(FakePage(), body=ft.Text("ok"))
+        shell = view.controls[0].content.controls[0]
+        self.assertIsInstance(shell, ft.Container)
+        self.assertEqual(shell.alignment, ft.Alignment(0, 0))
+        self.assertIsNone(shell.height)
 
 
 # --------------------------------------------------------------------------

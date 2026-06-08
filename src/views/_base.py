@@ -70,9 +70,11 @@ class BaseView:
         # Set when we navigate away, so any in-flight async task stops touching
         # the (replaced) page — prevents stale updates / leaked references.
         self._closing: bool = False
-        # Responsive plumbing: the live card to re-clamp on resize, and the prior
-        # page resize handler to restore on pop.
+        # Responsive plumbing: the live card to re-clamp on resize, the compact-
+        # card centering shell to re-height on resize, and the prior page resize
+        # handler to restore on pop.
         self._card: ft.Container | None = None
+        self._center_shell: ft.Container | None = None
         self._prev_on_resized = None
 
     # ============================================================
@@ -246,6 +248,11 @@ class BaseView:
             padding=DS.pad.content_card_tall,      # canonical top-logo clearance
         )
 
+    def _viewport_height(self) -> float | None:
+        """Window height when known; None on the first headless frame."""
+        height = getattr(self.page, "height", None)
+        return height if height else None
+
     def _wrap_card(self, card: ft.Control) -> ft.Control:
         """The outer layout column the card sits in: a compact card is centered
         with the page AUTO-scrolling around it (so a tall form scrolls instead
@@ -256,11 +263,20 @@ class BaseView:
                 expand=True,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             )
+        # A scrollable Column ignores MainAxisAlignment.CENTER when the child is
+        # shorter than the viewport. Wrap the card in a viewport-tall shell so
+        # Container.alignment actually centres short cards; tall cards still
+        # scroll via the outer Column.
+        shell = ft.Container(
+            content=card,
+            alignment=ft.Alignment(0, 0),
+            height=self._viewport_height(),
+        )
+        self._center_shell = shell
         return ft.Column(
-            controls=[card],
+            controls=[shell],
             expand=True,
             scroll=ft.ScrollMode.AUTO,
-            alignment=ft.MainAxisAlignment.CENTER,
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
         )
 
@@ -328,15 +344,21 @@ class BaseView:
         self._apply_responsive()
 
     def _apply_responsive(self) -> None:
-        """Set the card width = clamp(window) so it never stretches wide and
-        shrinks gracefully when narrow, then update just that card."""
+        """Clamp the card width and refresh the compact centering shell height,
+        then update the touched controls."""
         card = self._card
         if card is None:
             return
         width = clamp_hub_width(getattr(self.page, "width", None))
-        if width is None:
+        shell = self._center_shell
+        if width is None and shell is None:
             return
-        card.width = width
+        if width is not None:
+            card.width = width
+        if shell is not None:
+            h = self._viewport_height()
+            if h:
+                shell.height = h
         try:
             card.update()
         except Exception:  # noqa: BLE001 — card not mounted yet / page torn down

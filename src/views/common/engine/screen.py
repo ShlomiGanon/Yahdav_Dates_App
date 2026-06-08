@@ -205,17 +205,29 @@ def responsive_card(
     return card
 
 
+def _find_tagged_card(ctrl: ft.Control) -> ft.Container | None:
+    """Depth-first search for the hub card tag under a layout root."""
+    if getattr(ctrl, "data", None) == _HUB_CARD_TAG:
+        return ctrl
+    for child in getattr(ctrl, "controls", None) or []:
+        found = _find_tagged_card(child)
+        if found is not None:
+            return found
+    inner = getattr(ctrl, "content", None)
+    if inner is not None:
+        return _find_tagged_card(inner)
+    return None
+
+
 def responsive_card_of(view: ft.View) -> ft.Container | None:
     """Locate the tagged responsive card on a built view (for the live resize
-    clamp), wherever it sits: the sole child of the outer layout `ft.Column`, or
-    nested one level inside an `ft.Stack` when the screen has an overlay."""
+    clamp), wherever it sits: directly under the outer layout `ft.Column`, inside
+    the compact centering shell, or nested under an `ft.Stack` overlay frame."""
     content = getattr(view.controls[0], "content", None)
+    if content is None:
+        return None
     layout = content.controls[0] if isinstance(content, ft.Stack) else content
-    if isinstance(layout, ft.Column):
-        for ctrl in layout.controls:
-            if getattr(ctrl, "data", None) == _HUB_CARD_TAG:
-                return ctrl
-    return None
+    return _find_tagged_card(layout)
 
 
 # ----------------------------------------------------------------------------

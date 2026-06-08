@@ -88,7 +88,7 @@ from views.common.helpers.navigation import go_back
 from views._base import BaseView
 from views.common.engine import renderer as ui
 from views.common.helpers import peer_data
-from views.common.engine.screen import BodyLayout
+from views.common.engine.screen import BodyLayout, responsive_card_of
 from views.common.helpers.photo_ops import save_photo_urls_or_rollback
 from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components import loading
@@ -160,7 +160,22 @@ class FakePage:
         self.on_route_change = None
         self.views: list = []
         self.overlay: list = []          # used by the loading overlay
+        self.dialogs: list = []          # DialogControl stack (BottomSheet, …)
         self.update_count = 0
+
+    def show_dialog(self, dialog) -> None:
+        """Stand-in for `BasePage.show_dialog` — the only Flet 0.84 way to
+        display a `DialogControl` (BottomSheet, SnackBar, …)."""
+        dialog.open = True
+        self.dialogs.append(dialog)
+
+    def pop_dialog(self):
+        """Stand-in for `BasePage.pop_dialog` — closes the topmost open dialog."""
+        for d in reversed(self.dialogs):
+            if d.open:
+                d.open = False
+                return d
+        return None
 
     def go(self, route: str) -> None:
         self.route = route
@@ -1218,12 +1233,9 @@ class TestUnifiedCardLayout(unittest.TestCase):
         return _V(FakePage()).build()
 
     def _card(self, view):
-        # background_screen → View(controls=[Container(image, content=Column)]);
-        # that outer Column holds exactly ONE control: the responsive card.
-        root_col = view.controls[0].content
-        self.assertIsInstance(root_col, ft.Column)
-        self.assertEqual(len(root_col.controls), 1)
-        return root_col.controls[0]
+        card = responsive_card_of(view)
+        self.assertIsNotNone(card)
+        return card
 
     def test_expand_card_stacks_content_banner_and_actions_inline(self):
         card = self._card(self._build(expand_body=True))
@@ -1257,10 +1269,12 @@ class TestUnifiedCardLayout(unittest.TestCase):
 
         wrap = view.controls[0].content
         self.assertIsInstance(wrap, ft.Column)
-        self.assertEqual(wrap.alignment, ft.MainAxisAlignment.CENTER)
         self.assertEqual(wrap.horizontal_alignment, ft.CrossAxisAlignment.CENTER)
-        self.assertEqual(len(wrap.controls), 1)               # ONE card, no action bar
-        card = wrap.controls[0]
+        self.assertEqual(len(wrap.controls), 1)               # ONE centering shell
+        shell = wrap.controls[0]
+        self.assertIsInstance(shell, ft.Container)
+        self.assertEqual(shell.alignment, ft.Alignment(0, 0))
+        card = shell.content
         body_col = card.content.controls[0]
         self.assertIn(t1, body_col.controls)
         self.assertIn(t2, body_col.controls)
@@ -1295,10 +1309,13 @@ class TestAuthAndMenuScreensUseTheCompactCardFrame(_BackendMixin, unittest.TestC
         self.assertEqual(view.route, route)
         # _bind_lifecycle sets view.data to the owning BaseView.
         self.assertIsNotNone(view.data, "build() must end with _bind_lifecycle")
-        centered = view.controls[0].content
-        self.assertIsInstance(centered, ft.Column)
-        self.assertEqual(centered.alignment, ft.MainAxisAlignment.CENTER)
-        self.assertEqual(len(centered.controls), 1)        # one centred card
+        wrap = view.controls[0].content
+        self.assertIsInstance(wrap, ft.Column)
+        self.assertEqual(len(wrap.controls), 1)        # one centering shell
+        shell = wrap.controls[0]
+        self.assertIsInstance(shell, ft.Container)
+        self.assertEqual(shell.alignment, ft.Alignment(0, 0))
+        self.assertIsNotNone(responsive_card_of(view))   # card nested inside shell
 
     def test_welcome_view_uses_the_compact_card(self):
         from views.auth.welcome_view import WelcomeView
@@ -1383,6 +1400,32 @@ class TestDiscoverViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
         sheet = ft.BottomSheet(content=ft.Container())
         view._on_action_chosen(sheet, DiscoverView._CHAT_ROUTE, profile)
 
+        self.assertEqual(page.session.store.get(DiscoverView.SELECTED_PEER_ID_KEY),
+                         candidate_id)
+        self.assertEqual(page.route, DiscoverView._CHAT_ROUTE)
+
+    async def test_tapping_a_candidate_opens_a_real_dialog_sheet_that_chat_closes(self):
+        """Drives the FULL `_on_candidate_tap` -> sheet -> `_on_action_chosen`
+        -> `_close_sheet` path (not `_on_action_chosen` directly) — the seam
+        that regressed when the Flet 0.84 bump replaced the old `page.open`/
+        `page.close` with the `DialogControl` API (`show_dialog`/`pop_dialog`)."""
+        candidate_id = self._signup("cand4", "cand4@example.com")
+        page = FakePage()
+        view = await self._drive(page)
+        profile = next(p for p in view._candidates if p.user_id == candidate_id)
+
+        view._on_candidate_tap(profile)
+
+        self.assertEqual(len(page.dialogs), 1)
+        sheet = page.dialogs[0]
+        self.assertIsInstance(sheet, ft.BottomSheet)
+        self.assertTrue(sheet.open)
+
+        buttons = [c for c in sheet.content.content.controls if isinstance(c, ft.Button)]
+        chat_button = next(b for b in buttons if b.content.value == "התחל שיחה / שלח הודעה")
+        chat_button.on_click(None)
+
+        self.assertFalse(sheet.open)              # closed via page.pop_dialog()
         self.assertEqual(page.session.store.get(DiscoverView.SELECTED_PEER_ID_KEY),
                          candidate_id)
         self.assertEqual(page.route, DiscoverView._CHAT_ROUTE)

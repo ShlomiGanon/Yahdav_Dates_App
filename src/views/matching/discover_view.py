@@ -180,13 +180,7 @@ class DiscoverView(BaseView):
         """Tapping a candidate opens a senior-friendly selection sheet offering
         the two large action choices: view their profile, or start a chat."""
         sheet = self._build_action_sheet(profile)
-        try:
-            self.page.open(sheet)                 # Flet ≥0.84
-        except AttributeError:
-            if sheet not in self.page.overlay:
-                self.page.overlay.append(sheet)
-            sheet.open = True
-            self.page.update()
+        self.page.show_dialog(sheet)               # Flet 0.84 DialogControl API
 
     def _build_action_sheet(self, profile: UserProfile) -> ft.BottomSheet:
         """RTL bottom sheet: WHO was tapped + exactly two large PRIMARY action
@@ -237,7 +231,7 @@ class DiscoverView(BaseView):
         )
         # Neutral dismiss — secondary (blue-grey), never the brand red.
         close_button = create_secondary_button(
-            "סגירה", lambda _e: self._close_sheet(sheet),
+            "סגירה", lambda _e: self._close_sheet(),
         )
 
         sheet.content = ft.Container(
@@ -269,15 +263,11 @@ class DiscoverView(BaseView):
         person once they're built — mirroring how login stashes the UID before
         routing."""
         self.page.session.store.set(self.SELECTED_PEER_ID_KEY, profile.user_id)
-        self._close_sheet(sheet)
+        self._close_sheet()
         self.page.go(route)
 
-    def _close_sheet(self, sheet: ft.BottomSheet) -> None:
-        try:
-            self.page.close(sheet)                # Flet ≥0.84
-        except AttributeError:
-            sheet.open = False
-            self.page.update()
+    def _close_sheet(self) -> None:
+        self.page.pop_dialog()                      # Flet 0.84 DialogControl API
 
     # ============================================================
     #  Helpers

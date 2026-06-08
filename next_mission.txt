@@ -4,6 +4,7 @@
 DONT DO ANY GIT WRITE OPERATIONS!!!!!!!!!!
 DONT DO ANY GIT WRITE OPERATIONS!!!!!!!!!!
 DONT DO ANY GIT WRITE OPERATIONS!!!!!!!!!!
+
 Audience: Experienced developer
 Goal:     Make the codebase easier to maintain, extend, and onboard — without
           changing product behavior or breaking the existing architecture.
@@ -12,7 +13,7 @@ Before you start, read these (they are the ground truth):
   • ARCHITECTURE.md
   • docs/ENGINEERING_CONTRACT.md
   • docs/DESIGN_SYSTEM.md
-  • docs/REPO_ORGANIZATION.md  (prior recommendations — this doc extends them)
+  • docs/REPO_ORGANIZATION.md
 
 Run tests after every phase:
   python -m unittest discover -s tests
@@ -23,101 +24,42 @@ is solid. This mission is cleanup, consolidation, and folder hygiene.
 
 
 ================================================================================
-  EXECUTIVE SUMMARY
-================================================================================
-
-Strengths (preserve):
-  • Clean layer separation — views depend on interfaces, not concrete backends
-  • No circular imports detected
-  • Mature multi-layer error handling (router → BaseView → load_flow → repo)
-  • Strong integration tests in tests/test_component_orchestration.py
-
-Main debt (fix):
-  • Duplicated session keys and helpers across 8+ view files
-  • Flat folders mixing unrelated concerns (views/common/, services/)
-  • Oversized files (my_profile_view.py 711 lines, router.py 554 lines)
-  • Legacy migration scaffolding still present (get_view_schema, constants shim)
-  • Weak per-screen behavioral tests; no CI pipeline
-  • requirements.txt out of sync with actual Flet API usage (0.84+)
-
-Pending git deletions (safe — zero references remain):
-  • src/components/toggles.py
-  • src/views/profile/profile_settings_view.py
-
-
-================================================================================
-  PHASE 1 — QUICK WINS (1–2 days, low risk)
+  WEEK 1 — QUICK WINS (mostly done; finish doc hygiene)
 ================================================================================
 
 Goal: Remove daily friction with minimal behavioral change.
 
 
-1.1  Centralize session key constants
+1.1  Centralize session key constants                                    [DONE]
 ─────────────────────────────────────
-Problem:  "current_user_id", "current_user_email", "selected_peer_id" are
-         re-declared as raw strings in 8+ files (router, login, menu, profile,
-         matching views).
-
-Action:   Add constants to views/common/session.py (or utils/session_keys.py):
-            CURRENT_USER_ID, CURRENT_USER_EMAIL, SELECTED_PEER_ID
-         Replace all raw string usages. Router already has _KEY_* — unify naming.
-
-Done when: grep for raw "current_user_id" in src/ returns only the constant
-           definition file.
+Implemented in utils/session_keys.py (CURRENT_USER_ID, CURRENT_USER_EMAIL,
+SELECTED_PEER_ID). All views and router import from there.
 
 
-1.2  Centralize gender Hebrew labels
+1.2  Centralize gender Hebrew labels                                     [DONE]
 ────────────────────────────────────
-Problem:  _GENDER_OPTIONS in my_profile_view.py and _GENDER_LABELS in
-          user_profile_view.py are duplicate maps of the same data.
-
-Action:   Single shared map in models/user_profile.py or utils/constants.py.
-         Import in both views.
-
-Done when: One definition, two imports, tests pass.
+Implemented as GENDER_LABELS_HE in models/user_profile.py. Both profile
+views import from the shared map.
 
 
-1.3  Remove get_view_schema() legacy seam
+1.3  Remove get_view_schema() legacy seam                                [DONE]
 ─────────────────────────────────────────
-Problem:  BaseView still supports get_view_schema() for unmigrated screens.
-          Repo-wide search: zero overrides — all screens use get_header /
-          get_content / get_actions.
-
-Action:   Remove get_view_schema(), its branch in _resolve_regions(), and
-         related docstrings in views/_base.py.
-
-Done when: _base.py has one resolution path only; all tests pass.
+Removed from views/_base.py. All screens use get_header/get_content/get_actions.
 
 
-1.4  Rename render.py → safe_list.py
+1.4  Rename render.py → safe_list.py                                     [DONE]
 ────────────────────────────────────
-Problem:  views/common/render.py (build_items_safe) and renderer.py (UI schema
-          engine) differ by 3 letters. Four screens import both — easy to confuse.
-
-Action:   Rename render.py to safe_list.py. Update 4 import sites:
-            chat_view.py, discover_view.py, matches_view.py, peer_photos_view.py
-
-Done when: No file named render.py; grep "from views.common.render" returns 0.
+Renamed to views/common/helpers/safe_list.py. All 4 import sites updated.
 
 
-1.5  Update requirements.txt
+1.5  Update requirements.txt                                             [DONE]
 ────────────────────────────
-Problem:  requirements.txt says flet>=0.21.2; code and ARCHITECTURE.md require
-          0.84+ APIs (page.shared_preferences, pick_files(with_data=True)).
-
-Action:   Set flet>=0.84. Pin other deps if needed after smoke test.
-
-Done when: Fresh install runs app without API errors.
+Set to flet>=0.84.0. Aligned with code and ARCHITECTURE.md.
 
 
-1.6  Clean up unused component factories
+1.6  Clean up unused component factories                                 [DONE]
 ────────────────────────────────────────
-Problem:  create_input(), create_text(), create_button() have zero call sites.
-
-Action:   Delete the unused functions OR wire them into existing screens if
-         they were intended replacements. Prefer delete unless clearly needed.
-
-Files:   components/inputs.py, components/profile_fields.py, components/buttons.py
+create_input(), create_text(), create_button() removed (zero call sites).
 
 
 1.7  Fix stale docstrings
@@ -126,193 +68,119 @@ Problem:  Comments still reference "sticky action bar", ScreenShell, get_body �
           removed during frame-unification refactor.
 
 Files to update:
-  • views/profile/my_profile_view.py
-  • views/matching/discover_view.py
-  • components/feedback.py
-  • utils/constants.py
-  • tools/stress_test.py
+  • views/profile/my_profile_view.py   (lines 46–49: sticky bottom action bar)
+  • views/matching/discover_view.py    (lines 24–25: sticky back button below)
+  • components/feedback.py             (line 58: above the action bar)
+  • tools/stress_test.py               (ScreenShell / get_body references)
 
 Action:   Align comments with current BaseView inline-actions model.
+
+Done when: grep for "sticky.*action|ScreenShell|get_body" in src/ and tools/
+           returns only historical notes in _base.py.
 
 
 1.8  Commit pending deletions
 ─────────────────────────────
-Action:   Stage and commit removal of toggles.py and profile_settings_view.py
-         (only when the project owner requests a commit).
+Status:  toggles.py and profile_settings_view.py already deleted from disk
+         (zero references remain). Commit not yet done.
+
+Action:   Stage and commit the deletions — ONLY when project owner requests.
+         DO NOT run any git write operations unless explicitly instructed.
 
 
 ================================================================================
-  PHASE 2 — STRUCTURAL CLEANUP (3–5 days, medium risk)
+  WEEK 2 — STRUCTURAL CLEANUP (mostly done; finish DS migration)
 ================================================================================
 
 Goal: Make folder structure reflect architectural intent.
 
 
-2.1  Split views/common/ into sub-packages
+2.1  Split views/common/ into sub-packages                               [DONE]
 ──────────────────────────────────────────
-Problem:  11 files mix rendering engine, helpers, and mountable views under
-          one folder name — hard for newcomers to know what's load-bearing.
-
-Target structure:
-  views/common/
-  ├── engine/          screen.py, renderer.py
-  ├── helpers/         navigation.py, session.py, load_flow.py, photos.py,
-  │                    photo_ops.py, safe_list.py (renamed from render.py)
-  └── views/           system_views.py, placeholder_view.py
-
-Action:   Move files, update all imports, keep __init__.py re-exports for
-         backward compat if useful during transition.
-
-Done when: Each subfolder has a single concern; tests pass; no broken imports.
+Implemented: engine/, helpers/, views/ subfolders with updated imports.
 
 
-2.2  Reorganize services/ by role
+2.2  Reorganize services/ by role                                        [DONE]
 ──────────────────────────────────
-Problem:  Interfaces and implementations are flat and alphabetically mixed.
-
-Target structure:
-  services/
-  ├── interfaces/      i_auth_service, i_messaging_service,
-  │                    i_profile_repository, i_storage_service
-  ├── sqlite/          sqlite_auth_service, sqlite_messaging_service,
-  │                    sqlite_profile_repository, sqlite_queries
-  ├── firebase/        firebase_backend.py (stub)
-  └── local/           local_disk_storage_service.py
-
-Action:   Move files, update imports in app.py, router.py, all views/tests.
-
-Done when: "What can I depend on?" is visually obvious from directory listing.
+Implemented: interfaces/, sqlite/, firebase/, local/ subfolders.
 
 
-2.3  Extract shared peer data accessors
+2.3  Extract shared peer data accessors                                  [DONE]
 ───────────────────────────────────────
-Problem:  UserProfileView has ~60 lines of _safe_name, _safe_bio, _safe_age…
-          PeerPhotosView reimplements _safe_name, _safe_src.
-
-Action:   New module views/common/helpers/peer_data.py (or peer_data.py at
-         helpers root). Both peer views import from there.
-
-Done when: No duplicate _safe_* logic between the two peer views.
+Implemented in views/common/helpers/peer_data.py. Both peer views use it.
+UserProfileView keeps a thin _safe_name wrapper for its local fallback only.
 
 
-2.4  DRY navigation safety helpers
+2.4  DRY navigation safety helpers                                       [DONE]
 ──────────────────────────────────
-Problem:  _safe_go / _safe_update / _closing pattern copy-pasted in
-          chat_view.py and matches_view.py.
-
-Action:   Extract to BaseView method or views/common/helpers/navigation.py.
-         Both views call the shared helper.
-
-Done when: Identical try/except navigation guards exist in one place only.
+_safe_go / _closing moved to BaseView in views/_base.py.
 
 
-2.5  Centralize route constants
+2.5  Centralize route constants                                          [DONE]
 ───────────────────────────────
-Problem:  Routes defined as ROUTE class attrs, private _*_ROUTE vars, and raw
-          strings scattered across views and router.
-
-Action:   New utils/routes.py with all route strings as module-level constants.
-         Views and router import from there.
-
-Done when: No magic route strings outside utils/routes.py and view ROUTE attrs
-           that re-export from routes.py.
+Implemented in utils/routes.py. Router and views import from there.
 
 
 2.6  Complete design system migration
 ─────────────────────────────────────
-Problem:  ~30 files still import legacy shim (TextSizes, ThemeColors, UIConstants
-          from utils/constants.py) alongside DS from style/design_system.py.
+Status:  Shim classes (TextSizes, ThemeColors, UIConstants) removed from
+         utils/constants.py — config-only now. src/ fully migrated to DS.
 
-Action:   Migrate remaining files to DS directly. When zero shim usages remain,
-         remove or slim down utils/constants.py to config-only (DBConfig, etc.).
+Remaining: tools/stress_test.py still imports ThemeColors from utils.constants
+           — likely broken (ImportError on launch).
 
-Reference: docs/DESIGN_SYSTEM.md, tests/test_design_system.py
+Action:   Replace ThemeColors with DS.palette in stress_test.py.
+
+Done when: python tools/stress_test.py login launches without ImportError.
 
 
 ================================================================================
-  PHASE 3 — FILE SPLITS & TEST EXPANSION (1–2 weeks)
+  WEEK 3 — FILE SPLITS, TESTS & GIT CLEANUP
 ================================================================================
 
-Goal: Reduce file size hotspots and close behavioral test gaps.
+Goal: Close remaining file-size debt and operational loose ends.
 
 
-3.1  Split my_profile_view.py (711 lines) — highest priority
-──────────────────────────────────────────────────────────────
-Problem:  Form fields, DOB dropdowns, photo upload, validation, save logic,
-          and layout all in one class.
+3.1  Split my_profile_view.py — finish extraction
+──────────────────────────────────────────────────
+Status:  my_profile_form.py and my_profile_photos.py exist, but
+         my_profile_view.py is still 452 lines (target: < 300).
 
-Suggested extraction:
-  • views/profile/my_profile_form.py   — field builders, gender/DOB controls
-  • views/profile/my_profile_photos.py — primary photo pick/upload handler
-  • views/profile/my_profile_view.py   — orchestration, get_content/actions only
+Suggested further extraction:
+  • views/profile/my_profile_save.py — save handler, validation, feedback
+  • OR move remaining state helpers into my_profile_form.py
 
-Constraint: Keep MyProfileView as the single BaseView subclass the router mounts.
-            Extract helpers/modules, not additional view classes.
+Constraint: MyProfileView remains the single BaseView subclass the router mounts.
 
 Done when: my_profile_view.py < 300 lines; behavior unchanged; tests pass.
 
 
-3.2  Split router.py (554 lines)
+3.2  Split router.py                                                     [DONE]
 ────────────────────────────────
-Suggested extraction:
-  • utils/route_table.py      — route string → factory mapping
-  • utils/stack_navigator.py  — push, unwind, reset, replace_top, handle_view_pop
-  • utils/boot_resolver.py    — resolve_initial_route, remember-me rehydration
-  • utils/router.py           — thin Router class wiring the above
-
-Constraint: Router remains the ONLY view constructor (per ENGINEERING_CONTRACT).
-
-Done when: Each module has one responsibility; boot + navigation tests pass.
+Extracted to route_table.py, stack_navigator.py, boot_resolver.py.
+router.py is now ~191 lines.
 
 
-3.3  Extract photo lightbox from peer_photos_view.py
+3.3  Extract photo lightbox from peer_photos_view.py                     [DONE]
 ────────────────────────────────────────────────────
-Problem:  Album grid + fullscreen lightbox + async load in one 370-line file.
-
-Action:   components/photo_lightbox.py or views/common/helpers/lightbox.py.
-         PeerPhotosView delegates open/close/pop handling to the component.
-
-Done when: Lightbox logic is reusable and testable in isolation.
+Implemented in views/common/helpers/photo_lightbox.py.
 
 
-3.4  Shared photo upload helper
+3.4  Shared photo upload helper                                          [DONE]
 ───────────────────────────────
-Problem:  Photo logic split across photos.py, photo_ops.py, my_profile_view,
-          additional_photos_view with overlapping patterns.
-
-Action:   Evaluate a shared PhotoUploadHelper that wraps:
-            pick → validate → storage.save → profile.update → rollback on failure
-         Wire into MyProfile and AdditionalPhotos without duplicating transaction
-         logic (photo_ops.py already owns the disk-first transaction).
-
-Done when: Both photo screens use the same upload entry point.
+Both MyProfile and AdditionalPhotos use photo_ops.pick_and_upload and
+save_photo_urls_or_rollback as the shared entry point.
 
 
-3.5  Add CI pipeline
+3.5  Add CI pipeline                                                     [DONE]
 ────────────────────
-Action:   .github/workflows/test.yml running:
-            python -m unittest discover -s tests
-         On push/PR to main.
-
-Done when: CI green on clean checkout.
+Implemented in .github/workflows/test.yml.
 
 
-3.6  Expand behavioral view tests
+3.6  Expand behavioral view tests                                        [DONE]
 ─────────────────────────────────
-Current gap: Strong orchestration tests; most individual screens only have
-             layout/smoke coverage.
-
-Priority test additions:
-  • LoginView     — credential validation, remember-me token write, session keys
-  • SignupView    — signup_user integration, error paths
-  • MyProfileView — form validation, save, photo upload rollback
-  • ChatView      — send message, pagination cursor, bubble render
-  • DiscoverView  — feed load, peer selection → selected_peer_id in session
-  • SqliteAuthService (isolated) — lockout, scrypt verify
-  • validation.py — direct unit tests (24 lines, currently untested)
-
-Pattern: Follow existing test style in test_component_orchestration.py —
-         mock services at interface boundary, assert session/router side effects.
+Added: TestLoginViewBehavior, TestSignupViewBehavior, TestDiscoverViewBehavior,
+TestChatViewBehavior, TestMyProfileViewBehavior, plus tests/test_validation.py.
 
 
 ================================================================================
@@ -337,10 +205,10 @@ Options: Remove until needed, or implement when feature is scoped.
 
 4.3  FirebaseBackEndService stub
 ──────────────────────────────────
-Status:  services/firebase_backend.py — god object implementing all 3 interfaces,
-         every method raises NotImplementedError.
-Options: When cloud migration starts, split into separate Firebase implementations
-         per interface (not one monolithic class).
+Status:  services/firebase/firebase_backend.py — god object implementing all
+         interfaces; every method raises NotImplementedError.
+Options: When cloud migration starts, split into separate Firebase
+         implementations per interface.
 
 
 4.4  Database migration framework
@@ -353,7 +221,6 @@ Options: Add lightweight versioned migrations before schema changes accumulate.
 ─────────────────────────────────────
 Status:  Peer targeting uses session store "selected_peer_id" — no deep links.
 Options: Consider /discover/profile/{peer_id} when deep-linking is required.
-         Requires router + view constructor changes; test stack unwind carefully.
 
 
 4.6  Empty placeholder packages
@@ -376,8 +243,6 @@ Options: Re-add route + view when settings feature is scoped.
   DO NOT BREAK — PRESERVE THESE INVARIANTS
 ================================================================================
 
-While refactoring, these rules from ENGINEERING_CONTRACT.md are non-negotiable:
-
   • Router is the ONLY place that constructs views
   • Each view receives only the interface(s) it needs (ISP)
   • Profile saves are UPSERT in place — never delete-and-reinsert
@@ -390,48 +255,31 @@ While refactoring, these rules from ENGINEERING_CONTRACT.md are non-negotiable:
 
 
 ================================================================================
-  FILE SIZE REFERENCE (split candidates)
+  REMAINING WORK SUMMARY (no [DONE] marker = still to do)
 ================================================================================
 
-  my_profile_view.py          711   ← split first
-  router.py                   554
-  _base.py                    411   ← structural; split with care
-  sqlite_profile_repository   397
-  sqlite_queries.py           390   ← OK as query ledger; already sectioned
-  peer_photos_view.py         370
-  user_profile_view.py        366
-  renderer.py                 334
-  additional_photos_view.py   314
-  discover_view.py            307
+  Week 1:  1.7  Fix stale docstrings
+  Week 2:  2.6  Fix stress_test.py DS import
+  Week 3:  3.1  Finish my_profile_view.py split (< 300 lines)
+           1.8  Commit pending deletions (owner-triggered only — NO git writes
+                unless explicitly instructed by project owner)
+
+  Phase 4: unchanged — wait for product owner decisions.
 
 
 ================================================================================
-  SCORECARD (current state)
+  UPDATED SCORECARD
 ================================================================================
 
-  Architecture clarity     ★★★★★   Excellent docs + clean ISP
-  Layer separation           ★★★★★   No circular deps
-  Folder organization        ★★★☆☆   views/common/ and services/ are flat
-  DRY / duplication          ★★★☆☆   Session keys, gender labels, safe-go
-  File sizing                ★★★☆☆   my_profile_view and router are heavy
-  Test coverage              ★★★★☆☆   Strong integration; weak per-view tests
-  Dead code cleanliness      ★★★★☆☆   Legacy seams and stubs remain
-  Error handling             ★★★★★   Multi-layer, production-minded
-  Config hygiene             ★★★☆☆   dotenv unused; Flet version drift
-
-
-================================================================================
-  SUGGESTED ORDER OF EXECUTION
-================================================================================
-
-  Week 1:  Phase 1 entirely (1.1 → 1.7), then 2.1 + 2.3
-  Week 2:  Phase 2 remainder (2.2, 2.4, 2.5, 2.6)
-  Week 3:  Phase 3.1 (my_profile split) + 3.5 (CI)
-  Week 4:  Phase 3.2–3.4 + 3.6 (priority tests)
-  Later:   Phase 4 items as product requires
-
-After each item: run full test suite. After each phase: smoke-test the app
-manually (login → menu → profile edit → discover → chat → back navigation).
+  Architecture clarity     ★★★★★
+  Layer separation           ★★★★★
+  Folder organization        ★★★★★   (was ★★★☆☆)
+  DRY / duplication          ★★★★☆   (was ★★★☆☆)
+  File sizing                ★★★★☆   (my_profile_view still 452 lines)
+  Test coverage              ★★★★★   (was ★★★★☆☆)
+  Dead code cleanliness      ★★★★★   (was ★★★★☆☆)
+  Error handling             ★★★★★
+  Config hygiene             ★★★★☆   (stress_test import still broken)
 
 
 ================================================================================
