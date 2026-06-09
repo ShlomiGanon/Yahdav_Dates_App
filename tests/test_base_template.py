@@ -23,8 +23,9 @@ if str(_SRC) not in sys.path:
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.engine.screen import responsive_card_of
+from components.buttons import create_primary_button, create_secondary_button
+from components.typography import create_screen_heading
 from style.design_system import DS
 
 
@@ -45,18 +46,18 @@ class FakePage:
 
 class _Welcome(BaseView):
     ROUTE = "/w"
-    def get_header(self): return ui.heading("ברוכים הבאים")
-    def get_content(self): return [ui.raw(ft.Text("body"))]
-    def get_actions(self): return [ui.primary_button("המשך", lambda e: None)]
+    def get_header(self): return create_screen_heading("ברוכים הבאים")
+    def get_content(self): return [ft.Text("body")]
+    def get_actions(self): return [create_primary_button("המשך", lambda e: None)]
 
 
 class _Feed(BaseView):
     ROUTE = "/c"
     EXPAND_BODY = True
-    def get_header(self): return ui.heading("כותרת")
-    def get_content(self): return [ui.raw(ft.Text("x"))]
-    def get_status_banner(self): return ui.raw(ft.Container())
-    def get_actions(self): return [ui.secondary_button("חזור", lambda e: None)]
+    def get_header(self): return create_screen_heading("כותרת")
+    def get_content(self): return [ft.Text("x")]
+    def get_status_banner(self): return ft.Container()
+    def get_actions(self): return [create_secondary_button("חזור", lambda e: None)]
 
 
 class TestHeaderSlotAndSpacing(unittest.TestCase):

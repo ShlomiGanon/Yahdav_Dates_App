@@ -13,10 +13,10 @@ import asyncio
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from components import loading
+from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
-from components.feedback import create_field_error_label, set_field_error, clear_field_errors
+from components.typography import create_screen_heading
 from services.interfaces.i_auth_service import IAuthService
 from utils import routes
 
@@ -32,14 +32,15 @@ class SignupView(BaseView):
     #  Layout — the interface the framework renders
     # ============================================================
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading("הרשמה למערכת")           # engine centres it (HUB) via the DS
+    def get_header(self):
+        return create_screen_heading("הרשמה למערכת")
 
-    def get_content(self) -> list[ui.UIComponent]:
+    def get_content(self) -> list[ft.Control]:
         # Inputs and error labels are read/mutated in the submit handler, so they
-        # are PRE-BUILT and embedded via raw(). The engine owns spacing/alignment.
+        # are PRE-BUILT. The engine owns spacing/alignment.
         self._email_field = create_hebrew_text_field(
             "אימייל", on_submit=self._on_signup_click,
+            keyboard_type=ft.KeyboardType.EMAIL,
         )
         self._password_field = create_hebrew_text_field(
             "סיסמה", password=True, on_submit=self._on_signup_click,
@@ -47,21 +48,17 @@ class SignupView(BaseView):
         self._confirm_password_field = create_hebrew_text_field(
             "אימות סיסמה", password=True, on_submit=self._on_signup_click,
         )
-        self._email_error            = create_field_error_label()
-        self._password_error         = create_field_error_label()
-        self._confirm_password_error = create_field_error_label()
         return [
-            ui.raw(self._email_field), ui.raw(self._email_error),
-            ui.raw(self._password_field), ui.raw(self._password_error),
-            ui.raw(self._confirm_password_field),
-            ui.raw(self._confirm_password_error),
+            self._email_field,
+            self._password_field,
+            self._confirm_password_field,
         ]
 
-    def get_actions(self) -> list[ui.UIComponent]:
+    def get_actions(self) -> list[ft.Control]:
         # Primary (red) = constructive signup; secondary (blue-grey) = cancel.
         return [
-            ui.primary_button("הירשם", self._on_signup_click),
-            ui.secondary_button("ביטול", lambda _: self.page.go(routes.WELCOME)),
+            create_primary_button("הירשם", self._on_signup_click),
+            create_secondary_button("ביטול", lambda _: self.page.go(routes.WELCOME)),
         ]
 
     # ============================================================
@@ -79,24 +76,18 @@ class SignupView(BaseView):
 
         # ---- Field-level validation ----
         if not self.auth.is_email_valid(email):
-            set_field_error(
-                self._email_error,
-                "כתובת האימייל אינה תקינה או חסרה.",
-            )
+            self._email_field.error_text = "כתובת האימייל אינה תקינה או חסרה."
+            self.page.update()
             return
 
         if not self.auth.is_password_valid(password):
-            set_field_error(
-                self._password_error,
-                "הסיסמה קצרה מדי. עליה להכיל לפחות 8 תווים, אותיות ומספרים.",
-            )
+            self._password_field.error_text = "הסיסמה קצרה מדי. עליה להכיל לפחות 8 תווים, אותיות ומספרים."
+            self.page.update()
             return
 
         if confirm != password:
-            set_field_error(
-                self._confirm_password_error,
-                "ההקלדה אינה תואמת לסיסמה שבחרת למעלה.",
-            )
+            self._confirm_password_field.error_text = "ההקלדה אינה תואמת לסיסמה שבחרת למעלה."
+            self.page.update()
             return
 
         # ---- Derive a username from the email local-part ----
@@ -121,19 +112,15 @@ class SignupView(BaseView):
             self.page.go(routes.LOGIN)
         else:
             # Most common backend rejection: email or derived-username taken.
-            set_field_error(
-                self._email_error,
-                "כתובת האימייל כבר רשומה במערכת. נסה/י כתובת אחרת או התחבר/י לחשבון הקיים.",
-            )
+            self._email_field.error_text = "כתובת האימייל כבר רשומה במערכת. נסה/י כתובת אחרת או התחבר/י לחשבון הקיים."
+            self.page.update()
 
     # ============================================================
     #  Error-label helpers
     # ============================================================
 
     def _clear_errors(self) -> None:
-        clear_field_errors(
-            self._email_error,
-            self._password_error,
-            self._confirm_password_error,
-        )
+        self._email_field.error_text = None
+        self._password_field.error_text = None
+        self._confirm_password_field.error_text = None
         self.page.update()

@@ -13,7 +13,6 @@ from datetime import date
 
 import flet as ft
 
-from components.feedback import create_field_error_label, set_field_error, clear_field_errors
 from components.inputs import create_hebrew_text_field
 from style.design_system import DS
 from models.user_profile import UserProfile, LocalizedText, Gender, Location
@@ -41,44 +40,42 @@ def make_dropdown(
 
 
 # ----------------------------------------------------------------------------
-# Field builders — each returns the control(s) + its dedicated error label,
-# ready for the view to store as its own refs and embed via `ui.raw(...)`.
+# Field builders — each returns the control(s) ready for the view to store
+# as its own refs and embed in get_content(). Errors are set directly via
+# `field.error_text` (native ft.TextField / ft.Dropdown property).
 # ----------------------------------------------------------------------------
 
-def build_name_field(on_submit) -> tuple[ft.TextField, ft.Text]:
+def build_name_field(on_submit) -> ft.TextField:
     """Name (Hebrew content → RIGHT-aligned via the shared primitive)."""
-    field = create_hebrew_text_field(
+    return create_hebrew_text_field(
         "שם מלא", hebrew_content=True, on_submit=on_submit,
     )
-    return field, create_field_error_label()
 
 
-def build_bio_field(max_chars: int) -> tuple[ft.TextField, ft.Text]:
+def build_bio_field(max_chars: int) -> ft.TextField:
     """Bio (multi-line, Hebrew content, capped for storage + readability)."""
-    field = create_hebrew_text_field(
+    return create_hebrew_text_field(
         "קצת עליי", hebrew_content=True,
         multiline=True, min_lines=4, max_lines=8,
         max_length=max_chars,
     )
-    return field, create_field_error_label()
 
 
 def build_gender_dropdown(
     options: tuple[tuple[Gender, str], ...],
-) -> tuple[ft.Dropdown, ft.Text]:
+) -> ft.Dropdown:
     """Gender — large dropdown, no free typing for the 50+ audience."""
-    dropdown = make_dropdown(
+    return make_dropdown(
         label="מין",
         options=[ft.dropdown.Option(key=g.value, text=t) for g, t in options],
         width=DS.sizing.input_w,
     )
-    return dropdown, create_field_error_label()
 
 
 def build_dob_dropdowns(
     min_age_years: int,
     max_age_years: int,
-) -> tuple[ft.Dropdown, ft.Dropdown, ft.Dropdown, ft.Text]:
+) -> tuple[ft.Dropdown, ft.Dropdown, ft.Dropdown]:
     """Birth date — three large dropdowns (day / month / year).
 
     Deliberately NOT a calendar picker: three simple dropdowns are far
@@ -110,25 +107,24 @@ def build_dob_dropdowns(
                                 today.year - max_age_years - 1, -1)],
         width=DS.sizing.dob_year_w,
     )
-    return day, month, year, create_field_error_label()
+    return day, month, year
 
 
 def build_location_fields(
     on_submit,
     regions: tuple[str, ...],
-) -> tuple[ft.TextField, ft.Text, ft.Dropdown]:
+) -> tuple[ft.TextField, ft.Dropdown]:
     """Location: city (free text) + region (dropdown of Israeli districts,
     stored verbatim as the free-text `Location.region`)."""
     city_field = create_hebrew_text_field(
         "עיר", hebrew_content=True, on_submit=on_submit,
     )
-    city_error = create_field_error_label()
     region_dropdown = make_dropdown(
         label="אזור",
         options=[ft.dropdown.Option(key=r, text=r) for r in regions],
         width=DS.sizing.input_w,
     )
-    return city_field, city_error, region_dropdown
+    return city_field, region_dropdown
 
 
 # ----------------------------------------------------------------------------
@@ -181,50 +177,45 @@ def validated_birth_date(
     dob_day: ft.Dropdown,
     dob_month: ft.Dropdown,
     dob_year: ft.Dropdown,
-    error_label: ft.Text,
     *,
     min_age_years: int,
     max_age_years: int,
 ) -> date | None:
     """Read the day/month/year dropdowns into a real `date`.
 
-    Returns the `date` on success; otherwise sets the birth-date error
-    label and returns None. Rejects an incomplete selection, an impossible
-    calendar date (e.g. 31 בפברואר), and ages outside the allowed bounds.
+    Returns the `date` on success; otherwise sets `dob_day.error_text` and
+    returns None. Rejects an incomplete selection, an impossible calendar date
+    (e.g. 31 בפברואר), and ages outside the allowed bounds.
     """
     d = dob_day.value
     m = dob_month.value
     y = dob_year.value
+    def _fail(msg: str):
+        dob_day.error_text = msg
+        try:
+            dob_day.update()
+        except Exception:  # noqa: BLE001 — headless; value still sticks
+            pass
+
     if not (d and m and y):
-        set_field_error(
-            error_label, "אנא בחר/י תאריך לידה מלא (יום, חודש ושנה)",
-        )
+        _fail("אנא בחר/י תאריך לידה מלא (יום, חודש ושנה)")
         return None
     try:
         birth = date(int(y), int(m), int(d))
     except ValueError:
-        set_field_error(error_label, "התאריך שנבחר אינו קיים בלוח השנה")
+        _fail("התאריך שנבחר אינו קיים בלוח השנה")
         return None
     today = date.today()
     age = today.year - birth.year - (
         (today.month, today.day) < (birth.month, birth.day)
     )
     if age < min_age_years:
-        set_field_error(
-            error_label,
-            f"הגיל המינימלי לשימוש באפליקציה הוא {min_age_years}",
-        )
+        _fail(f"הגיל המינימלי לשימוש באפליקציה הוא {min_age_years}")
         return None
     if age > max_age_years:
-        set_field_error(error_label, "אנא בדוק/י את שנת הלידה שנבחרה")
+        _fail("אנא בדוק/י את שנת הלידה שנבחרה")
         return None
     return birth
-
-
-def clear_errors(page: ft.Page, *labels: ft.Text) -> None:
-    """Hide every field-error label and flush the change to the page."""
-    clear_field_errors(*labels)
-    page.update()
 
 
 # ----------------------------------------------------------------------------

@@ -33,13 +33,14 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.helpers.navigation import back_to_menu_button
+from components.typography import create_screen_heading
 from views.common.helpers.safe_list import build_items_safe
 from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components.buttons import create_primary_button, create_secondary_button
 from components.feedback import create_status_banner, show_status
-from components.discover import create_candidate_tile
+from components.avatars import create_initial_avatar
+from components.cards import create_member_row_card
 from services.interfaces.i_profile_repository import IProfileRepository
 from models.user_profile import UserProfile, Gender, AccountStatus
 from style.design_system import DS
@@ -48,6 +49,9 @@ from utils.session_keys import CURRENT_USER_ID, SELECTED_PEER_ID
 from utils import routes
 
 log = logging.getLogger(__name__)
+
+_CARD_HEIGHT: int = DS.sizing.tile_h
+_AVATAR_DIAMETER: int = DS.sizing.avatar_sm
 
 
 class DiscoverView(BaseView):
@@ -80,25 +84,22 @@ class DiscoverView(BaseView):
     #  Layout
     # ============================================================
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading("אנשים שתרצו להכיר")     # centered (HUB) like the Main Menu
+    def get_header(self):
+        return create_screen_heading("אנשים שתרצו להכיר")
 
-    def get_content(self) -> list[ui.UIComponent]:
-        # HUB centered card (like the Main Menu): the feed is a plain Column the
-        # hub card AUTO-scrolls, and the status banner renders inline in the card
-        # via get_status_banner() (BaseView's region model — no separate action
-        # bar). Both are populated at runtime → pre-built + raw().
+    def get_content(self) -> list[ft.Control]:
+        # HUB centered card: the feed Column is populated at runtime; the status
+        # banner handles auth/empty/error states inline.
         self._feed_column = ft.Column(
             controls=[],
             spacing=DS.spacing.element,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        # Defensive auth / empty / error states (e.g. "no profiles yet").
         self._status_banner, self._status_text = create_status_banner()
-        return [ui.raw(self._feed_column), ui.raw(self._status_banner)]
+        return [self._feed_column, self._status_banner]
 
-    def get_actions(self) -> list[ui.UIComponent]:
-        return [ui.raw(back_to_menu_button(self.page))]
+    def get_actions(self) -> list[ft.Control]:
+        return [back_to_menu_button(self.page)]
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned one-shot feed load.
@@ -161,18 +162,15 @@ class DiscoverView(BaseView):
     # ============================================================
 
     def _candidate_tile(self, profile: UserProfile) -> ft.Control:
-        """A single tappable member row — name, meta line, presence dot.
-
-        Pure composition: the styling lives in `create_candidate_tile`; this
-        method only resolves the profile's data and the tap handler.
-        """
+        """A single tappable member row — name, meta line, presence dot."""
         name = profile.display_name.for_gender(profile.gender) or ""
         online = profile.status is AccountStatus.ACTIVE
-        return create_candidate_tile(
+        return create_member_row_card(
+            create_initial_avatar(name, diameter=_AVATAR_DIAMETER, online=online),
             name,
             self._meta_line(profile),
-            online=online,
             on_click=lambda _e, p=profile: self._on_candidate_tap(p),
+            height=_CARD_HEIGHT,
         )
 
     # ============================================================

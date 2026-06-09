@@ -40,7 +40,6 @@ import flet as ft
 
 from views._base import BaseView
 from views.common.engine.screen import BodyLayout
-from views.common.engine import renderer as ui
 from views.common.helpers import peer_data
 from views.common.helpers.navigation import back_button
 from views.common.helpers.photo_lightbox import PhotoLightbox
@@ -97,14 +96,10 @@ class PeerPhotosView(BaseView):
     EXPAND_BODY = True                        # long photo album → fill the viewport
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # _photos_column owns the scroll
 
-    def get_content(self) -> list[ui.UIComponent]:
-        # Static skeleton only — build() must never throw. The heading and the
-        # album column are mutated at runtime (_render_album / _show_error), so
-        # both are PRE-BUILT and embedded via raw() (no get_header: the title is
-        # the dynamic peer name — `create_screen_heading` already centres by
-        # default, matching the engine's universal "every header centres" rule).
-        # STRETCH so each tile spans the card width; the column owns the single
-        # bounded scroll region (SELF_SCROLLING).
+    def get_content(self) -> list[ft.Control]:
+        # Static skeleton only — build() must never throw. Controls are PRE-BUILT
+        # and mutated at runtime (_render_album / _show_error). STRETCH so each
+        # tile spans the card width; the column owns the bounded scroll (SELF_SCROLLING).
         self._heading = create_screen_heading("תמונות נוספות")
         self._photos_column = ft.Column(
             controls=[],
@@ -113,17 +108,14 @@ class PeerPhotosView(BaseView):
             expand=True,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        return [ui.raw(self._heading), ui.raw(self._photos_column)]
+        return [self._heading, self._photos_column]
 
-    def get_actions(self) -> list[ui.UIComponent]:
-        # Stack-aware "back" — pops to whatever opened the album (peer profile).
-        return [ui.raw(back_button(self.page, label="חזרה",
-                                   fallback=self._PEER_PROFILE_ROUTE))]
+    def get_actions(self) -> list[ft.Control]:
+        return [back_button(self.page, label="חזרה", fallback=self._PEER_PROFILE_ROUTE)]
 
-    def get_overlay(self) -> ui.UIComponent:
-        # The fullscreen lightbox (hidden until a tile is tapped). The engine owns
-        # the Stack, so toggling the lightbox never rebuilds the album.
-        return ui.raw(self._lightbox.build())
+    def get_overlay(self):
+        # Fullscreen lightbox (hidden until a tile is tapped). Engine owns the Stack.
+        return self._lightbox.build()
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned background load. Cancelled

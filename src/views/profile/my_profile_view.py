@@ -56,15 +56,16 @@ from datetime import date
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.helpers.navigation import back_to_menu_button
+from components.buttons import create_primary_button
+from components.typography import create_screen_heading
 from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from views.profile import my_profile_form as profile_form
 from views.profile import my_profile_photos as profile_photos
 from components import loading
 from components.dividers import create_action_divider
 from style.design_system import DS
-from components.feedback import set_field_error, create_status_banner, show_status
+from components.feedback import create_status_banner, show_status
 from services.interfaces.i_profile_repository import IProfileRepository
 from services.interfaces.i_storage_service import IStorageService
 from models.user_profile import UserProfile, Gender, GENDER_LABELS_HE
@@ -99,6 +100,7 @@ class MyProfileView(BaseView):
     ROUTE = routes.MY_PROFILE
 
     EXPAND_BODY = True   # long profile form → fill the viewport, scroll internally
+    BODY_CROSS_ALIGN = ft.CrossAxisAlignment.CENTER   # fixed-width fields centred
 
     # Session-store keys holding the currently logged-in user's identity.
     # Written by login_view on success; read here; cleared on logout.
@@ -144,29 +146,13 @@ class MyProfileView(BaseView):
     #  Layout
     # ============================================================
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading("הפרופיל שלי")
+    def get_header(self):
+        return create_screen_heading("הפרופיל שלי")
 
-    def _render_body(self) -> ft.Control:
-        # Documented exception: this form's fixed-width (400px) fields are CENTRED
-        # rather than STRETCHed full-width, so the engine's default body alignment
-        # is overridden here (the sanctioned `_render_*` escape hatch). Spacing and
-        # everything else still come from the DS via super().
-        body = super()._render_body()
-        body.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-        return body
-
-    def get_content(self) -> list[ui.UIComponent]:
-        """Pure content — the stateful controls the handlers mutate (inputs,
-        dropdowns, error labels, the photo image) are PRE-BUILT here and embedded
-        via `ui.raw(...)` so the view keeps the live refs. The engine owns the body
-        layout (spacing; alignment via the `_render_body` override above)."""
+    def get_content(self) -> list[ft.Control]:
+        """Pure content — stateful controls are PRE-BUILT here so the handlers hold
+        live refs. Engine owns body layout (spacing; alignment via _render_body)."""
         # ---- Photos: main picture + "תמונות נוספות" navigation ----
-        # The FilePicker is a Flet *service*; it's attached to THIS view's
-        # `services` (not page.services, which still points at the outgoing view
-        # while we build). _load_profile_data sets the real main-picture src once
-        # the profile is hydrated. The section embeds the mutated _main_image, so
-        # it is pre-built and embedded via raw().
         self._file_picker = ft.FilePicker()
         self._main_image, photo_section = profile_photos.build_photo_section(
             photo_urls=self._photo_urls,
@@ -175,66 +161,51 @@ class MyProfileView(BaseView):
             on_open_additional=lambda _e: self.page.go(self._ADDITIONAL_PHOTOS_ROUTE),
         )
 
-        # ---- Form fields — built via the stateless `my_profile_form` factories;
-        # the resulting refs are OUR instance attributes (single source of truth
-        # the load/save handlers mutate). ----
-        self._name_field, self._name_error = profile_form.build_name_field(
-            self._on_save_click,
-        )
-        self._bio_field, self._bio_error = profile_form.build_bio_field(
-            self._BIO_MAX_CHARS,
-        )
-        self._gender_dropdown, self._gender_error = profile_form.build_gender_dropdown(
-            _GENDER_OPTIONS,
-        )
-        (self._dob_day, self._dob_month, self._dob_year,
-         self._dob_error) = profile_form.build_dob_dropdowns(
-            _MIN_AGE_YEARS, _MAX_AGE_YEARS,
-        )
-        (self._city_field, self._city_error,
-         self._region_dropdown) = profile_form.build_location_fields(
+        # ---- Form fields — stateless factories; refs become our instance attrs. ----
+        self._name_field = profile_form.build_name_field(self._on_save_click)
+        self._bio_field = profile_form.build_bio_field(self._BIO_MAX_CHARS)
+        self._gender_dropdown = profile_form.build_gender_dropdown(_GENDER_OPTIONS)
+        (self._dob_day, self._dob_month,
+         self._dob_year) = profile_form.build_dob_dropdowns(_MIN_AGE_YEARS, _MAX_AGE_YEARS)
+        self._city_field, self._region_dropdown = profile_form.build_location_fields(
             self._on_save_click, _REGIONS_HE,
         )
 
-        # The scrollable form fields, top → bottom: identity, then demographics,
-        # then the free-text bio (longest, so it sits last).
+        # Scrollable form fields, top → bottom: identity, demographics, bio.
         return [
-            ui.raw(photo_section),
-            ui.raw(self._name_field),     ui.raw(self._name_error),
-            ui.raw(self._gender_dropdown), ui.raw(self._gender_error),
-            ui.text("תאריך לידה", size=DS.type.body,
-                    weight=ft.FontWeight.W_600, color=DS.palette.text_main),
-            ui.row(
-                [ui.raw(self._dob_day), ui.raw(self._dob_month),
-                 ui.raw(self._dob_year)],
+            photo_section,
+            self._name_field,
+            self._gender_dropdown,
+            ft.Text("תאריך לידה", rtl=True, text_align=ft.TextAlign.RIGHT,
+                    size=DS.type.body, weight=ft.FontWeight.W_600,
+                    color=DS.palette.text_main),
+            ft.Row(
+                controls=[self._dob_day, self._dob_month, self._dob_year],
                 spacing=DS.spacing.sm,
                 width=DS.sizing.input_w,
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
-            ui.raw(self._dob_error),
-            ui.raw(self._city_field),     ui.raw(self._city_error),
-            ui.raw(self._region_dropdown),
-            ui.raw(self._bio_field),      ui.raw(self._bio_error),
+            self._city_field,
+            self._region_dropdown,
+            self._bio_field,
         ]
 
-    def get_actions(self) -> list[ui.UIComponent]:
+    def get_actions(self) -> list[ft.Control]:
         # Primary "save" (red) above a divider above the secondary (blue-grey)
         # "return to menu", so a senior never confuses the two.
         return [
-            ui.primary_button("שמור שינויים", self._on_save_click),
-            ui.raw(create_action_divider(
+            create_primary_button("שמור שינויים", self._on_save_click),
+            create_action_divider(
                 width=DS.sizing.input_w, height=DS.sizing.divider_h_tall,
-            )),
-            ui.raw(back_to_menu_button(self.page)),
+            ),
+            back_to_menu_button(self.page),
         ]
 
-    def get_status_banner(self) -> ui.UIComponent:
-        # Inline success/error feedback (reliable across Flet versions — no
-        # dependency on page.snack_bar). Sits above the buttons in the sticky bar.
+    def get_status_banner(self):
         self._status_banner, self._status_text = create_status_banner(
             width=DS.sizing.input_w,
         )
-        return ui.raw(self._status_banner)
+        return self._status_banner
 
     def get_services(self) -> list[ft.Control]:
         # The FilePicker mounts + registers with THIS view (discarded on nav).
@@ -343,20 +314,23 @@ class MyProfileView(BaseView):
 
         # ---- Sequential field validation (first failure wins, one banner) ----
         if not name:
-            set_field_error(self._name_error, "שדה השם הוא חובה")
+            self._name_field.error_text = "שדה השם הוא חובה"
+            self.page.update()
             return
 
         gender_key = self._gender_dropdown.value
         if not gender_key:
-            set_field_error(self._gender_error, "אנא בחר/י מין")
+            self._gender_dropdown.error_text = "אנא בחר/י מין"
+            self.page.update()
             return
 
         birth = self._validated_birth_date()
         if birth is None:
-            return  # the helper already pinned the birth-date error label
+            return  # validated_birth_date already flushed dob_day.error_text
 
         if not city:
-            set_field_error(self._city_error, "שדה העיר הוא חובה")
+            self._city_field.error_text = "שדה העיר הוא חובה"
+            self.page.update()
             return
 
         # ---- Defensive: profile must have loaded before we can mutate it ----
@@ -404,11 +378,11 @@ class MyProfileView(BaseView):
         )
 
     def _validated_birth_date(self) -> date | None:
-        """Read the day/month/year dropdowns into a real `date`, or pin the
-        birth-date error label and return None. See `my_profile_form
+        """Read the day/month/year dropdowns into a real `date`, or set
+        `dob_day.error_text` and return None. See `my_profile_form
         .validated_birth_date` for the full validation rules."""
         return profile_form.validated_birth_date(
-            self._dob_day, self._dob_month, self._dob_year, self._dob_error,
+            self._dob_day, self._dob_month, self._dob_year,
             min_age_years=_MIN_AGE_YEARS, max_age_years=_MAX_AGE_YEARS,
         )
 
@@ -441,11 +415,9 @@ class MyProfileView(BaseView):
     # ============================================================
 
     def _clear_errors(self) -> None:
-        profile_form.clear_errors(
-            self.page,
-            self._name_error,
-            self._gender_error,
-            self._dob_error,
-            self._city_error,
-            self._bio_error,
-        )
+        self._name_field.error_text = None
+        self._gender_dropdown.error_text = None
+        self._dob_day.error_text = None
+        self._city_field.error_text = None
+        self._bio_field.error_text = None
+        self.page.update()

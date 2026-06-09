@@ -12,6 +12,7 @@ def create_hebrew_text_field(
     min_lines: int | None = None,
     max_lines: int | None = None,
     max_length: int | None = None,
+    keyboard_type: ft.KeyboardType | None = None,
 ) -> ft.TextField:
     """The ONE senior-friendly RTL text-field primitive — every form input in
     the app must go through here, so size/RTL/geometry are defined in one place.
@@ -43,5 +44,11 @@ def create_hebrew_text_field(
         min_lines=min_lines,
         max_lines=max_lines,
         max_length=max_length,
+        keyboard_type=keyboard_type,
         on_submit=on_submit,
+        error_style=ft.TextStyle(
+            size=DS.type.input,
+            color=DS.palette.field_error,
+            weight=ft.FontWeight.W_500,
+        ),
     )

@@ -5,8 +5,8 @@ The structural COMPOSITION — the single centred, translucent card every screen
 renders inside (Welcome/Login's shape), the overlay Stack — lives in
 `views/_base.py`: `BaseView` is the single home of structural-layout decisions.
 This module keeps only the reusable primitives it builds from: the full-screen
-background, the translucent card, the shared Error Component + `guard`, and the
-responsive-clamp math. All concrete values come from the Design System, read
+background, the responsive card (semi-transparent, tagged, width-clamped), the
+shared Error Component + `guard`, and the responsive-clamp math. All concrete values come from the Design System, read
 directly (via `utils.constants`/`DS`) at the point of use — this module owns no
 re-exported geometry tokens of its own.
 """
@@ -95,31 +95,6 @@ def background_screen(route: str, content: ft.Control) -> ft.View:
                 ),
             ),
         ],
-    )
-
-
-def translucent_card(
-    content: ft.Control,
-    *,
-    expand: bool = False,
-    margin: ft.Margin | None = None,
-    padding: ft.Padding | int | None = None,
-) -> ft.Container:
-    """A semi-transparent white card so `content` stays readable over the BG.
-
-    Uses `DS.opacity.form_overlay` (white at 50%) and the standard
-    corner radius, so the background image shows through while text stays
-    legible — identical to the My Profile form card.
-    """
-    return ft.Container(
-        content=content,
-        expand=expand,
-        margin=margin,
-        padding=DS.pad.card if padding is None else padding,
-        bgcolor=ft.Colors.with_opacity(
-            DS.opacity.form_overlay, DS.palette.surface,
-        ),
-        border_radius=DS.radius.card,
     )
 
 
@@ -224,8 +199,8 @@ def responsive_card(
     expand: bool = False,
     padding: ft.Padding | int | None = None,
 ) -> ft.Container:
-    """A `translucent_card` tagged + width-bounded — the ONE card shape every
-    screen renders inside, centred and clamped to the app's mobile-width cap.
+    """The ONE card shape every screen renders inside — semi-transparent,
+    tagged, and clamped to the app's mobile-width cap.
 
     Default width is None → content-sized (never wider than its 400-px controls,
     so it never stretches on a wide window). `BaseView` sets an explicit clamped
@@ -236,10 +211,12 @@ def responsive_card(
     list (`EXPAND_BODY = True`) grow the SAME card to fill the viewport — with
     the taller top clearance a full-height card needs to clear the BG image's
     logo — without changing its chrome or its width treatment."""
-    card = translucent_card(
-        card_content,
+    card = ft.Container(
+        content=card_content,
         expand=expand,
         padding=DS.pad.card if padding is None else padding,
+        bgcolor=ft.Colors.with_opacity(DS.opacity.form_overlay, DS.palette.surface),
+        border_radius=DS.radius.card,
     )
     card.width = width
     card.data = _HUB_CARD_TAG

@@ -46,9 +46,7 @@ def unmount_all(page: ft.Page) -> None:
 
 
 def push(page: ft.Page, build_fn: Callable[[str], ft.View], route_str: str) -> None:
-    """FORWARD navigation: cover the current top, append the new view."""
-    if page.views:
-        notify(page.views[-1], "on_cover")
+    """FORWARD navigation: append the new view on top of the current one."""
     view = build_fn(route_str)
     page.views.append(view)
     page.route = route_str
@@ -73,7 +71,6 @@ def unwind_to(page: ft.Page, idx: int, route_str: str) -> None:
         notify(leaving, "on_unmount")
     target = page.views[-1]
     page.route = route_str
-    notify(target, "on_reveal")
     page.update()
 
 

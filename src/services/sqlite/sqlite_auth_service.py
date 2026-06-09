@@ -11,14 +11,13 @@ import re
 import secrets
 import sqlite3
 from contextlib import AbstractContextManager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from services.interfaces.i_auth_service import IAuthService
 from services.sqlite.sqlite_queries import (
     connection, transaction, AuthQueries, ProfileQueries,
 )
 from utils.constants import AuthConfig
-from utils.timeutils import utcnow_naive
 from utils.validation import validate_email, validate_password
 
 log = logging.getLogger(__name__)
@@ -107,7 +106,7 @@ class SqliteAuthService(IAuthService):
         except ValueError:
             log.warning("auth: malformed expires_at %r → treating as expired", expires_at)
             return True
-        return expires <= utcnow_naive()
+        return expires <= datetime.now(timezone.utc).replace(tzinfo=None)
 
     # ============================================================
     #  IAuthService — account lifecycle
@@ -121,7 +120,7 @@ class SqliteAuthService(IAuthService):
         if self.is_username_exists(username) or self.is_email_exists(email):
             return False
         user_id = secrets.token_urlsafe(16)
-        now = utcnow_naive().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             # ONE atomic transaction. The minimal profile row is written first
             # because auth_credentials FKs user_profiles; the profile SQL lives
@@ -157,7 +156,7 @@ class SqliteAuthService(IAuthService):
                 ok = self._verify_password(password, row["password_hash"])
                 c.execute(
                     AuthQueries.UPDATE_LOGIN_RESULT,
-                    (utcnow_naive().isoformat(), ok, row["user_id"]),
+                    (datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), ok, row["user_id"]),
                 )
                 return row["user_id"] if ok else None
         except sqlite3.Error as e:
@@ -204,7 +203,7 @@ class SqliteAuthService(IAuthService):
         if not user_id:
             raise ValueError("user_id is required")
         token = secrets.token_urlsafe(AuthConfig.REMEMBER_ME_TOKEN_BYTES)
-        now = utcnow_naive()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         expires_at = now + timedelta(days=AuthConfig.REMEMBER_ME_DAYS)
         try:
             with self._conn() as c:

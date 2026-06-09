@@ -6,11 +6,6 @@ import flet as ft
 from components.buttons import create_secondary_button
 from utils.routes import MENU
 
-# Canonical Main Menu route. Alias of `utils.routes.MENU` (mirrors
-# MainMenuView.ROUTE) so this lightweight helper module need not import a
-# whole view class.
-MENU_ROUTE = MENU
-
 
 def back_to_menu_button(page: ft.Page) -> ft.Button:
     """A senior-friendly 'Return to Main Menu' button for any internal screen.
@@ -20,11 +15,11 @@ def back_to_menu_button(page: ft.Page) -> ft.Button:
     """
     return create_secondary_button(
         "חזור לתפריט הראשי",
-        lambda _e: page.go(MENU_ROUTE),
+        lambda _e: page.go(MENU),
     )
 
 
-def go_back(page: ft.Page, *, fallback: str = MENU_ROUTE) -> None:
+def go_back(page: ft.Page, *, fallback: str = MENU) -> None:
     """Stack-aware 'go back one screen'.
 
     Pops to the view immediately BELOW the top of `page.views` by navigating to
@@ -57,7 +52,7 @@ def back_button(
     page: ft.Page,
     *,
     label: str = "חזור",
-    fallback: str = MENU_ROUTE,
+    fallback: str = MENU,
 ) -> ft.Button:
     """A senior-friendly, SECONDARY (blue-grey) stack-aware back button.
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.engine.screen import error_component, DEFAULT_ERROR_MESSAGE
 
 
@@ -34,11 +33,11 @@ class SystemHubView(BaseView):
         self._content = content
         self._actions = list(actions or [])
 
-    def get_content(self) -> "list[ui.UIComponent]":
-        return [ui.raw(self._content)]
+    def get_content(self) -> "list[ft.Control]":
+        return [self._content]
 
-    def get_actions(self) -> "list[ui.UIComponent]":
-        return [ui.raw(a) for a in self._actions]
+    def get_actions(self) -> "list[ft.Control]":
+        return list(self._actions)
 
 
 def boot_view(page: ft.Page, content: ft.Control) -> ft.View:

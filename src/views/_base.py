@@ -31,7 +31,6 @@ from concurrent.futures import Future
 
 import flet as ft
 
-from views.common.engine import renderer as ui
 from views.common.engine.screen import (
     BodyLayout,
     background_screen, responsive_card, responsive_card_of,
@@ -41,10 +40,6 @@ from views.common.engine.screen import (
 from style.design_system import DS
 
 log = logging.getLogger(__name__)
-
-# One stateless renderer shared by every view — it holds no per-instance state.
-_RENDERER = ui.ViewRenderer()
-
 
 class BaseView:
     """Page wrapper + structural engine. Subclasses declare exactly which service
@@ -62,6 +57,7 @@ class BaseView:
     #       owns its own internal scroll — chat/matches/photo albums/long lists.
     EXPAND_BODY: bool = False
     BODY_LAYOUT: BodyLayout = BodyLayout.SCROLLING
+    BODY_CROSS_ALIGN: ft.CrossAxisAlignment = DS.body.cross_align
 
     def __init__(self, page: ft.Page) -> None:
         self.page = page
@@ -83,29 +79,28 @@ class BaseView:
     #  The Interface — a screen PROVIDES content; it never writes build()
     # ============================================================
 
-    def get_header(self) -> "ui.UIComponent | None":
-        """The screen's title CONTENT (e.g. `ui.heading("…")`). The engine styles
-        and positions it — centred, as the body's first slot, the one heading rule
-        for every screen. Default: no header."""
+    def get_header(self) -> "ft.Control | None":
+        """The screen's title control (e.g. `create_screen_heading("…")`). The
+        engine positions it — centred, as the body's first slot. Default: none."""
         return None
 
-    def get_content(self) -> "list[ui.UIComponent]":
-        """REQUIRED for new-style screens. The body CONTENT as a flat list of
-        `UIComponent` nodes — NO spacing/alignment/wrapping (the engine owns those)."""
+    def get_content(self) -> "list[ft.Control]":
+        """REQUIRED. The body controls as a flat list — NO spacing/alignment/
+        wrapping (the engine owns those)."""
         raise NotImplementedError(
             f"{type(self).__name__} must implement get_content()"
         )
 
-    def get_actions(self) -> "list[ui.UIComponent]":
-        """The screen's action buttons in display order. Default: none."""
+    def get_actions(self) -> "list[ft.Control]":
+        """The screen's action controls in display order. Default: none."""
         return []
 
-    def get_status_banner(self) -> "ui.UIComponent | None":
+    def get_status_banner(self) -> "ft.Control | None":
         """An inline banner stacked at the tail of the card (save/error/empty
         feedback), above the actions. Default: none."""
         return None
 
-    def get_overlay(self) -> "ui.UIComponent | None":
+    def get_overlay(self) -> "ft.Control | None":
         """A fullscreen layer stacked OVER the whole frame (e.g. a lightbox),
         via an `ft.Stack` — present on any screen. Default: none."""
         return None
@@ -134,19 +129,16 @@ class BaseView:
     # ---- content resolution ----
 
     def _resolve_regions(self):
-        """Return (body, actions, banner, overlay, services) as built controls,
-        from the screen's pure-content interface (`get_header`/`get_content`/
-        `get_actions`/…) — the engine builds the standardized body itself.
+        """Return (body, actions, banner, overlay, services) as built controls.
 
-        Fault-isolated to preserve the component ring of the two-layer backstop: a
-        failing `get_content`/`get_header` degrades the body to the Error Component;
-        a failing `get_actions`/banner/overlay/services degrades to none — `build()`
-        never raises (only the body failure is visible, as before)."""
-        body = guard(self._render_body)                          # → Error Component on failure
-        actions = self._safe(lambda: _RENDERER.render_all(self.get_actions()), [])
-        banner = self._safe(lambda: self._render_node(self.get_status_banner()), None)
-        overlay = self._safe(lambda: self._render_node(self.get_overlay()), None)
-        services = self._safe(lambda: list(self.get_services()), [])
+        Fault-isolated: a failing `get_content`/`get_header` degrades the body to
+        the Error Component; a failing `get_actions`/banner/overlay/services
+        degrades to none — `build()` never raises."""
+        body = guard(self._render_body)
+        actions = self._safe(self.get_actions, [])
+        banner = self._safe(self.get_status_banner, None)
+        overlay = self._safe(self.get_overlay, None)
+        services = self._safe(self.get_services, [])
         return body, actions, banner, overlay, services
 
     @staticmethod
@@ -159,31 +151,20 @@ class BaseView:
             log.exception("BaseView: region build failed; degrading")
             return fallback
 
-    def _render_node(self, node: "ui.UIComponent | None") -> ft.Control | None:
-        return _RENDERER.render(node) if node is not None else None
-
     def _render_body(self) -> ft.Control:
-        """The standardized body column: the DS-styled header (if any) as the first
-        slot, then the content nodes — one DS spacing/alignment for ALL screens."""
+        """The standardized body column: header (if any) then content — one DS
+        spacing/alignment for ALL screens."""
         children: list[ft.Control] = []
         header = self.get_header()
         if header is not None:
-            children.append(self._render_header(header))
-        children.extend(_RENDERER.render_all(self.get_content()))
+            children.append(header)
+        children.extend(self.get_content())
         return ft.Column(
             controls=children,
             spacing=DS.body.spacing,
-            horizontal_alignment=DS.body.cross_align,
+            horizontal_alignment=self.BODY_CROSS_ALIGN,
             expand=(self.BODY_LAYOUT is BodyLayout.SELF_SCROLLING),
         )
-
-    def _render_header(self, node: "ui.UIComponent") -> ft.Control:
-        """Render the header, RE-STAMPING its alignment from the DS — every
-        screen's heading is centred (the one rule, Welcome/Login's shape), so a
-        screen never picks its own."""
-        if node.kind is ui.Kind.HEADING:
-            node = ui.heading(node.text, center=(DS.body.heading_align is ft.TextAlign.CENTER))
-        return _RENDERER.render(node)
 
     # ============================================================
     #  The FRAME — absorbed structural composition (was ScreenShell)
@@ -406,15 +387,6 @@ class BaseView:
         CONSUME the pop in-view (e.g. close a fullscreen lightbox); return
         False/None to let the router pop and unmount this view."""
         return False
-
-    def on_cover(self) -> None:
-        """Another view was pushed on top; this view stays mounted but hidden.
-        Override to pause polling/timers/streams."""
-        pass
-
-    def on_reveal(self) -> None:
-        """This view became the top again after a pop. Override to resume."""
-        pass
 
     # ============================================================
     #  Liveness

@@ -17,11 +17,10 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
-from views.common.helpers.session import safe_remove
 from components import loading
+from components.buttons import create_primary_button, create_secondary_button
 from components.inputs import create_hebrew_text_field
-from components.feedback import create_field_error_label, set_field_error, clear_field_errors
+from components.typography import create_screen_heading
 from services.interfaces.i_auth_service import IAuthService
 from utils import local_storage
 from utils import routes
@@ -49,26 +48,22 @@ class LoginView(BaseView):
     #  Layout — the interface the framework renders
     # ============================================================
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading("התחברות למערכת")          # engine centres it (HUB) via the DS
+    def get_header(self):
+        return create_screen_heading("התחברות למערכת")
 
-    def get_content(self) -> list[ui.UIComponent]:
+    def get_content(self) -> list[ft.Control]:
         # Inputs, error labels and the remember-me checkbox are read/mutated in
-        # the submit handler, so they are PRE-BUILT and embedded via raw(). The
-        # engine owns the body spacing/alignment — the screen supplies only content.
+        # the submit handler, so they are PRE-BUILT. The engine owns spacing/alignment.
         self._email_field = create_hebrew_text_field(
             "אימייל",
             on_submit=self._on_login_click,
+            keyboard_type=ft.KeyboardType.EMAIL,
         )
         self._password_field = create_hebrew_text_field(
             "סיסמה",
             password=True,
             on_submit=self._on_login_click,
         )
-
-        # ---- Adjacent error labels (one per field) ----
-        self._email_error    = create_field_error_label()
-        self._password_error = create_field_error_label()
 
         # ---- "Remember Me" — large, senior-friendly checkbox. When ticked,
         # a successful login persists a backend-minted device token (NOT the
@@ -83,19 +78,17 @@ class LoginView(BaseView):
         )
 
         return [
-            ui.raw(self._email_field),
-            ui.raw(self._email_error),
-            ui.raw(self._password_field),
-            ui.raw(self._password_error),
-            ui.raw(self._remember_me),
+            self._email_field,
+            self._password_field,
+            self._remember_me,
         ]
 
-    def get_actions(self) -> list[ui.UIComponent]:
+    def get_actions(self) -> list[ft.Control]:
         # Primary (red) = the constructive login action; secondary (blue-grey) =
         # cancel/navigation, per the action hierarchy.
         return [
-            ui.primary_button("התחבר", self._on_login_click),
-            ui.secondary_button("ביטול", lambda _: self.page.go(routes.WELCOME)),
+            create_primary_button("התחבר", self._on_login_click),
+            create_secondary_button("ביטול", lambda _: self.page.go(routes.WELCOME)),
         ]
 
     # ============================================================
@@ -116,9 +109,10 @@ class LoginView(BaseView):
         # the OLD user's UID in the store, and a subsequent navigate to a
         # user-scoped view (e.g. /profile/me) would load the wrong profile.
         # This MUST run before validation and before any backend call.
-        safe_remove(self.page,
-                    SESSION_USER_ID_KEY,
-                    SESSION_USER_EMAIL_KEY)
+        _store = self.page.session.store
+        for _k in (SESSION_USER_ID_KEY, SESSION_USER_EMAIL_KEY):
+            if _store.contains_key(_k):
+                _store.remove(_k)
 
         self._clear_errors()
 
@@ -127,14 +121,13 @@ class LoginView(BaseView):
 
         # ---- Field-level validation (no I/O) ----
         if not self.auth.is_email_valid(email):
-            set_field_error(
-                self._email_error,
-                "כתובת האימייל שהוזנה אינה חוקית (למשל: name@domain.com)",
-            )
+            self._email_field.error_text = "כתובת האימייל שהוזנה אינה חוקית (למשל: name@domain.com)"
+            self.page.update()
             return
 
         if not self.auth.is_password_valid(password):
-            set_field_error(self._password_error, "אנא הזן סיסמה תקינה")
+            self._password_field.error_text = "אנא הזן סיסמה תקינה"
+            self.page.update()
             return
 
         # ---- Backend call (blocking → off the UI thread) ----
@@ -165,10 +158,8 @@ class LoginView(BaseView):
             self.page.go(routes.MENU)
         else:
             # Generic backend failure → pin to password field (typical cause)
-            set_field_error(
-                self._password_error,
-                "ההתחברות נכשלה. אנא בדוק/י את האימייל והסיסמה ונסה/י שוב.",
-            )
+            self._password_field.error_text = "ההתחברות נכשלה. אנא בדוק/י את האימייל והסיסמה ונסה/י שוב."
+            self.page.update()
 
     # ============================================================
     #  "Remember Me" persistence
@@ -209,5 +200,6 @@ class LoginView(BaseView):
     # ============================================================
 
     def _clear_errors(self) -> None:
-        clear_field_errors(self._email_error, self._password_error)
+        self._email_field.error_text = None
+        self._password_field.error_text = None
         self.page.update()

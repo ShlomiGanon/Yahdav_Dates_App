@@ -1,57 +1,14 @@
-"""Shared user-feedback primitives: per-field validation error labels and the
-inline status banner (success/error) with its show/hide helper.
+"""Inline status banner (success / error feedback above the action bar).
 
-Centralising these means a view never hand-rolls an error `ft.Text` or a banner
-`ft.Container` again — using the primitive IS complying with the design system.
+Form validation errors use `ft.TextField.error_text` / `error_style` directly —
+no separate error-label controls needed. This module owns only the banner that
+lives in the card tail between the form and the action buttons.
 """
 import asyncio
 
 import flet as ft
 
 from style.design_system import DS
-
-
-# ----------------------------------------------------------------------------
-# Per-field validation error labels
-# ----------------------------------------------------------------------------
-
-
-def create_field_error_label() -> ft.Text:
-    """A hidden, high-visibility, RTL error label sized for the 50+ audience.
-
-    Shown beneath an input via `set_field_error`; one message at a time so a
-    senior sees exactly which field failed and why. The colour comes from
-    `DS.palette.field_error` (no raw hex in views)."""
-    return ft.Text(
-        value="",
-        size=DS.type.input,
-        color=DS.palette.field_error,
-        weight=ft.FontWeight.W_500,
-        rtl=True,
-        text_align=ft.TextAlign.RIGHT,
-        visible=False,
-        selectable=False,
-    )
-
-
-def set_field_error(label: ft.Text, message: str) -> None:
-    """Show `message` on a field error label and push it to the client. Safe to
-    call from a mounted view (a detached label silently no-ops on update)."""
-    label.value = message
-    label.visible = bool(message)
-    try:
-        label.update()
-    except Exception:  # noqa: BLE001 — not yet mounted; the value still sticks
-        pass
-
-
-def clear_field_errors(*labels: ft.Text) -> None:
-    """Reset one or more field error labels to hidden/empty. Does NOT call
-    `update()` — the caller flushes once (typically via `page.update()`) so a
-    multi-field clear is a single repaint."""
-    for label in labels:
-        label.value = ""
-        label.visible = False
 
 
 # ----------------------------------------------------------------------------

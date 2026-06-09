@@ -86,7 +86,6 @@ from views.auth.login_view import LoginView
 from views.auth.signup_view import SignupView
 from views.common.helpers.navigation import go_back
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.helpers import peer_data
 from views.common.engine.screen import BodyLayout, responsive_card_of
 from views.common.helpers.photo_ops import save_photo_urls_or_rollback
@@ -1237,9 +1236,9 @@ class TestUnifiedCardLayout(unittest.TestCase):
 
         class _V(BaseView):
             ROUTE = "/x"
-            def get_content(self): return [ui.raw(heading)]
-            def get_status_banner(self): return ui.raw(banner)
-            def get_actions(self): return [ui.raw(back)]
+            def get_content(self): return [heading]
+            def get_status_banner(self): return banner
+            def get_actions(self): return [back]
         _V.EXPAND_BODY = expand_body
         _V.BODY_LAYOUT = BodyLayout.SELF_SCROLLING if self_scroll else BodyLayout.SCROLLING
         return _V(FakePage()).build()
@@ -1276,7 +1275,7 @@ class TestUnifiedCardLayout(unittest.TestCase):
 
         class _V(BaseView):
             ROUTE = "/menu"
-            def get_content(self): return [ui.raw(c) for c in (t1, t2)]
+            def get_content(self): return [t1, t2]
         view = _V(FakePage()).build()
 
         wrap = _screen_root(view)
@@ -1297,7 +1296,7 @@ class TestUnifiedCardLayout(unittest.TestCase):
 
         class _V(BaseView):
             ROUTE = "/x"
-            def get_content(self): return [ui.raw(ft.Text("x"))]
+            def get_content(self): return [ft.Text("x")]
         card = self._card(_V(FakePage()).build())
         self.assertEqual(card.padding, DS.pad.card)
 
@@ -1554,8 +1553,8 @@ class TestLoginViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
 
         await view._on_login_click(None)
 
-        self.assertTrue(view._email_error.value)
-        self.assertFalse(view._password_error.value)        # first failure wins
+        self.assertTrue(view._email_field.error_text)
+        self.assertFalse(view._password_field.error_text)   # first failure wins
         self.assertIsNone(page.session.store.get("current_user_id"))
 
     async def test_weak_password_is_pinned_to_the_password_field(self):
@@ -1565,8 +1564,8 @@ class TestLoginViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
 
         await view._on_login_click(None)
 
-        self.assertFalse(view._email_error.value)
-        self.assertTrue(view._password_error.value)
+        self.assertFalse(view._email_field.error_text)
+        self.assertTrue(view._password_field.error_text)
 
     async def test_wrong_password_shows_generic_failure_without_identity_leak(self):
         page, view = self._build_view()
@@ -1575,7 +1574,7 @@ class TestLoginViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
 
         await view._on_login_click(None)
 
-        self.assertTrue(view._password_error.value)
+        self.assertTrue(view._password_field.error_text)
         self.assertIsNone(page.session.store.get("current_user_id"))
         self.assertEqual(page.route, LoginView.ROUTE)       # never navigated away
 
@@ -1656,23 +1655,23 @@ class TestSignupViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
         page, view = self._build_view()
         await self._submit(view, email="not-an-email",
                            password=_TEST_PASSWORD, confirm=_TEST_PASSWORD)
-        self.assertTrue(view._email_error.value)
-        self.assertFalse(view._password_error.value)
+        self.assertTrue(view._email_field.error_text)
+        self.assertFalse(view._password_field.error_text)
         self.assertEqual(page.route, SignupView.ROUTE)
 
     async def test_weak_password_is_pinned_to_the_password_field(self):
         page, view = self._build_view()
         await self._submit(view, email="newmember@example.com",
                            password="short", confirm="short")
-        self.assertFalse(view._email_error.value)
-        self.assertTrue(view._password_error.value)
+        self.assertFalse(view._email_field.error_text)
+        self.assertTrue(view._password_field.error_text)
 
     async def test_mismatched_confirmation_is_pinned_to_the_confirm_field(self):
         page, view = self._build_view()
         await self._submit(view, email="newmember@example.com",
                            password=_TEST_PASSWORD, confirm="Different1!")
-        self.assertFalse(view._password_error.value)
-        self.assertTrue(view._confirm_password_error.value)
+        self.assertFalse(view._password_field.error_text)
+        self.assertTrue(view._confirm_password_field.error_text)
 
     async def test_successful_signup_derives_username_and_routes_to_login(self):
         page, view = self._build_view()
@@ -1690,7 +1689,7 @@ class TestSignupViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase):
         await self._submit(view, email="dup@example.com",
                            password=_TEST_PASSWORD, confirm=_TEST_PASSWORD)
 
-        self.assertTrue(view._email_error.value)
+        self.assertTrue(view._email_field.error_text)
         self.assertEqual(page.route, SignupView.ROUTE)
 
 
@@ -1779,8 +1778,8 @@ class TestMyProfileViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase)
 
         await view._on_save_click(None)
 
-        self.assertTrue(view._name_error.value)
-        self.assertFalse(view._gender_error.value)           # sequential — first wins
+        self.assertTrue(view._name_field.error_text)
+        self.assertFalse(view._gender_dropdown.error_text)   # sequential — first wins
         after = self.profiles.get_profile(self.uid)
         self.assertEqual(
             after.display_name.for_gender(after.gender),
@@ -1796,7 +1795,7 @@ class TestMyProfileViewBehavior(_BackendMixin, unittest.IsolatedAsyncioTestCase)
 
         await view._on_save_click(None)
 
-        self.assertTrue(view._dob_error.value)
+        self.assertTrue(view._dob_day.error_text)
         reloaded = self.profiles.get_profile(self.uid)
         self.assertEqual(reloaded.date_of_birth.year, 1900)  # sentinel untouched
 

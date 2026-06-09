@@ -23,8 +23,8 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.helpers.navigation import back_to_menu_button, back_button
+from components.typography import create_screen_heading
 from style.design_system import DS
 from views.common.helpers.photos import DEFAULT_PROFILE_IMAGE, extra_photo_urls, photo_thumb
 from views.common.helpers.photo_ops import pick_and_upload, save_photo_urls_or_rollback
@@ -74,43 +74,40 @@ class AdditionalPhotosView(BaseView):
     #  Layout
     # ============================================================
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading("תמונות נוספות")
+    def get_header(self):
+        return create_screen_heading("תמונות נוספות")
 
-    def get_content(self) -> list[ui.UIComponent]:
-        # The photos area is populated at runtime (_refresh_photos), so it is
-        # PRE-BUILT and embedded via raw(); the hint is declarative. STRETCH so
-        # tiles span the card width and right-align via text_align.
+    def get_content(self) -> list[ft.Control]:
+        # The photos area is populated at runtime (_refresh_photos); PRE-BUILT so
+        # the handler holds the live ref. STRETCH so tiles span the card width.
         self._file_picker = ft.FilePicker()
         self._photos_area = ft.Column(
             spacing=DS.spacing.md,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
         return [
-            ui.text(
+            ft.Text(
                 f"ניתן להוסיף עד {StorageConfig.MAX_EXTRA_PHOTOS} תמונות, "
                 f"בנוסף לתמונת הפרופיל הראשית.",
-                size=DS.type.small,
-                color=DS.palette.text_main,
+                rtl=True, text_align=ft.TextAlign.RIGHT,
+                size=DS.type.small, color=DS.palette.text_main,
             ),
-            ui.raw(self._photos_area),
+            self._photos_area,
         ]
 
-    def get_actions(self) -> list[ui.UIComponent]:
+    def get_actions(self) -> list[ft.Control]:
         # Stack-aware "back to profile" (profile is the only entry point) + the
         # menu button (UNWIND to /menu).
         return [
-            ui.raw(back_button(
-                self.page, label="חזרה לפרופיל", fallback=self._PROFILE_ROUTE,
-            )),
-            ui.raw(back_to_menu_button(self.page)),
+            back_button(self.page, label="חזרה לפרופיל", fallback=self._PROFILE_ROUTE),
+            back_to_menu_button(self.page),
         ]
 
-    def get_status_banner(self) -> ui.UIComponent:
+    def get_status_banner(self):
         self._status_banner, self._status_text = create_status_banner(
             width=DS.sizing.input_w,
         )
-        return ui.raw(self._status_banner)
+        return self._status_banner
 
     def get_services(self) -> list[ft.Control]:
         # The FilePicker mounts + registers with THIS view (discarded on nav).

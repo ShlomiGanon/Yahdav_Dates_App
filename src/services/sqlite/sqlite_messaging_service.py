@@ -9,11 +9,11 @@ import logging
 import sqlite3
 import uuid
 from contextlib import AbstractContextManager
+from datetime import datetime, timezone
 
 from services.interfaces.i_messaging_service import IMessagingService
 from services.sqlite.sqlite_queries import connection, MessagingQueries
 from utils.constants import ChatConfig, MessageType, MessageStatus
-from utils.timeutils import utcnow_naive
 
 log = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class SqliteMessagingService(IMessagingService):
 
         message_id = str(uuid.uuid4())
         conversation_id = self._conversation_key(sender_id, recipient_id)
-        created_at = utcnow_naive().isoformat()
+        created_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             with self._conn() as c:
                 c.execute(
@@ -140,7 +140,7 @@ class SqliteMessagingService(IMessagingService):
     def mark_messages_as_read(self, chat_owner_id: str, sender_id: str) -> None:
         if not chat_owner_id or not sender_id:
             raise ValueError("chat_owner_id and sender_id are required")
-        now = utcnow_naive().isoformat()
+        now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
         try:
             with self._conn() as c:
                 cur = c.execute(

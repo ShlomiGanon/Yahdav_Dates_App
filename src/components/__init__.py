@@ -7,6 +7,5 @@ from . import (
     chat,
     avatars,
     cards,
-    discover,
     profile_fields,
 )

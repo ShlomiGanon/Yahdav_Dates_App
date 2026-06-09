@@ -11,12 +11,11 @@ import json
 import logging
 import sqlite3
 from contextlib import AbstractContextManager
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from services.interfaces.i_profile_repository import IProfileRepository
 from services.sqlite.sqlite_queries import connection, transaction, ProfileQueries
 from utils.constants import MatchConfig, AssetPaths
-from utils.timeutils import utcnow_naive
 from models.user_profile import (
     UserProfile, AccountStatus, Gender, SafetyFlag,
     LocalizedText, Location, Lifestyle, IceBreaker,
@@ -185,7 +184,7 @@ class SqliteProfileRepository(IProfileRepository):
         try:
             return datetime.fromisoformat(str(raw))
         except (TypeError, ValueError):
-            return utcnow_naive()
+            return datetime.now(timezone.utc).replace(tzinfo=None)
 
     @staticmethod
     def _status_from(raw: object) -> AccountStatus:
@@ -234,7 +233,7 @@ class SqliteProfileRepository(IProfileRepository):
             "safety_flags":       int(p.safety_flags.value),
             "verification_level": (p._verification.current_level().value
                                    if getattr(p, "_verification", None) else 0),
-            "updated_at":         utcnow_naive().isoformat(),
+            "updated_at":         datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
 
     @classmethod
@@ -355,7 +354,7 @@ class SqliteProfileRepository(IProfileRepository):
             with self._conn() as c:
                 c.execute(
                     ProfileQueries.UPDATE_SAFETY_FLAGS,
-                    (int(flags.value), utcnow_naive().isoformat(), user_id),
+                    (int(flags.value), datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), user_id),
                 )
         except sqlite3.Error as e:
             log.exception("update_safety_flags failed user=%s: %s", user_id, e)
@@ -368,7 +367,7 @@ class SqliteProfileRepository(IProfileRepository):
             with self._conn() as c:
                 c.execute(
                     ProfileQueries.INSERT_BLOCK,
-                    (blocker_id, blocked_id, utcnow_naive().isoformat()),
+                    (blocker_id, blocked_id, datetime.now(timezone.utc).replace(tzinfo=None).isoformat()),
                 )
         except sqlite3.Error as e:
             log.exception("add_block failed blocker=%s blocked=%s: %s",
@@ -389,7 +388,7 @@ class SqliteProfileRepository(IProfileRepository):
                 cur = c.execute(
                     ProfileQueries.HEAL_MISSING_PHOTOS,
                     (ProfileQueries.DEFAULT_PHOTOS_JSON,
-                     utcnow_naive().isoformat(), user_id),
+                     datetime.now(timezone.utc).replace(tzinfo=None).isoformat(), user_id),
                 )
                 if cur.rowcount:
                     log.info("healed missing photo data for user=%s", user_id)

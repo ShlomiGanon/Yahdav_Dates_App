@@ -29,7 +29,6 @@ if str(_SRC) not in sys.path:
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.views.system_views import error_view
 from views.common.engine.screen import (
     BodyLayout, background_screen, error_component, guard,
@@ -96,15 +95,15 @@ def _make_view(
         def get_content(self):
             if fail_content:
                 raise RuntimeError("content blew up")
-            return [ui.raw(body)] if body is not None else []
+            return [body] if body is not None else []
         def get_actions(self):
             if fail_actions:
                 raise RuntimeError("actions blew up")
-            return [ui.raw(a) for a in actions]
+            return list(actions)
         def get_status_banner(self):
-            return ui.raw(banner) if banner is not None else None
+            return banner
         def get_overlay(self):
-            return ui.raw(overlay) if overlay is not None else None
+            return overlay
     _V.EXPAND_BODY = expand_body
     _V.BODY_LAYOUT = body_layout
     return _V(page).build()
@@ -175,7 +174,7 @@ class TestResponsiveness(unittest.TestCase):
     def test_baseview_applies_clamp_to_card(self):
         class V(BaseView):
             ROUTE = "/v"
-            def get_content(self): return [ui.raw(ft.Text("t"))]
+            def get_content(self): return [ft.Text("t")]
         page = FakePage(width=320)
         view_obj = V(page)
         view_obj.build()                      # captures the responsive card

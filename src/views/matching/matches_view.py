@@ -27,8 +27,8 @@ import flet as ft
 
 from views._base import BaseView
 from views.common.engine.screen import BodyLayout
-from views.common.engine import renderer as ui
 from views.common.helpers.navigation import back_to_menu_button
+from components.typography import create_screen_heading
 from views.common.helpers.safe_list import build_items_safe
 from views.common.helpers.load_flow import run_guarded_load, LoadGuard
 from components.feedback import create_status_banner, show_status
@@ -76,26 +76,25 @@ class MatchesView(BaseView):
     EXPAND_BODY = True                        # long thread list → fill the viewport
     BODY_LAYOUT = BodyLayout.SELF_SCROLLING   # the ListView owns its own scroll
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading("היסטוריית שיחות")
+    def get_header(self):
+        return create_screen_heading("היסטוריית שיחות")
 
-    def get_content(self) -> list[ui.UIComponent]:
-        # The scrolling thread list is populated at runtime (_load), so it is
-        # PRE-BUILT and embedded via raw(); the engine expands the body (the
-        # ListView owns its scroll — SELF_SCROLLING).
+    def get_content(self) -> list[ft.Control]:
+        # The scrolling thread list is populated at runtime (_load), pre-built so
+        # the handler holds the live ref (SELF_SCROLLING — ListView owns scroll).
         self._feed_list = ft.ListView(
             expand=True,
             spacing=DS.spacing.element,
             padding=DS.pad.list_v,
         )
-        return [ui.raw(self._feed_list)]
+        return [self._feed_list]
 
-    def get_actions(self) -> list[ui.UIComponent]:
-        return [ui.raw(back_to_menu_button(self.page))]   # UNWIND to /menu
+    def get_actions(self) -> list[ft.Control]:
+        return [back_to_menu_button(self.page)]   # UNWIND to /menu
 
-    def get_status_banner(self) -> ui.UIComponent:
+    def get_status_banner(self):
         self._status_banner, self._status_text = create_status_banner()
-        return ui.raw(self._status_banner)
+        return self._status_banner
 
     def on_mount(self) -> None:
         """Mounted into the page tree: start the owned one-shot thread load.

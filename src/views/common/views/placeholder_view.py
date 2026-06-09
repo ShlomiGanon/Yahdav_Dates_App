@@ -11,8 +11,8 @@ from __future__ import annotations
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.helpers.navigation import back_to_menu_button
+from components.typography import create_screen_heading
 from style.design_system import DS
 
 
@@ -28,18 +28,17 @@ class PlaceholderView(BaseView):
         self._title = title
         self.ROUTE = route          # instance route → used by BaseView.build()
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading(self._title)              # engine centres it (HUB) via the DS
+    def get_header(self):
+        return create_screen_heading(self._title)
 
-    def get_content(self) -> list[ui.UIComponent]:
+    def get_content(self) -> list[ft.Control]:
         return [
-            ui.text(
+            ft.Text(
                 "התכונה הזו תהיה זמינה בקרוב 🙂",
-                size=DS.type.input,
-                color=DS.palette.text_main,
-                text_align=ft.TextAlign.CENTER,
+                rtl=True, text_align=ft.TextAlign.CENTER,
+                size=DS.type.input, color=DS.palette.text_main,
             ),
         ]
 
-    def get_actions(self) -> list[ui.UIComponent]:
-        return [ui.raw(back_to_menu_button(self.page))]
+    def get_actions(self) -> list[ft.Control]:
+        return [back_to_menu_button(self.page)]

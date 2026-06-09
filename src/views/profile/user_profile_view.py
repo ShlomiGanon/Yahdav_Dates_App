@@ -38,7 +38,6 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
 from views.common.helpers import peer_data
 from views.common.helpers.navigation import back_button
 from style.design_system import DS
@@ -95,14 +94,9 @@ class UserProfileView(BaseView):
     #  Layout (static only — build() must never throw)
     # ============================================================
 
-    def get_content(self) -> list[ui.UIComponent]:
-        # Static skeleton only — build() must never throw. The heading centres
-        # (create_screen_heading's default — matches the engine's universal
-        # "every header centres" rule); the avatar + fields below it are
-        # STRETCH/RIGHT-aligned so a long bio wraps and scrolls and can never
-        # overflow the render tree. Every region control is mutated at runtime
-        # by _render_profile / _show_error_card, so each is PRE-BUILT and
-        # embedded via raw() (no get_header: the title is the dynamic peer name).
+    def get_content(self) -> list[ft.Control]:
+        # Static skeleton only — build() must never throw. Controls are PRE-BUILT
+        # and mutated at runtime by _render_profile / _show_error_card.
         self._heading = create_screen_heading("")
         self._avatar_slot = ft.Container(alignment=ft.Alignment(0, 0))
         self._content = ft.Column(
@@ -110,26 +104,21 @@ class UserProfileView(BaseView):
             spacing=DS.spacing.body,
             horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
         )
-        # Primary action — "view more photos". Hidden until load confirms the
-        # peer has album extras (set in _render_profile); created here so the
-        # action list can reference it.
+        # Primary action — "view more photos". Hidden until load confirms extras.
         self._album_button = create_primary_button(
             "להצגת תמונות נוספות",
             self._on_view_album,
-            text_size=DS.type.input,   # the label is long → step down from BUTTON
+            text_size=DS.type.input,   # long label → step down from BUTTON
         )
         self._album_button.visible = False
-        return [ui.raw(self._avatar_slot), ui.raw(self._heading),
-                ui.raw(self._content)]
+        return [self._avatar_slot, self._heading, self._content]
 
-    def get_actions(self) -> list[ui.UIComponent]:
-        # The album button (shown only when the peer has extras) above "חזור",
-        # which is ALWAYS present (so an error card is never a dead end) and
-        # STACK-AWARE: it pops one level — to Discover, the only entry point.
+    def get_actions(self) -> list[ft.Control]:
+        # Album button (shown only when peer has extras) above "חזור" (always
+        # present so an error card is never a dead end).
         return [
-            ui.raw(self._album_button),
-            ui.raw(back_button(self.page, label="חזור",
-                               fallback=self._DISCOVER_ROUTE)),
+            self._album_button,
+            back_button(self.page, label="חזור", fallback=self._DISCOVER_ROUTE),
         ]
 
     # ============================================================

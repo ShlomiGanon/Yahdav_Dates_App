@@ -22,9 +22,9 @@ import logging
 import flet as ft
 
 from views._base import BaseView
-from views.common.engine import renderer as ui
-from views.common.helpers.session import safe_remove
+from components.buttons import create_primary_button, create_secondary_button
 from components.dividers import create_action_divider
+from components.typography import create_screen_heading
 from style.design_system import DS
 from utils import local_storage
 from utils.session_keys import CURRENT_USER_ID, CURRENT_USER_EMAIL
@@ -50,30 +50,30 @@ class MainMenuView(BaseView):
     SESSION_USER_ID_KEY    = CURRENT_USER_ID
     SESSION_USER_EMAIL_KEY = CURRENT_USER_EMAIL
 
-    def get_header(self) -> ui.UIComponent:
-        return ui.heading("תפריט ראשי")             # engine centres it (HUB) via the DS
+    def get_header(self):
+        return create_screen_heading("תפריט ראשי")
 
-    def get_content(self) -> list[ui.UIComponent]:
-        return []                                    # menu: title + action buttons only
+    def get_content(self) -> list[ft.Control]:
+        return []   # menu: title + action buttons only
 
-    def get_actions(self) -> list[ui.UIComponent]:
+    def get_actions(self) -> list[ft.Control]:
         # Three large primary choices, a divider, then the secondary (blue-grey)
         # logout — all stacked inside the hub card by the engine.
         return [
-            ui.primary_button(
+            create_primary_button(
                 "עריכת הפרופיל שלי",
                 lambda _e: self.page.go(self._PROFILE_ROUTE),
             ),
-            ui.primary_button(
+            create_primary_button(
                 "צפייה במשתמשים אחרים",
                 lambda _e: self.page.go(self._DISCOVER_ROUTE),
             ),
-            ui.primary_button(
+            create_primary_button(
                 "היסטוריית שיחות",
                 lambda _e: self.page.go(self._CHAT_HISTORY_ROUTE),
             ),
-            ui.raw(create_action_divider(width=DS.sizing.input_w)),
-            ui.secondary_button("התנתק מהמערכת", self._on_logout_click),
+            create_action_divider(width=DS.sizing.input_w),
+            create_secondary_button("התנתק מהמערכת", self._on_logout_click),
         ]
 
     # ============================================================
@@ -102,7 +102,10 @@ class MainMenuView(BaseView):
         await local_storage.clear_token(self.page)
 
         # 2. VOLATILE RAM — evict identity keys only (keep service singletons).
-        safe_remove(self.page, self.SESSION_USER_ID_KEY, self.SESSION_USER_EMAIL_KEY)
+        _store = self.page.session.store
+        for _k in (self.SESSION_USER_ID_KEY, self.SESSION_USER_EMAIL_KEY):
+            if _store.contains_key(_k):
+                _store.remove(_k)
 
         # 3. View stack — kill history, then go.
         self.page.views.clear()

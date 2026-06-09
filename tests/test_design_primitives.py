@@ -20,10 +20,7 @@ if str(_SRC) not in sys.path:
 import flet as ft
 
 from components.typography import create_screen_heading
-from components.feedback import (
-    create_field_error_label, set_field_error, clear_field_errors,
-    create_status_banner, show_status,
-)
+from components.feedback import create_status_banner, show_status
 from components.chat import create_chat_bubble
 from style.design_system import DS
 
@@ -45,29 +42,6 @@ class TestScreenHeading(unittest.TestCase):
         self.assertEqual(
             create_screen_heading("x", center=False).text_align, ft.TextAlign.RIGHT,
         )
-
-
-class TestFieldErrorLabel(unittest.TestCase):
-    def test_label_is_hidden_and_uses_field_error_color(self):
-        label = create_field_error_label()
-        self.assertFalse(label.visible)
-        self.assertEqual(label.value, "")
-        self.assertEqual(label.color, DS.palette.field_error)
-        self.assertEqual(label.size, DS.type.input)
-
-    def test_set_and_clear_toggle_visibility(self):
-        label = create_field_error_label()
-        set_field_error(label, "שגיאה")
-        self.assertTrue(label.visible)
-        self.assertEqual(label.value, "שגיאה")
-        clear_field_errors(label)
-        self.assertFalse(label.visible)
-        self.assertEqual(label.value, "")
-
-    def test_set_empty_message_keeps_hidden(self):
-        label = create_field_error_label()
-        set_field_error(label, "")
-        self.assertFalse(label.visible)
 
 
 class TestStatusBanner(unittest.TestCase):
