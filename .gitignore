@@ -1,23 +1,16 @@
 # =============================================================================
-#  Yahdav Dates App  —  .gitignore
-#  Stack:    Python 3.10+  •  Flet  •  SQLite  •  Firebase (planned)
-#  Targets:  Windows / macOS / Linux  •  VS Code, PyCharm, Sublime, Vim
+#  Yahdav Dates App
+#  Stack: Node.js / Express (backend) • React Native / Expo (mobile)
 #
 #  GOLDEN RULES
-#  ------------
-#  • Never commit anything regeneratable from running the app locally.
+#  • Never commit regeneratable build output or installed packages.
 #  • Never commit credentials. If a secret is committed by mistake,
 #    ROTATE THE KEY IMMEDIATELY — removing the file from HEAD is not enough.
-#  • Already-tracked files are NOT affected by new rules below.
-#    To untrack a file that's now ignored: `git rm --cached <path>`.
 # =============================================================================
 
 
 # -----------------------------------------------------------------------------
-# 1. SQLite database files & WAL/SHM sidecars  ── CRITICAL ──
-#    Our DBConfig points to ./data/yahdav.sqlite3. That file is dev-only,
-#    contains local accounts + hashed passwords + chat history, and MUST
-#    NEVER be tracked. Binary diffs cause constant merge conflicts.
+# 1. SQLite database files
 # -----------------------------------------------------------------------------
 *.sqlite
 *.sqlite3
@@ -26,244 +19,105 @@
 *.db-wal
 *.db-shm
 
-# Extended SQLite sidecar variants (some platforms / tools emit these).
-*.sqlite-journal
-*.sqlite3-journal
-*.sqlite-wal
-*.sqlite3-wal
-*.sqlite-shm
-*.sqlite3-shm
-
-# Project data directory (path comes from DBConfig.DB_DIR).
-data/
-/data/
+APP/backend/data/
 
 
 # -----------------------------------------------------------------------------
-# 2. Python / Flet — compiled artifacts & test caches
+# 2. Node.js / npm
 # -----------------------------------------------------------------------------
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyo
-*.pyd
-*.so
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp
+.pnp.js
+.yarn/cache
+.yarn/unplugged
 
-# Test / type-check / lint caches
-.pytest_cache/
-.mypy_cache/
-.pyre/
-.pytype/
-.ruff_cache/
-.tox/
-.nox/
 
-# Coverage reports
-.coverage
-.coverage.*
-htmlcov/
-coverage.xml
-*.cover
-*.py,cover
-
-# Packaging / build output
-build/
+# -----------------------------------------------------------------------------
+# 3. TypeScript / build output
+# -----------------------------------------------------------------------------
 dist/
-develop-eggs/
-downloads/
-eggs/
-.eggs/
-parts/
-sdist/
-wheels/
-share/python-wheels/
-*.egg-info/
-*.egg
-MANIFEST
-
-# pip / installer cruft
-pip-log.txt
-pip-delete-this-directory.txt
+build/
+*.tsbuildinfo
 
 
 # -----------------------------------------------------------------------------
-# 3. Dependency managers — Pipenv / Poetry / PDM
+# 4. Expo / React Native
 # -----------------------------------------------------------------------------
-# Keep Pipfile.lock / poetry.lock in source control by default —
-# uncomment only if your team has decided not to.
-# Pipfile.lock
-# poetry.lock
+.expo/
+.expo-shared/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.mobileprovision
+*.orig
 
-.pdm.toml
-__pypackages__/
-
-
-# -----------------------------------------------------------------------------
-# 4. Virtual environments
-# -----------------------------------------------------------------------------
-.venv/
-venv/
-env/
-ENV/
-env.bak/
-venv.bak/
-.python-version
+# Native build output
+APP/mobile/android/
+APP/mobile/ios/
+APP/mobile/.expo/
 
 
 # -----------------------------------------------------------------------------
-# 5. Local media / uploads
-#    Senior profile photos, voice notes (MessageType.AUDIO), and any image
-#    payloads written by the app during local dev. Storage URLs in the DB
-#    point into these directories.
+# 5. Uploaded files (runtime, not source)
 # -----------------------------------------------------------------------------
+APP/backend/uploads/
 uploads/
-media/
-storage/
-tmp/
-temp/
 
-# Flet/Flutter asset uploads written under assets/ during local runs.
-assets/uploads/
-assets/media/
-assets/voice/
-assets/images/
 
-# Generic upload directories devs sometimes create.
-**/voice_notes/
-**/profile_photos/
+# -----------------------------------------------------------------------------
+# 6. Secrets & environment configuration
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+.envrc
 
-# Application logs
+serviceAccountKey.json
+*.secret
+*.pem
+*.key
+
+
+# -----------------------------------------------------------------------------
+# 7. Logs
+# -----------------------------------------------------------------------------
 *.log
 logs/
 
 
 # -----------------------------------------------------------------------------
-# 6. Secrets, credentials, environment configuration
-#    CRITICAL: anything in this section, if leaked, must be rotated upstream
-#    (Firebase console, GCP IAM, etc.) — `git rm` is not sufficient mitigation.
+# 8. IDE & editor
 # -----------------------------------------------------------------------------
-# Environment files
-.env
-.env.*
-.envrc
-!.env.example          # keep the documented template if it exists
-
-# Firebase / Google service-account credentials
-serviceAccountKey.json
-firebase_credentials.json
-firebase-adminsdk-*.json
-google-services.json
-GoogleService-Info.plist
-
-# Generic secret material
-*.secret
-*.secrets
-secrets/
-*.pem
-*.key
-*.p12
-*.pfx
-*.crt
-*.cer
-*.priv
-private/
-
-
-# -----------------------------------------------------------------------------
-# 7. Flet auto-downloaded Flutter assets
-#    Flet fetches these on first run; they're large, platform-specific,
-#    and have no business in source control.
-# -----------------------------------------------------------------------------
-assets/flutter_assets/
-assets/flet/
-flet_app/
-.flet/
-
-
-# -----------------------------------------------------------------------------
-# 8. IDE & editor workspace configuration
-# -----------------------------------------------------------------------------
-# VS Code — ignore personal workspace prefs, keep shared recommendations.
 .vscode/
 !.vscode/extensions.json
 !.vscode/settings.shared.json
-!.vscode/tasks.shared.json
-
-# PyCharm / IntelliJ
 .idea/
 *.iml
-*.ipr
-*.iws
-out/
-
-# Sublime Text
-*.sublime-project
-*.sublime-workspace
-
-# Vim / Neovim / Emacs swap & backup files
 *.swp
 *.swo
-*.swn
 *~
-.\#*
-\#*\#
-Session.vim
-.netrwhist
 
 
 # -----------------------------------------------------------------------------
-# 9. Operating-system metadata
+# 9. OS metadata
 # -----------------------------------------------------------------------------
-# macOS
 .DS_Store
-.AppleDouble
-.LSOverride
-._*
-.Spotlight-V100
-.Trashes
-.fseventsd
-.VolumeIcon.icns
-
-# Windows
 Thumbs.db
-Thumbs.db:encryptable
-ehthumbs.db
-ehthumbs_vista.db
 Desktop.ini
 $RECYCLE.BIN/
-*.lnk
-
-# Linux
-.directory
-.Trash-*
-.nfs*
 
 
 # -----------------------------------------------------------------------------
-# 10. Jupyter / analysis notebooks (in case any ever get added)
-# -----------------------------------------------------------------------------
-.ipynb_checkpoints/
-*.ipynb_checkpoints
-profile_default/
-ipython_config.py
-
-
-# -----------------------------------------------------------------------------
-# 11. Misc developer scratch space
+# 10. Misc scratch
 # -----------------------------------------------------------------------------
 *.bak
 *.tmp
 *.orig
-*.rej
 scratch/
-.scratch/
 TODO.local.md
 NOTES.local.md
-
-
-# -----------------------------------------------------------------------------
-# 12. Generated audit / review reports
-#     Local, point-in-time engineering audit & patch reports. Regeneratable on
-#     demand and not part of the shipped source — kept out of version control.
-# -----------------------------------------------------------------------------
 reports/
