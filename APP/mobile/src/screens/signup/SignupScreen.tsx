@@ -51,10 +51,11 @@ export function SignupScreen({ navigation }: Props) {
       const result = await signup(email.trim(), username, password);
       if (!result.success) {
         setError(result.message);
+        return;
       }
-      // On success, RootNavigator auto-switches to MainStack when user
-      // state is set — signup logs the user straight in, no separate
-      // login step needed.
+      // Signup no longer auto-authenticates — send the user to Login to
+      // sign in with the credentials they just created.
+      navigation.navigate('Login');
     } catch {
       setError('שגיאת רשת, נסה שנית');
     } finally {

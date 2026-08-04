@@ -9,7 +9,7 @@ export function createAuthApi(client: AxiosInstance)
             email:    string,
             username: string,
             password: string,
-        ): Promise<ApiEnvelope & AuthTokens & AuthUser>
+        ): Promise<ApiEnvelope & AuthUser>
         {
             return client
                 .post('/auth/signup', { email, username, password })

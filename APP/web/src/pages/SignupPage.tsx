@@ -56,7 +56,7 @@ export function SignupPage()
                 return;
             }
 
-            navigate('/discover', { replace: true });
+            navigate('/login', { replace: true });
         }
         catch
         {

@@ -38,12 +38,17 @@ router.post('/signup', signupRules, async (req: Request, res: Response): Promise
 
   const { username, email, password } = req.body;
 
-  if (authQueries.findByUsername(username)) {
-    fail(res, 'username_taken');
-    return;
-  }
+  // Check email before username: the client derives the username from the
+  // email silently (there's no username field in the UI), so retrying
+  // signup with an already-registered email always collides on both — and
+  // the user only ever typed an email, so that's the accurate thing to
+  // report first.
   if (authQueries.findByEmail(email)) {
     fail(res, 'email_taken');
+    return;
+  }
+  if (authQueries.findByUsername(username)) {
+    fail(res, 'username_taken');
     return;
   }
 
@@ -58,7 +63,6 @@ router.post('/signup', signupRules, async (req: Request, res: Response): Promise
       username, email, password,
       name: '', gender: '', date_of_birth: '', city: '', region: '',
     });
-    const tokens = SessionModel.issue(userId, false);
     const creds  = authQueries.findById(userId)!;
 
     ok(res, {
@@ -66,13 +70,13 @@ router.post('/signup', signupRules, async (req: Request, res: Response): Promise
       email:    creds.email,
       username: creds.username,
       is_admin: false,
-      ...tokens,
-    }, 'ההרשמה בוצעה בהצלחה');
+    }, 'ההרשמה בוצעה בהצלחה, כעת יש להתחבר');
   } catch {
     // Re-check rather than parse the DB driver's error text (fragile) —
     // whichever unique constraint actually lost the race is now visible.
-    if (authQueries.findByUsername(username)) { fail(res, 'username_taken'); return; }
+    // Same email-before-username order as the pre-check above.
     if (authQueries.findByEmail(email)) { fail(res, 'email_taken'); return; }
+    if (authQueries.findByUsername(username)) { fail(res, 'username_taken'); return; }
     fail(res, 'internal_error');
   }
 });

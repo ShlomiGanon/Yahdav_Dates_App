@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { authApi, axiosClient }  from '../api/client';
+import { authApi, axiosClient, performRefresh } from '../api/client';
 import { webTokenStorage }       from './storage';
 import type { AuthUser }         from '@shared/types/auth';
 
@@ -45,23 +45,23 @@ export function AuthProvider({ children }: { children: ReactNode })
             return;
         }
 
-        authApi
-            .refresh(stored)
-            .then((tokens) =>
+        // Goes through the shared performRefresh() dedup (see api/client.ts)
+        // rather than calling authApi.refresh() directly — refresh tokens
+        // are single-use, so two concurrent calls with the same stored token
+        // (e.g. React StrictMode double-invoking this effect in dev) would
+        // otherwise race and the loser could clear a session the winner just
+        // established.
+        performRefresh()
+            .then((refreshedUser) =>
             {
-                if (!tokens.success)
+                if (!refreshedUser)
                 {
                     webTokenStorage.clear();
                     return;
                 }
 
-                webTokenStorage.setAccessToken(tokens.access_token);
-                webTokenStorage.setRefreshToken(tokens.refresh_token);
-                axiosClient.defaults.headers.common.Authorization =
-                    `Bearer ${tokens.access_token}`;
-                setUser(extractUser(tokens));
+                setUser(refreshedUser);
             })
-            .catch(() => webTokenStorage.clear())
             .finally(() => setLoading(false));
     }, []);
 
@@ -87,18 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode })
     {
         const res = await authApi.signup(email, username, password);
 
-        if (!res.success)
-        {
-            return { success: false, message: res.message };
-        }
-
-        webTokenStorage.setAccessToken(res.access_token);
-        webTokenStorage.setRefreshToken(res.refresh_token);
-        axiosClient.defaults.headers.common.Authorization =
-            `Bearer ${res.access_token}`;
-        setUser(extractUser(res));
-
-        return { success: true, message: res.message };
+        return { success: res.success, message: res.message };
     }
 
     async function logout(): Promise<void>

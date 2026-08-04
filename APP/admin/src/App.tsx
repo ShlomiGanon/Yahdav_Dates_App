@@ -2,13 +2,19 @@ import { Navigate, useRoutes } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
 import { LoginPage } from './auth/LoginPage';
 import { RequireAuth } from './auth/RequireAuth';
+import { RedirectIfAuthed } from './auth/RedirectIfAuthed';
 import { AppShell } from './layout/AppShell';
 import { SECTION_REGISTRY } from './sections/_registry';
 import type { RouteObject } from 'react-router-dom';
 
 function AppRoutes() {
   return useRoutes([
-    { path: '/login', element: <LoginPage /> },
+    {
+      element: <RedirectIfAuthed />,
+      children: [
+        { path: '/login', element: <LoginPage /> },
+      ],
+    },
     {
       element: <RequireAuth />,
       children: [

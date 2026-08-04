@@ -52,20 +52,30 @@ export interface AuthTokens
   refresh_token: string;
 }
 
+// Signup no longer issues a session (the app requires a manual login right
+// after registering), so this logs in immediately after signing up to hand
+// back tokens for tests that need an authenticated request.
 export async function signupUser(app: Application, suffix = ''): Promise<AuthTokens>
 {
-  const res = await request(app)
+  const username = `testuser${suffix}`;
+  const password = 'Password123!';
+
+  const signupRes = await request(app)
     .post('/auth/signup')
     .send({
       email: `user${suffix}@test.com`,
-      username: `testuser${suffix}`,
-      password: 'Password123!',
+      username,
+      password,
     });
 
+  const loginRes = await request(app)
+    .post('/auth/login')
+    .send({ identifier: username, password });
+
   return {
-    user_id: res.body.user_id,
-    access_token: res.body.access_token,
-    refresh_token: res.body.refresh_token,
+    user_id: signupRes.body.user_id,
+    access_token: loginRes.body.access_token,
+    refresh_token: loginRes.body.refresh_token,
   };
 }
 

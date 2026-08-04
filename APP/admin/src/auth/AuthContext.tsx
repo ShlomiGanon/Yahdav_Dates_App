@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { authApi } from '../api/auth';
+import { performRefresh } from '../api/axios';
 import { tokenStore } from '../api/tokenStore';
 import type { AdminUser } from '../types';
 
@@ -26,30 +27,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]       = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount: try to restore session from stored refresh token
+  // On mount: try to restore session from stored refresh token. Goes
+  // through the shared performRefresh() dedup (see api/axios.ts) rather
+  // than calling authApi.refresh() directly — see that function's comment
+  // for why (single-use refresh tokens + React StrictMode double-invoke).
   useEffect(() => {
     const storedRefresh = localStorage.getItem('refresh_token');
     if (!storedRefresh) { setLoading(false); return; }
 
-    authApi
-      .refresh(storedRefresh)
-      .then((data) => {
-        if (!data.success) {
+    performRefresh()
+      .then((refreshedUser) => {
+        if (!refreshedUser) {
           localStorage.removeItem('refresh_token');
           return;
         }
 
-        tokenStore.set(data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
-        setUser({
-          user_id:  data.user_id,
-          email:    data.email,
-          username: data.username,
-          is_admin: data.is_admin,
-        });
-      })
-      .catch(() => {
-        localStorage.removeItem('refresh_token');
+        setUser(refreshedUser);
       })
       .finally(() => setLoading(false));
   }, []);

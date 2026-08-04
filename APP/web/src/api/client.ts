@@ -3,6 +3,7 @@ import { createAuthApi }  from '@shared/api/auth';
 import { createUsersApi } from '@shared/api/users';
 import { createChatApi }  from '@shared/api/chat';
 import { webTokenStorage } from '../auth/storage';
+import type { AuthUser } from '@shared/types/auth';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
@@ -29,12 +30,17 @@ axiosClient.interceptors.request.use((config) =>
 // keyed off `response.data.error === 'unauthorized'` rather than a 401
 // status code.
 //
-// Concurrent requests that all expire at once share a single in-flight
-// refresh via `_refreshPromise` instead of queueing manually — every caller
-// just awaits the same promise and gets the same true/false outcome.
-let _refreshPromise: Promise<boolean> | null = null;
+// Concurrent requests that all expire at once — and AuthContext's own
+// mount-time session restore — share a single in-flight refresh via
+// `_refreshPromise` instead of firing separate calls. This matters because
+// refresh tokens are single-use (rotate-on-use): two concurrent calls with
+// the same stored token (e.g. React StrictMode double-invoking an effect in
+// dev) would otherwise race, and whichever response lands second — even the
+// loser of a legitimate rotation — would clear a session the winner just
+// established.
+let _refreshPromise: Promise<AuthUser | null> | null = null;
 
-async function performRefresh(): Promise<boolean>
+export async function performRefresh(): Promise<AuthUser | null>
 {
     if (_refreshPromise)
     {
@@ -48,23 +54,28 @@ async function performRefresh(): Promise<boolean>
             const stored = webTokenStorage.getRefreshToken();
             if (!stored)
             {
-                return false;
+                return null;
             }
 
             const { data } = await axiosClient.post('/auth/refresh', { refresh_token: stored });
             if (!data.success)
             {
-                return false;
+                return null;
             }
 
             webTokenStorage.setAccessToken(data.access_token);
             webTokenStorage.setRefreshToken(data.refresh_token);
             axiosClient.defaults.headers.common.Authorization = `Bearer ${data.access_token}`;
-            return true;
+            return {
+                user_id:  data.user_id,
+                email:    data.email,
+                username: data.username,
+                is_admin: data.is_admin,
+            };
         }
         catch
         {
-            return false;
+            return null;
         }
         finally
         {
@@ -86,9 +97,9 @@ axiosClient.interceptors.response.use(async (response) =>
     }
 
     original._retry = true;
-    const refreshed = await performRefresh();
+    const refreshedUser = await performRefresh();
 
-    if (!refreshed)
+    if (!refreshedUser)
     {
         webTokenStorage.clear();
         window.location.href = '/login';

@@ -17,7 +17,7 @@ beforeAll(() =>
 
 describe('POST /auth/signup', () =>
 {
-  it('TC-101 creates a user and returns tokens + identity fields', async () =>
+  it('TC-101 creates a user and returns identity fields, but no session', async () =>
   {
     const res = await request(app).post('/auth/signup').send({
       email: 'signup@test.com',
@@ -35,6 +35,25 @@ describe('POST /auth/signup', () =>
       is_admin: false,
     });
     expect(res.body.user_id).toBeTruthy();
+    expect(res.body.access_token).toBeUndefined();
+    expect(res.body.refresh_token).toBeUndefined();
+  });
+
+  it('TC-101c a fresh signup can immediately log in with the same credentials', async () =>
+  {
+    await request(app).post('/auth/signup').send({
+      email: 'signuplogin@test.com',
+      username: 'signuploginuser',
+      password: 'Password123!',
+    });
+
+    const res = await request(app).post('/auth/login').send({
+      identifier: 'signuploginuser',
+      password: 'Password123!',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.access_token).toBeTruthy();
     expect(res.body.refresh_token).toBeTruthy();
   });

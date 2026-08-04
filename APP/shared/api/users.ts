@@ -15,6 +15,13 @@ export function createUsersApi(client: AxiosInstance)
             return client.put('/users/me', data).then((r) => r.data);
         },
 
+        uploadMainPhoto(form: FormData): Promise<ApiEnvelope & { photo_url: string }>
+        {
+            return client.post('/users/me/photo', form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            }).then((r) => r.data);
+        },
+
         discoverCandidates(page: number, limit: number): Promise<ApiEnvelope & { candidates: Candidate[] }>
         {
             return client

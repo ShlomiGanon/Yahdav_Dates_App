@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { tokenStore } from './tokenStore';
+import type { AdminUser } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
@@ -24,24 +25,34 @@ api.interceptors.request.use((cfg) => {
 // (session_not_found, session_expired, invalid_token, ...) are never
 // `unauthorized` — that code only ever comes from the `authenticate`
 // middleware, which /auth/refresh doesn't go through — so this can't recurse.
-let refreshPromise: Promise<boolean> | null = null;
+// Shared by this interceptor's retry-on-unauthorized path and
+// AuthContext's mount-time session restore. Refresh tokens are single-use,
+// so two concurrent calls with the same stored token (e.g. React StrictMode
+// double-invoking AuthContext's effect in dev) would otherwise race — the
+// loser could clear a session the winner just established.
+let refreshPromise: Promise<AdminUser | null> | null = null;
 
-async function performRefresh(): Promise<boolean> {
+export async function performRefresh(): Promise<AdminUser | null> {
   if (refreshPromise) return refreshPromise;
 
   refreshPromise = (async () => {
     try {
       const storedRefresh = localStorage.getItem('refresh_token');
-      if (!storedRefresh) return false;
+      if (!storedRefresh) return null;
 
       const { data } = await api.post('/auth/refresh', { refresh_token: storedRefresh });
-      if (!data.success) return false;
+      if (!data.success) return null;
 
       tokenStore.set(data.access_token);
       localStorage.setItem('refresh_token', data.refresh_token);
-      return true;
+      return {
+        user_id:  data.user_id,
+        email:    data.email,
+        username: data.username,
+        is_admin: data.is_admin,
+      };
     } catch {
-      return false;
+      return null;
     } finally {
       refreshPromise = null;
     }
@@ -59,9 +70,9 @@ api.interceptors.response.use(async (response) => {
   }
 
   original._retry = true;
-  const refreshed = await performRefresh();
+  const refreshedUser = await performRefresh();
 
-  if (!refreshed) {
+  if (!refreshedUser) {
     tokenStore.set(null);
     localStorage.removeItem('refresh_token');
     window.location.href = '/login';
