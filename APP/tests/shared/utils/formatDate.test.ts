@@ -1,5 +1,4 @@
-import { describe, it, expect } from 'vitest';
-import { formatMessageTime, formatConversationTime } from '@shared/utils/formatDate';
+import { formatMessageTime, formatConversationTime } from '../../../shared/utils/formatDate';
 
 describe('formatMessageTime', () =>
 {
@@ -17,18 +16,16 @@ describe('formatMessageTime', () =>
         expect(formatMessageTime(iso)).toBe('09:03');
     });
 
-    // Regression test for improve.md's finding that shared/utils/formatDate.ts
-    // lacks the NaN guard mobile's local copy has (mobile/src/utils/formatDate.ts
-    // checks `isNaN(d.getTime())` before formatting; shared's version doesn't).
-    // date-fns' format() throws a RangeError on an invalid Date rather than
-    // returning a fallback string, so this currently throws instead of
-    // returning ''.
-    it.fails('does not throw on an invalid date string — returns an empty string instead', () =>
+    // Previously a known bug tracked via web's it.fails(): date-fns' format()
+    // throws a RangeError on an invalid Date rather than returning a fallback
+    // string. Fixed as part of consolidating mobile's separately-forked (and
+    // already-guarded) implementation back into this shared version.
+    it('returns an empty string for an invalid date string, instead of throwing', () =>
     {
         expect(formatMessageTime('not-a-date')).toBe('');
     });
 
-    it.fails('does not throw on an empty string', () =>
+    it('returns an empty string for an empty string, instead of throwing', () =>
     {
         expect(formatMessageTime('')).toBe('');
     });
@@ -41,11 +38,26 @@ describe('formatConversationTime', () =>
         expect(formatConversationTime(null)).toBe('');
     });
 
+    it('returns an empty string for an invalid date string, instead of throwing', () =>
+    {
+        expect(formatConversationTime('not-a-date')).toBe('');
+    });
+
     it('returns "עכשיו" for a timestamp less than a minute old', () =>
     {
         const iso = new Date(Date.now() - 10_000).toISOString();
 
         expect(formatConversationTime(iso)).toBe('עכשיו');
+    });
+
+    it('returns a relative Hebrew string for a timestamp earlier today (but over a minute old)', () =>
+    {
+        const iso = new Date(Date.now() - 5 * 60_000).toISOString();
+        const result = formatConversationTime(iso);
+
+        expect(result).not.toBe('');
+        expect(result).not.toBe('עכשיו');
+        expect(result).not.toBe('אתמול');
     });
 
     it('returns "אתמול" for a timestamp from yesterday', () =>
@@ -63,10 +75,5 @@ describe('formatConversationTime', () =>
         older.setDate(older.getDate() - 10);
 
         expect(formatConversationTime(older.toISOString())).toMatch(/^\d{2}\/\d{2}$/);
-    });
-
-    it.fails('does not throw on an invalid date string', () =>
-    {
-        expect(formatConversationTime('not-a-date')).toBe('');
     });
 });

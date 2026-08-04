@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { body, query, param, validationResult } from 'express-validator';
+import { validateDateOfBirth } from '@yahdav/shared/validation/profile';
 import { authenticate, AuthRequest } from '../middleware/authenticate';
 import { ProfileModel } from '../models/ProfileModel';
 import { upload, deleteFileByUrl } from '../services/storageService';
@@ -30,8 +31,22 @@ const updateRules = [
     .withMessage('שם האזור חייב להכיל בין 1 ל-80 תווים'),
   body('gender').optional().isIn(['male', 'female', 'other'])
     .withMessage('יש לבחור מין תקין'),
-  body('date_of_birth').optional().matches(/^\d{4}-\d{2}-\d{2}$/)
-    .withMessage('תאריך הלידה חייב להיות בפורמט YYYY-MM-DD'),
+  body('date_of_birth').optional()
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('תאריך הלידה חייב להיות בפורמט YYYY-MM-DD')
+    .bail()
+    .custom((value: string) => {
+      const error = validateDateOfBirth(value);
+      if (error) {
+        const messages: Record<string, string> = {
+          invalid_date: 'תאריך הלידה אינו תקין',
+          age_too_young: 'גיל מינימלי הוא 18',
+          age_too_old: 'גיל מקסימלי הוא 100',
+        };
+        throw new Error(messages[error] ?? 'תאריך לידה לא תקין');
+      }
+      return true;
+    }),
 ];
 
 router.put('/me', updateRules, (req: Request, res: Response): void => {

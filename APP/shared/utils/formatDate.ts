@@ -3,7 +3,14 @@ import { he } from 'date-fns/locale';
 
 export function formatMessageTime(iso: string): string
 {
-    return format(new Date(iso), 'HH:mm');
+    const date = new Date(iso);
+
+    if (isNaN(date.getTime()))
+    {
+        return '';
+    }
+
+    return format(date, 'HH:mm');
 }
 
 export function formatConversationTime(iso: string | null): string
@@ -13,16 +20,22 @@ export function formatConversationTime(iso: string | null): string
         return '';
     }
 
-    const date   = new Date(iso);
+    const date = new Date(iso);
+
+    if (isNaN(date.getTime()))
+    {
+        return '';
+    }
+
     const diffMs = Date.now() - date.getTime();
+
+    if (diffMs < 60_000)
+    {
+        return 'עכשיו';
+    }
 
     if (isToday(date))
     {
-        if (diffMs < 60_000)
-        {
-            return 'עכשיו';
-        }
-
         return formatDistanceToNow(date, { locale: he, addSuffix: true });
     }
 
@@ -31,5 +44,5 @@ export function formatConversationTime(iso: string | null): string
         return 'אתמול';
     }
 
-    return format(date, 'dd/MM', { locale: he });
+    return format(date, 'dd/MM');
 }

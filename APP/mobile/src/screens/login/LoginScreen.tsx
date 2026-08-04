@@ -4,6 +4,7 @@ import {
   ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { clientMessage } from '@shared/copy/client';
 import { useAuth } from '../../auth/AuthContext';
 import { ScreenHeading } from '../../components/ScreenHeading';
 import { HebrewInput } from '../../components/HebrewInput';
@@ -24,7 +25,7 @@ export function LoginScreen({ navigation }: Props) {
 
   const handleLogin = async () => {
     if (!identifier.trim() || !password) {
-      setError('יש למלא את כל השדות');
+      setError(clientMessage('missing_all_fields'));
       return;
     }
     setLoading(true);
@@ -36,7 +37,7 @@ export function LoginScreen({ navigation }: Props) {
       }
       // On success, RootNavigator auto-switches to MainStack when user state is set
     } catch {
-      setError('שגיאת רשת, נסה שוב');
+      setError(clientMessage('network_error'));
     } finally {
       setLoading(false);
     }

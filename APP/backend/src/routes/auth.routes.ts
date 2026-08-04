@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
+import { validateUsername, validateEmail, validatePassword } from '@yahdav/shared/validation/credentials';
 import { authQueries } from '../database/queries/auth.queries';
 import { UserModel } from '../models/UserModel';
 import { SessionModel } from '../models/SessionModel';
@@ -12,21 +13,36 @@ const router = Router();
 // Minimal registration: email + username + password only.
 // Profile fields (name, city, etc.) are filled later in MyProfileScreen.
 
+const USERNAME_MESSAGES: Record<string, string> = {
+  username_invalid_length: 'שם המשתמש חייב להכיל בין 3 ל-30 תווים',
+  username_invalid_characters: 'שם המשתמש יכול להכיל רק אותיות באנגלית, ספרות וקו תחתון',
+};
+
 const signupRules = [
   body('username')
     .trim()
-    .isLength({ min: 3, max: 30 })
-    .withMessage('שם המשתמש חייב להכיל בין 3 ל-30 תווים')
-    .bail()
-    .matches(/^[a-zA-Z0-9_]+$/)
-    .withMessage('שם המשתמש יכול להכיל רק אותיות באנגלית, ספרות וקו תחתון'),
+    .custom((value: string) => {
+      const error = validateUsername(value);
+      if (error) {
+        throw new Error(USERNAME_MESSAGES[error] ?? 'שם משתמש לא תקין');
+      }
+      return true;
+    }),
   body('email')
-    .isEmail()
-    .withMessage('כתובת האימייל אינה תקינה')
+    .custom((value: string) => {
+      if (validateEmail(value)) {
+        throw new Error('כתובת האימייל אינה תקינה');
+      }
+      return true;
+    })
     .normalizeEmail(),
   body('password')
-    .isLength({ min: 8 })
-    .withMessage('הסיסמה חייבת להכיל לפחות 8 תווים'),
+    .custom((value: string) => {
+      if (validatePassword(value)) {
+        throw new Error('הסיסמה חייבת להכיל לפחות 8 תווים');
+      }
+      return true;
+    }),
 ];
 
 router.post('/signup', signupRules, async (req: Request, res: Response): Promise<void> => {

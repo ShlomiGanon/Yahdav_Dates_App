@@ -2,8 +2,30 @@
   "name": "@yahdav/shared",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "test": "jest",
+    "build": "tsc"
+  },
+  "exports": {
+    "./copy/client": {
+      "types": "./dist/copy/client/index.d.ts",
+      "default": "./dist/copy/client/index.js"
+    },
+    "./copy/server": {
+      "types": "./dist/copy/server/index.d.ts",
+      "default": "./dist/copy/server/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "axios": "^1.19.0",
-    "date-fns": "^4.4.0"
+    "date-fns": "^4.4.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.12",
+    "typescript": "^5.6.3"
   }
 }

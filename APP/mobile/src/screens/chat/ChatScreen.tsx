@@ -15,7 +15,7 @@ import { LoadingOverlay } from '../../components/LoadingOverlay';
 import { useAuth } from '../../auth/AuthContext';
 import type { MainStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
-import { formatMessageTime } from '../../utils/formatDate';
+import { formatMessageTime } from '@shared/utils/formatDate';
 
 type Props = NativeStackScreenProps<MainStackParams, 'Chat'>;
 

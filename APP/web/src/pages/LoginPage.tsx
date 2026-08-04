@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
+import { clientMessage } from '@shared/copy/client';
 import { useAuth } from '../auth/AuthContext';
+import { WEB_DESTINATIONS } from '../auth/destinations';
 import { Button } from '../components/Button';
 
 export function LoginPage()
@@ -20,7 +23,7 @@ export function LoginPage()
         // Client-side validation before ever hitting the server.
         if (!identifier.trim() || !password)
         {
-            setError('יש למלא את כל השדות');
+            setError(clientMessage('missing_all_fields'));
             return;
         }
 
@@ -35,11 +38,11 @@ export function LoginPage()
                 return;
             }
 
-            navigate('/discover', { replace: true });
+            navigate(WEB_DESTINATIONS[AUTH_FLOW_EVENTS.afterLogin], { replace: true });
         }
         catch
         {
-            setError('שגיאת רשת, נסה שוב');
+            setError(clientMessage('network_error'));
         }
         finally
         {

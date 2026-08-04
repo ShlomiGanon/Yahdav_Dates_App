@@ -1,0 +1,23 @@
+export const he =
+{
+    unauthorized: 'יש להתחבר מחדש',
+    forbidden: 'אין לך הרשאה לבצע פעולה זו',
+    not_found: 'הפריט המבוקש לא נמצא',
+    invalid_credentials: 'שם משתמש או סיסמה שגויים',
+    username_taken: 'שם המשתמש כבר תפוס',
+    email_taken: 'האימייל כבר קיים במערכת',
+    missing_file: 'יש לבחור קובץ',
+    invalid_file_type: 'סוג הקובץ אינו נתמך',
+    file_too_large: 'הקובץ גדול מדי (מקסימום 8MB)',
+    photo_limit_reached: 'ניתן להעלות עד 4 תמונות נוספות',
+    cannot_block_self: 'לא ניתן לחסום את עצמך',
+    cannot_change_own_status: 'לא ניתן לשנות את הסטטוס של המשתמש שלך',
+    cannot_delete_self: 'לא ניתן למחוק את המשתמש שלך',
+    blocked: 'לא ניתן לשלוח הודעה למשתמש זה',
+    session_not_found: 'ההתחברות פגה, יש להתחבר מחדש',
+    session_expired: 'ההתחברות פגה, יש להתחבר מחדש',
+    invalid_token: 'ההתחברות פגה, יש להתחבר מחדש',
+    missing_refresh_token: 'חסר טוקן רענון',
+    validation_error: 'הנתונים שהוזנו אינם תקינים',
+    internal_error: 'אירעה שגיאה, נסה שוב מאוחר יותר',
+};

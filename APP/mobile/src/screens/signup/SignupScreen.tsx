@@ -4,7 +4,11 @@ import {
   ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
+import { deriveUsername, validatePassword, validatePasswordsMatch } from '@shared/validation/credentials';
+import { clientMessage } from '@shared/copy/client';
 import { useAuth } from '../../auth/AuthContext';
+import { MOBILE_DESTINATIONS } from '../../navigation/destinations';
 import { ScreenHeading } from '../../components/ScreenHeading';
 import { HebrewInput } from '../../components/HebrewInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -14,14 +18,6 @@ import type { AuthStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
 
 type Props = NativeStackScreenProps<AuthStackParams, 'Signup'>;
-
-// Derive a username from the email local-part (strip domain, sanitize)
-function deriveUsername(email: string): string {
-  return (email.split('@')[0] ?? '')
-    .replace(/[^a-zA-Z0-9_]/g, '')
-    .toLowerCase()
-    .slice(0, 30);
-}
 
 export function SignupScreen({ navigation }: Props) {
   const { signup } = useAuth();
@@ -33,15 +29,15 @@ export function SignupScreen({ navigation }: Props) {
 
   const handleSignup = async () => {
     if (!email.trim() || !password || !confirm) {
-      setError('יש למלא את כל השדות');
+      setError(clientMessage('missing_all_fields'));
       return;
     }
-    if (password !== confirm) {
-      setError('הסיסמאות אינן תואמות');
+    if (validatePasswordsMatch(password, confirm)) {
+      setError(clientMessage('passwords_dont_match'));
       return;
     }
-    if (password.length < 8) {
-      setError('הסיסמה חייבת להכיל לפחות 8 תווים');
+    if (validatePassword(password)) {
+      setError(clientMessage('password_too_short'));
       return;
     }
     setLoading(true);
@@ -55,9 +51,9 @@ export function SignupScreen({ navigation }: Props) {
       }
       // Signup no longer auto-authenticates — send the user to Login to
       // sign in with the credentials they just created.
-      navigation.navigate('Login');
+      navigation.navigate(MOBILE_DESTINATIONS[AUTH_FLOW_EVENTS.afterSignup]);
     } catch {
-      setError('שגיאת רשת, נסה שנית');
+      setError(clientMessage('network_error'));
     } finally {
       setLoading(false);
     }

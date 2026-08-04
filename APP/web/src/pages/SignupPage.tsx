@@ -1,17 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
+import { deriveUsername, validatePassword, validatePasswordsMatch } from '@shared/validation/credentials';
+import { clientMessage } from '@shared/copy/client';
 import { useAuth } from '../auth/AuthContext';
+import { WEB_DESTINATIONS } from '../auth/destinations';
 import { Button } from '../components/Button';
-
-// Derive a username from the email local-part (strip domain, sanitize) —
-// mirrors mobile/src/screens/signup/SignupScreen.tsx's deriveUsername.
-function deriveUsername(email: string): string
-{
-    return (email.split('@')[0] ?? '')
-        .replace(/[^a-zA-Z0-9_]/g, '')
-        .toLowerCase()
-        .slice(0, 30);
-}
 
 export function SignupPage()
 {
@@ -30,17 +24,17 @@ export function SignupPage()
 
         if (!email.trim() || !password || !confirm)
         {
-            setError('יש למלא את כל השדות');
+            setError(clientMessage('missing_all_fields'));
             return;
         }
-        if (password !== confirm)
+        if (validatePasswordsMatch(password, confirm))
         {
-            setError('הסיסמאות אינן תואמות');
+            setError(clientMessage('passwords_dont_match'));
             return;
         }
-        if (password.length < 8)
+        if (validatePassword(password))
         {
-            setError('הסיסמה חייבת להכיל לפחות 8 תווים');
+            setError(clientMessage('password_too_short'));
             return;
         }
 
@@ -56,11 +50,11 @@ export function SignupPage()
                 return;
             }
 
-            navigate('/login', { replace: true });
+            navigate(WEB_DESTINATIONS[AUTH_FLOW_EVENTS.afterSignup], { replace: true });
         }
         catch
         {
-            setError('שגיאת רשת, נסה שוב');
+            setError(clientMessage('network_error'));
         }
         finally
         {

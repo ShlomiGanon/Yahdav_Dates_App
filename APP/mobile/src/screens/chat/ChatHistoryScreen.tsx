@@ -12,7 +12,7 @@ import { useAuth } from '../../auth/AuthContext';
 import type { MainStackParams } from '../../types/navigation';
 import type { Conversation } from '../../types/chat';
 import { theme } from '../../style/theme';
-import { formatConversationTime } from '../../utils/formatDate';
+import { formatConversationTime } from '@shared/utils/formatDate';
 
 type Props = NativeStackScreenProps<MainStackParams, 'ChatHistory'>;
 

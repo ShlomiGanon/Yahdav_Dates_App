@@ -46,6 +46,11 @@ export function RootNavigator() {
     );
   }
 
+  // This ternary is the mobile-side enforcement of both AUTH_FLOW_GUARDS
+  // rules from @shared/flow/authFlow (whenAuthenticatedOnAuthScreen /
+  // whenUnauthenticatedOnProtectedScreen): AuthStack (containing the auth
+  // screens) is never even mounted once `user` is set, and MainStack is
+  // never mounted while it isn't — no explicit lookup call needed here.
   return (
     <View style={[styles.bg, { backgroundColor: theme.palette.background }]}>
       <NavigationContainer ref={navigationRef}>

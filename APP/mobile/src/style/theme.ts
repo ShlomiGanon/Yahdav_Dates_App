@@ -1,20 +1,10 @@
+import { colors } from '@shared/theme/colors';
+
 export const theme = {
   // System default font. To swap: set to a loaded font name + add expo-font loading in main.tsx.
   fontFamily: undefined as string | undefined,
 
-  palette: {
-    primary:    '#C0392B',
-    secondary:  '#2C3E50',
-    background: '#1A1A2E',
-    surface:    '#FFFFFF',
-    textMain:   '#2C3E50',
-    danger:     '#E74C3C',
-    success:    '#27AE60',
-    online:     '#2ECC71',
-    offline:    '#BDC3C7',
-    selfBubble: '#27AE60',
-    peerBubble: '#ECF0F1',
-  },
+  palette: colors,
   type: {
     h1: 50, h2: 28, heading: 24, button: 22, body: 16, input: 20, small: 14, caption: 12,
   },

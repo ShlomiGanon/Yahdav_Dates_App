@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "isolatedModules": true,
+    "baseUrl": "../../shared",
+    "typeRoots": ["../../shared/node_modules/@types"],
+    "types": ["jest", "node"]
+  },
+  "include": ["**/*.ts"]
+}

@@ -6,6 +6,8 @@ import {
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { validateDateOfBirth } from '@shared/validation/profile';
+import { clientMessage } from '@shared/copy/client';
 import { useMyProfile } from '../../hooks/useMyProfile';
 import { ScreenHeading } from '../../components/ScreenHeading';
 import { HebrewInput } from '../../components/HebrewInput';
@@ -97,20 +99,16 @@ export function MyProfileScreen({ navigation }: Props) {
 
   const validateAndSave = async () => {
     setValidationError('');
-    if (!name.trim())                     { setValidationError('שם מלא הוא שדה חובה');    return; }
-    if (!gender)                          { setValidationError('יש לבחור מין');            return; }
-    if (!dobDay || !dobMonth || !dobYear) { setValidationError('יש למלא תאריך לידה מלא'); return; }
-    if (!city.trim())                     { setValidationError('עיר היא שדה חובה');        return; }
+    if (!name.trim())                     { setValidationError(clientMessage('name_required'));          return; }
+    if (!gender)                          { setValidationError(clientMessage('gender_required'));        return; }
+    if (!dobDay || !dobMonth || !dobYear) { setValidationError(clientMessage('date_of_birth_required')); return; }
+    if (!city.trim())                     { setValidationError(clientMessage('city_required'));          return; }
 
     const dobStr = `${dobYear}-${dobMonth}-${String(dobDay).padStart(2, '0')}`;
-    const parsed = new Date(dobStr);
-    if (isNaN(parsed.getTime()) || parsed.getDate() !== parseInt(dobDay, 10)) {
-      setValidationError('תאריך לידה לא תקין');
-      return;
-    }
-    const age = (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-    if (age < 18)  { setValidationError('גיל מינימלי הוא 18');  return; }
-    if (age > 100) { setValidationError('גיל מקסימלי הוא 100'); return; }
+    const dateError = validateDateOfBirth(dobStr);
+    if (dateError === 'invalid_date')  { setValidationError(clientMessage('invalid_date'));  return; }
+    if (dateError === 'age_too_young') { setValidationError(clientMessage('age_too_young')); return; }
+    if (dateError === 'age_too_old')   { setValidationError(clientMessage('age_too_old'));   return; }
 
     await save({
       name:          name.trim(),

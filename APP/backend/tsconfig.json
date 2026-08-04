@@ -9,7 +9,12 @@
     "esModuleInterop": true,
     "skipLibCheck":    true,
     "resolveJsonModule": true,
-    "sourceMap":       true
+    "sourceMap":       true,
+    "baseUrl":         ".",
+    "paths":
+    {
+      "@yahdav/shared/*": ["../shared/dist/*"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"]

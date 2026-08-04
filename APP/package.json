@@ -1,0 +1,8 @@
+{
+  "name": "yahdav-workspace-root",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "shared"
+  ]
+}

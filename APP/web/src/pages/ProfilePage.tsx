@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
+import { validateDateOfBirth } from '@shared/validation/profile';
+import { clientMessage } from '@shared/copy/client';
 import { PageShell } from '../components/PageShell';
 import { PhotoUpload } from '../components/PhotoUpload';
 import { Button } from '../components/Button';
 import { usersApi } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { WEB_DESTINATIONS } from '../auth/destinations';
 import type { Gender } from '@shared/types/user';
 
 const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
@@ -22,9 +26,6 @@ const REGION_OPTIONS = [
     'מחוז הדרום',
     'יהודה ושומרון',
 ];
-
-const MIN_AGE = 18;
-const MAX_AGE = 100;
 
 const inputClass =
     'border border-gray-300 rounded-lg px-4 py-3 text-base text-right ' +
@@ -114,40 +115,39 @@ export function ProfilePage()
 
         if (!name.trim())
         {
-            setValidationError('שם מלא הוא שדה חובה');
+            setValidationError(clientMessage('name_required'));
             return;
         }
         if (!gender)
         {
-            setValidationError('יש לבחור מין');
+            setValidationError(clientMessage('gender_required'));
             return;
         }
         if (!dateOfBirth)
         {
-            setValidationError('יש למלא תאריך לידה');
+            setValidationError(clientMessage('date_of_birth_required'));
             return;
         }
         if (!city.trim())
         {
-            setValidationError('עיר היא שדה חובה');
+            setValidationError(clientMessage('city_required'));
             return;
         }
 
-        const parsed = new Date(dateOfBirth);
-        if (isNaN(parsed.getTime()))
+        const dateError = validateDateOfBirth(dateOfBirth);
+        if (dateError === 'invalid_date')
         {
-            setValidationError('תאריך לידה לא תקין');
+            setValidationError(clientMessage('invalid_date'));
             return;
         }
-        const age = (Date.now() - parsed.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
-        if (age < MIN_AGE)
+        if (dateError === 'age_too_young')
         {
-            setValidationError(`גיל מינימלי הוא ${MIN_AGE}`);
+            setValidationError(clientMessage('age_too_young'));
             return;
         }
-        if (age > MAX_AGE)
+        if (dateError === 'age_too_old')
         {
-            setValidationError(`גיל מקסימלי הוא ${MAX_AGE}`);
+            setValidationError(clientMessage('age_too_old'));
             return;
         }
 
@@ -166,7 +166,7 @@ export function ProfilePage()
         }
         catch
         {
-            setStatus({ message: 'שגיאת רשת, נסה שוב', ok: false });
+            setStatus({ message: clientMessage('network_error'), ok: false });
         }
         finally
         {
@@ -177,7 +177,7 @@ export function ProfilePage()
     async function handleLogout(): Promise<void>
     {
         await logout();
-        navigate('/login', { replace: true });
+        navigate(WEB_DESTINATIONS[AUTH_FLOW_EVENTS.afterLogout], { replace: true });
     }
 
     if (loading)
