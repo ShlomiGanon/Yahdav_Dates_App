@@ -1,0 +1,9 @@
+{
+  "name": "@yahdav/shared",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "axios": "^1.19.0",
+    "date-fns": "^4.4.0"
+  }
+}

@@ -1,0 +1,28 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { RequireAuth }      from './auth/RequireAuth';
+import { LoginPage }        from './pages/LoginPage';
+import { DiscoverPage }     from './pages/DiscoverPage';
+import { ProfilePage }      from './pages/ProfilePage';
+import { PeerProfilePage }  from './pages/PeerProfilePage';
+import { ChatHistoryPage }  from './pages/ChatHistoryPage';
+import { ChatPage }         from './pages/ChatPage';
+
+export default function App()
+{
+    return (
+        <Routes>
+            <Route path="/login" element={<LoginPage />} />
+
+            <Route element={<RequireAuth />}>
+                <Route path="/discover"            element={<DiscoverPage />} />
+                <Route path="/profile"             element={<ProfilePage />} />
+                <Route path="/peer/:peer_id"       element={<PeerProfilePage />} />
+                <Route path="/chat"                element={<ChatHistoryPage />} />
+                <Route path="/chat/:peer_id"       element={<ChatPage />} />
+                <Route index                       element={<Navigate to="/discover" replace />} />
+            </Route>
+
+            <Route path="*" element={<Navigate to="/discover" replace />} />
+        </Routes>
+    );
+}

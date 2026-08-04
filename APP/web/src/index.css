@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@theme
+{
+    /* ── Colour palette (mirrors mobile theme.ts) ──────────────────────── */
+    --color-primary:     #C0392B;
+    --color-secondary:   #2C3E50;
+    --color-background:  #1A1A2E;
+    --color-surface:     #FFFFFF;
+    --color-danger:      #E74C3C;
+    --color-success:     #27AE60;
+    --color-self-bubble: #27AE60;
+    --color-peer-bubble: #ECF0F1;
+
+    /* ── Border radius ─────────────────────────────────────────────────── */
+    --radius-card:   16px;
+    --radius-bubble: 18px;
+
+    /* ── Font family ───────────────────────────────────────────────────── */
+    --font-family-he: system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after
+{
+    box-sizing: border-box;
+}
+
+body
+{
+    margin: 0;
+    font-family: var(--font-family-he);
+}
