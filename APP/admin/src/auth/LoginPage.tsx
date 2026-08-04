@@ -14,16 +14,22 @@ export function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+
+    if (!identifier.trim() || !password) {
+      setError('יש למלא את כל השדות.');
+      return;
+    }
+
     setLoading(true);
     try {
-      await login(identifier.trim(), password);
-      navigate('/admin/users', { replace: true });
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message === 'not_admin') {
-        setError('משתמש זה אינו מנהל מערכת.');
-      } else {
-        setError('שם משתמש או סיסמה שגויים.');
+      const result = await login(identifier.trim(), password);
+      if (!result.success) {
+        setError(result.message);
+        return;
       }
+      navigate('/admin/users', { replace: true });
+    } catch {
+      setError('שגיאת רשת, נסה שוב.');
     } finally {
       setLoading(false);
     }
@@ -36,32 +42,32 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
+            <label htmlFor="admin-login-identifier" className="mb-1 block text-sm font-medium text-gray-700">
               שם משתמש / אימייל
             </label>
             <input
+              id="admin-login-identifier"
               type="text"
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
-              required
               autoFocus
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">סיסמה</label>
+            <label htmlFor="admin-login-password" className="mb-1 block text-sm font-medium text-gray-700">סיסמה</label>
             <input
+              id="admin-login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              required
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
             />
           </div>
 
           {error && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600" role="alert">{error}</p>
           )}
 
           <button

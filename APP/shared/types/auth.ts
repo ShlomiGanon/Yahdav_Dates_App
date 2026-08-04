@@ -9,5 +9,5 @@ export interface AuthUser
     user_id:  string;
     email:    string;
     username: string;
-    is_admin: number;
+    is_admin: boolean;
 }

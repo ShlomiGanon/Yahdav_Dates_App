@@ -23,6 +23,10 @@ export function useUsers() {
         offset: (p - 1) * PAGE_SIZE,
         ...(q ? { search: q } : {}),
       });
+      if (!data.success) {
+        setError(data.message);
+        return;
+      }
       setUsers(data.users);
       setTotal(data.total);
     } catch {

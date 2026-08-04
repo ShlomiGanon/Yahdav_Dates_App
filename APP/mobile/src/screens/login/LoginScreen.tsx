@@ -30,10 +30,13 @@ export function LoginScreen({ navigation }: Props) {
     setLoading(true);
     setError('');
     try {
-      await login(identifier.trim(), password);
-      // RootNavigator auto-switches to MainStack when user state is set
+      const result = await login(identifier.trim(), password);
+      if (!result.success) {
+        setError(result.message);
+      }
+      // On success, RootNavigator auto-switches to MainStack when user state is set
     } catch {
-      setError('שם משתמש או סיסמה שגויים');
+      setError('שגיאת רשת, נסה שוב');
     } finally {
       setLoading(false);
     }

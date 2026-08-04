@@ -31,23 +31,23 @@ export function UserDetailPage() {
   const { user, loading, error, saving, deleting, updateStatus, deleteUser } = useUser(id!);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [statusError, setStatusError] = useState('');
+  const [actionError, setActionError] = useState('');
 
   async function handleStatusChange(s: UserStatus) {
-    setStatusError('');
-    try {
-      await updateStatus(s);
-    } catch {
-      setStatusError('שגיאה בעדכון הסטטוס');
+    setActionError('');
+    const result = await updateStatus(s);
+    if (!result.success) {
+      setActionError(result.message);
     }
   }
 
   async function handleDelete() {
-    try {
-      await deleteUser();
+    const result = await deleteUser();
+    setConfirmOpen(false);
+    if (result.success) {
       navigate('/admin/users', { replace: true });
-    } catch {
-      setConfirmOpen(false);
+    } else {
+      setActionError(result.message);
     }
   }
 
@@ -105,6 +105,9 @@ export function UserDetailPage() {
               מחיקה
             </Button>
           </div>
+          {actionError && (
+            <p className="mt-3 text-sm text-red-500" role="alert">{actionError}</p>
+          )}
         </div>
 
         {/* Status change */}
@@ -113,7 +116,7 @@ export function UserDetailPage() {
           <div className="flex items-center gap-3">
             <StatusSelect value={user.status} onChange={handleStatusChange} disabled={saving} />
             {saving && <span className="text-sm text-gray-400">שומר...</span>}
-            {statusError && <span className="text-sm text-red-500">{statusError}</span>}
+            {actionError && <span className="text-sm text-red-500">{actionError}</span>}
           </div>
         </div>
 

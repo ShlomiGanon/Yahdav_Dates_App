@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { SessionModel, AccessPayload } from '../models/SessionModel';
+import { fail } from '../utils/responses';
 
 export interface AuthRequest extends Request {
   user: AccessPayload;
@@ -8,7 +9,7 @@ export interface AuthRequest extends Request {
 export function authenticate(req: Request, res: Response, next: NextFunction): void {
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'Missing token' });
+    fail(res, 'unauthorized');
     return;
   }
 
@@ -17,14 +18,14 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
     (req as AuthRequest).user = payload;
     next();
   } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
+    fail(res, 'unauthorized');
   }
 }
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   const user = (req as AuthRequest).user;
   if (!user?.is_admin) {
-    res.status(403).json({ error: 'Admin only' });
+    fail(res, 'forbidden');
     return;
   }
   next();

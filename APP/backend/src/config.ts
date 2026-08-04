@@ -17,6 +17,12 @@ export const config = {
   jwtSecret:         required('JWT_SECRET'),
   jwtAccessTtl:      optional('JWT_ACCESS_TTL', '15m'),
   jwtRefreshTtlDays: parseInt(optional('JWT_REFRESH_TTL_DAYS', '30'), 10),
-  adminCorsOrigin:   optional('ADMIN_CORS_ORIGIN', 'http://localhost:5173'),
+  // Comma-separated list of allowed browser origins (web + admin dashboards).
+  // ADMIN_CORS_ORIGIN is kept as the env var name for backward compatibility
+  // with existing deploys/docs, but now accepts a comma-separated list.
+  corsOrigins: optional('ADMIN_CORS_ORIGIN', 'http://localhost:5173,http://localhost:5174')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   expoPushUrl:       optional('EXPO_PUSH_URL', 'https://exp.host/--/api/v2/push/send'),
 } as const;

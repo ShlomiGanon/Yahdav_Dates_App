@@ -47,6 +47,8 @@ function waitForClose(ws: WebSocket): Promise<{ code: number }>
   });
 }
 
+// REST responses are always HTTP 200; success/failure is in the body.
+
 // ── GET /chat/conversations ───────────────────────────────────────────────────
 // tests.md section 12
 
@@ -60,14 +62,17 @@ describe('GET /chat/conversations', () =>
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.success).toBe(true);
+    expect(res.body.conversations).toEqual([]);
   });
 
-  it('TC-1217a returns 401 without a token', async () =>
+  it('TC-1217a fails without a token', async () =>
   {
     const res = await request(app).get('/chat/conversations');
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 });
 
@@ -75,14 +80,15 @@ describe('GET /chat/conversations', () =>
 
 describe('POST /chat/:peer_id', () =>
 {
-  it('TC-1207 sends a message and returns 201 with the persisted message', async () =>
+  it('TC-1207 sends a message and returns the persisted message', async () =>
   {
     const res = await request(app)
       .post(`/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'שלום! 👋', msg_type: 'TEXT' });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.content).toBe('שלום! 👋');
     expect(res.body.sender_id).toBe(userA.user_id);
     expect(res.body.message_id).toBeTruthy();
@@ -96,7 +102,7 @@ describe('POST /chat/:peer_id', () =>
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'היי' });
 
-    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
     expect(res.body.msg_type).toBe('TEXT');
   });
 
@@ -105,16 +111,18 @@ describe('POST /chat/:peer_id', () =>
     const auth = { Authorization: `Bearer ${userA.access_token}` };
 
     const at4000 = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: 'a'.repeat(4000) });
-    expect(at4000.status).toBe(201);
+    expect(at4000.body.success).toBe(true);
 
     const at4001 = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: 'a'.repeat(4001) });
-    expect(at4001.status).toBe(422);
+    expect(at4001.body.success).toBe(false);
+    expect(at4001.body.message).toBe('ההודעה ארוכה מדי (מקסימום 4000 תווים)');
 
     const empty = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: '' });
-    expect(empty.status).toBe(422);
+    expect(empty.body.success).toBe(false);
+    expect(empty.body.message).toBe('יש להזין תוכן הודעה');
 
     const whitespace = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: '   ' });
-    expect(whitespace.status).toBe(422);
+    expect(whitespace.body.success).toBe(false);
   });
 
   it('TC-1209 rejects an msg_type outside TEXT/AUDIO/IMAGE', async () =>
@@ -124,7 +132,8 @@ describe('POST /chat/:peer_id', () =>
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'hi', msg_type: 'VIDEO' });
 
-    expect(res.status).toBe(422);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('סוג הודעה לא תקין');
   });
 
   it('TC-1210 cannot send to a peer who has blocked the sender', async () =>
@@ -141,15 +150,42 @@ describe('POST /chat/:peer_id', () =>
       .set('Authorization', `Bearer ${blocked.access_token}`)
       .send({ content: 'היי' });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('blocked');
   });
 
-  it('TC-1217b returns 401 without a token', async () =>
+  it('TC-1211 sending a message to yourself fails cleanly with a specific message', async () =>
+  {
+    const res = await request(app)
+      .post(`/chat/${userA.user_id}`)
+      .set('Authorization', `Bearer ${userA.access_token}`)
+      .send({ content: 'talking to myself' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('לא ניתן לשלוח הודעה לעצמך');
+  });
+
+  it('TC-1212 sending to a well-formed but nonexistent peer id fails with not_found', async () =>
+  {
+    const res = await request(app)
+      .post(`/chat/${makeUuid()}`)
+      .set('Authorization', `Bearer ${userA.access_token}`)
+      .send({ content: 'is anyone there' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
+  });
+
+  it('TC-1217b fails without a token', async () =>
   {
     const res = await request(app).post(`/chat/${userB.user_id}`).send({ content: 'hi' });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 });
 
@@ -170,12 +206,13 @@ describe('GET /chat/:peer_id', () =>
       .query({ limit: 20 });
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBeGreaterThan(0);
-    expect(res.body[0]).toHaveProperty('message_id');
-    expect(res.body[0]).toHaveProperty('content');
-    expect(res.body[0]).toHaveProperty('sender_id');
-    expect(res.body[0]).toHaveProperty('created_at');
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.messages)).toBe(true);
+    expect(res.body.messages.length).toBeGreaterThan(0);
+    expect(res.body.messages[0]).toHaveProperty('message_id');
+    expect(res.body.messages[0]).toHaveProperty('content');
+    expect(res.body.messages[0]).toHaveProperty('sender_id');
+    expect(res.body.messages[0]).toHaveProperty('created_at');
   });
 
   it('TC-1204 supports before-cursor pagination with no duplicates or gaps', async () =>
@@ -193,7 +230,7 @@ describe('GET /chat/:peer_id', () =>
       .set('Authorization', `Bearer ${userA.access_token}`)
       .query({ limit: 3 });
 
-    const oldestId = first.body.at(-1)?.message_id;
+    const oldestId = first.body.messages.at(-1)?.message_id;
     expect(oldestId).toBeTruthy();
 
     const older = await request(app)
@@ -201,8 +238,8 @@ describe('GET /chat/:peer_id', () =>
       .set('Authorization', `Bearer ${userA.access_token}`)
       .query({ limit: 3, before: oldestId });
 
-    expect(older.status).toBe(200);
-    expect(older.body.every((m: { message_id: string }) => m.message_id !== oldestId)).toBe(true);
+    expect(older.body.success).toBe(true);
+    expect(older.body.messages.every((m: { message_id: string }) => m.message_id !== oldestId)).toBe(true);
   });
 
   it('TC-1205 rejects a malformed before-cursor', async () =>
@@ -212,10 +249,10 @@ describe('GET /chat/:peer_id', () =>
       .set('Authorization', `Bearer ${userA.access_token}`)
       .query({ before: 'not-a-uuid' });
 
-    expect(res.status).toBe(422);
+    expect(res.body.success).toBe(false);
   });
 
-  it('TC-1206 returns an empty array for a peer never messaged, not a 404', async () =>
+  it('TC-1206 returns an empty array for a peer never messaged, not an error', async () =>
   {
     const stranger = await signupUser(app, '_neverchatted');
     const res = await request(app)
@@ -223,7 +260,8 @@ describe('GET /chat/:peer_id', () =>
       .set('Authorization', `Bearer ${userA.access_token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.success).toBe(true);
+    expect(res.body.messages).toEqual([]);
   });
 });
 
@@ -238,8 +276,8 @@ describe('GET /chat/conversations (after messages)', () =>
       .set('Authorization', `Bearer ${userB.access_token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.length).toBeGreaterThan(0);
-    const conv = res.body[0];
+    expect(res.body.conversations.length).toBeGreaterThan(0);
+    const conv = res.body.conversations[0];
     expect(conv.peer_id).toBe(userA.user_id);
     expect(conv.last_content).toBeTruthy();
     expect(typeof conv.unread_count).toBe('number');
@@ -259,7 +297,7 @@ describe('PUT /chat/:peer_id/read', () =>
     const res = await request(app)
       .get('/chat/conversations')
       .set('Authorization', `Bearer ${userB.access_token}`);
-    const conv = res.body.find((c: { peer_id: string }) => c.peer_id === userA.user_id);
+    const conv = res.body.conversations.find((c: { peer_id: string }) => c.peer_id === userA.user_id);
 
     expect(conv?.unread_count).toBe(0);
   });
@@ -271,12 +309,13 @@ describe('PUT /chat/:peer_id/read', () =>
       .set('Authorization', `Bearer ${userB.access_token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(res.body.success).toBe(true);
   });
 });
 
 // ── WebSocket — /ws ───────────────────────────────────────────────────────────
-// tests.md section 13
+// tests.md section 13 (unaffected by the HTTP always-200 change — WS frames
+// were already body-based signaling with no HTTP status code involved)
 
 describe('WebSocket /ws', () =>
 {
@@ -356,6 +395,26 @@ describe('WebSocket /ws', () =>
     blockedWs.close();
   });
 
+  it('TC-1308 sending a message to yourself over WS returns a typed error, doesn\'t crash the connection', async () =>
+  {
+    // Regression coverage for the previously-unguarded self-message crash
+    // (see security.test.ts / improve.md) — now explicitly validated.
+    const ws = await openSocket(userA.access_token);
+    const errorFrame = nextMessage(ws);
+    ws.send(JSON.stringify({ peer_id: userA.user_id, content: 'talking to myself' }));
+
+    const frame = await errorFrame;
+    expect(frame.type).toBe('error');
+    expect(frame.code).toBe('validation_error');
+
+    // Connection survives — a follow-up ping still gets a pong.
+    const reply = nextMessage(ws);
+    ws.send(JSON.stringify({ type: 'ping' }));
+    expect(await reply).toEqual({ type: 'pong' });
+
+    ws.close();
+  });
+
   it('TC-1309 silently ignores non-JSON frames instead of crashing the connection', async () =>
   {
     const ws = await openSocket(userA.access_token);
@@ -395,7 +454,7 @@ describe('WebSocket /ws', () =>
       .get(`/chat/${userA.user_id}`)
       .set('Authorization', `Bearer ${offline.access_token}`);
 
-    expect(history.body.some((m: { content: string }) => m.content === 'you were offline')).toBe(true);
+    expect(history.body.messages.some((m: { content: string }) => m.content === 'you were offline')).toBe(true);
 
     senderWs.close();
   });

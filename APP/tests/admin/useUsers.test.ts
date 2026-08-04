@@ -9,9 +9,14 @@ import { useUsers } from '../../admin/src/sections/users/hooks/useUsers';
 
 const listMock = usersApi.list as unknown as ReturnType<typeof vi.fn>;
 
-function page(n: number, total = 100): { users: unknown[]; total: number }
+function page(n: number, total = 100): { success: true; message: string; users: unknown[]; total: number }
 {
-    return { users: Array.from({ length: n }, (_, i) => ({ user_id: `${i}` })), total };
+    return {
+        success: true,
+        message: 'ok',
+        users: Array.from({ length: n }, (_, i) => ({ user_id: `${i}` })),
+        total,
+    };
 }
 
 beforeEach(() =>
@@ -71,7 +76,7 @@ describe('useUsers', () =>
         await waitFor(() => expect(result.current.page).toBe(2));
     });
 
-    it('surfaces a Hebrew error message and stops loading when the request fails', async () =>
+    it('surfaces a Hebrew error message and stops loading on a network-level failure', async () =>
     {
         listMock.mockReset();
         listMock.mockRejectedValue(new Error('network down'));
@@ -80,6 +85,20 @@ describe('useUsers', () =>
 
         await waitFor(() => expect(result.current.loading).toBe(false));
         expect(result.current.error).toBe('שגיאה בטעינת המשתמשים');
+    });
+
+    it('surfaces the server\'s message on a resolved {success:false} response (not a thrown error)', async () =>
+    {
+        // The backend always answers HTTP 200; a business-logic failure
+        // resolves normally with success:false rather than rejecting.
+        listMock.mockReset();
+        listMock.mockResolvedValue({ success: false, message: 'אין הרשאה לצפות ברשימה זו' });
+
+        const { result } = renderHook(() => useUsers());
+
+        await waitFor(() => expect(result.current.loading).toBe(false));
+        expect(result.current.error).toBe('אין הרשאה לצפות ברשימה זו');
+        expect(result.current.users).toEqual([]);
     });
 
     it('refresh() re-fetches the current page and search without changing them', async () =>

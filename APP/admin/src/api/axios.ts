@@ -5,48 +5,68 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
 
 export const api = axios.create({ baseURL: BASE_URL });
 
-let refreshPromise: Promise<string> | null = null;
-
 api.interceptors.request.use((cfg) => {
   const token = tokenStore.get();
   if (token) cfg.headers.Authorization = `Bearer ${token}`;
   return cfg;
 });
 
-api.interceptors.response.use(
-  (r) => r,
-  async (err) => {
-    const original = err.config;
-    if (err.response?.status !== 401 || original._retry) {
-      return Promise.reject(err);
-    }
-    original._retry = true;
+// The backend always answers HTTP 200; success/failure lives in the body
+// (`{success, message, error?}`). Axios therefore never rejects for
+// business-logic failures — the auto-refresh-on-expired-token logic has to
+// live in the *success* handler, keyed off `data.error === 'unauthorized'`
+// rather than a 401 status code.
+//
+// This also sidesteps a real deadlock the old status-code-based version was
+// exposed to: if /auth/refresh itself failed with a 401, that response
+// recursed back through this same interceptor with no guard against it
+// being the refresh call itself. /auth/refresh's own failure codes
+// (session_not_found, session_expired, invalid_token, ...) are never
+// `unauthorized` — that code only ever comes from the `authenticate`
+// middleware, which /auth/refresh doesn't go through — so this can't recurse.
+let refreshPromise: Promise<boolean> | null = null;
 
+async function performRefresh(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
     try {
-      if (!refreshPromise) {
-        const storedRefresh = localStorage.getItem('refresh_token');
-        if (!storedRefresh) return Promise.reject(err);
+      const storedRefresh = localStorage.getItem('refresh_token');
+      if (!storedRefresh) return false;
 
-        refreshPromise = api
-          .post<{ access_token: string; refresh_token: string }>('/auth/refresh', {
-            refresh_token: storedRefresh,
-          })
-          .then((r) => {
-            tokenStore.set(r.data.access_token);
-            localStorage.setItem('refresh_token', r.data.refresh_token);
-            return r.data.access_token;
-          })
-          .finally(() => { refreshPromise = null; });
-      }
+      const { data } = await api.post('/auth/refresh', { refresh_token: storedRefresh });
+      if (!data.success) return false;
 
-      const newToken = await refreshPromise;
-      original.headers.Authorization = `Bearer ${newToken}`;
-      return api(original);
+      tokenStore.set(data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      return true;
     } catch {
-      tokenStore.set(null);
-      localStorage.removeItem('refresh_token');
-      window.location.href = '/login';
-      return Promise.reject(err);
+      return false;
+    } finally {
+      refreshPromise = null;
     }
-  },
-);
+  })();
+
+  return refreshPromise;
+}
+
+api.interceptors.response.use(async (response) => {
+  const original = response.config as typeof response.config & { _retry?: boolean };
+  const isUnauthorized = response.data?.success === false && response.data?.error === 'unauthorized';
+
+  if (!isUnauthorized || original._retry) {
+    return response;
+  }
+
+  original._retry = true;
+  const refreshed = await performRefresh();
+
+  if (!refreshed) {
+    tokenStore.set(null);
+    localStorage.removeItem('refresh_token');
+    window.location.href = '/login';
+    return response;
+  }
+
+  return api(original);
+});

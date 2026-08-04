@@ -9,6 +9,9 @@ beforeAll(() =>
   app = buildApp();
 });
 
+// Every response is HTTP 200; success/failure is signaled by the body's
+// `success` boolean.
+
 // ── GET/PUT /users/me ─────────────────────────────────────────────────────────
 // tests.md section 6
 
@@ -22,16 +25,19 @@ describe('GET /users/me', () =>
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.user_id).toBe(user_id);
     expect(res.body).toHaveProperty('name');
     expect(res.body).toHaveProperty('bio');
   });
 
-  it('TC-613a returns 401 with no token', async () =>
+  it('TC-613a fails with no token', async () =>
   {
     const res = await request(app).get('/users/me');
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 });
 
@@ -52,9 +58,22 @@ describe('PUT /users/me', () =>
       .send({ bio: 'אוהב טיולים' });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.bio).toBe('אוהב טיולים');
     expect(res.body.name).toBe('ישראל ישראלי');
     expect(res.body.city).toBe('תל אביב');
+  });
+
+  it('TC-604/605 fails (not a crash) on an empty body — no fields to update', async () =>
+  {
+    const { access_token } = await signupUser(app, '_emptyput');
+    const res = await request(app)
+      .put('/users/me')
+      .set('Authorization', `Bearer ${access_token}`)
+      .send({});
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 
   it('TC-606 name boundary: rejects empty, accepts 80 chars, rejects 81 chars', async () =>
@@ -63,13 +82,14 @@ describe('PUT /users/me', () =>
     const auth = { Authorization: `Bearer ${access_token}` };
 
     const empty = await request(app).put('/users/me').set(auth).send({ name: '' });
-    expect(empty.status).toBe(422);
+    expect(empty.body.success).toBe(false);
+    expect(empty.body.message).toBe('השם חייב להכיל בין 1 ל-80 תווים');
 
     const at80 = await request(app).put('/users/me').set(auth).send({ name: 'א'.repeat(80) });
-    expect(at80.status).toBe(200);
+    expect(at80.body.success).toBe(true);
 
     const at81 = await request(app).put('/users/me').set(auth).send({ name: 'א'.repeat(81) });
-    expect(at81.status).toBe(422);
+    expect(at81.body.success).toBe(false);
   });
 
   it('TC-607 bio boundary: accepts empty and exactly 500 chars, rejects 501', async () =>
@@ -78,16 +98,16 @@ describe('PUT /users/me', () =>
     const auth = { Authorization: `Bearer ${access_token}` };
 
     const empty = await request(app).put('/users/me').set(auth).send({ bio: '' });
-    expect(empty.status).toBe(200);
+    expect(empty.body.success).toBe(true);
 
     const at500 = await request(app).put('/users/me').set(auth).send({ bio: 'x'.repeat(500) });
-    expect(at500.status).toBe(200);
+    expect(at500.body.success).toBe(true);
 
     const at501 = await request(app).put('/users/me').set(auth).send({ bio: 'x'.repeat(501) });
-    expect(at501.status).toBe(422);
+    expect(at501.body.success).toBe(false);
   });
 
-  it.each(['Male', 'nonbinary', ''])('TC-608 rejects an invalid gender value %j', async (gender) =>
+  it.each(['Male', 'nonbinary', ''])('TC-608 rejects an invalid gender value %j with a specific message', async (gender) =>
   {
     const { access_token } = await signupUser(app, `_badgender${Math.random().toString(36).slice(2, 8)}`);
     const res = await request(app)
@@ -95,11 +115,13 @@ describe('PUT /users/me', () =>
       .set('Authorization', `Bearer ${access_token}`)
       .send({ gender });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('יש לבחור מין תקין');
   });
 
   it.each(['01-01-2000', '2000/01/01', 'not-a-date'])(
-    'TC-609 rejects a malformed date_of_birth %j',
+    'TC-609 rejects a malformed date_of_birth %j with a specific message',
     async (date_of_birth) =>
     {
       const { access_token } = await signupUser(app, `_baddob${Math.random().toString(36).slice(2, 8)}`);
@@ -108,7 +130,9 @@ describe('PUT /users/me', () =>
         .set('Authorization', `Bearer ${access_token}`)
         .send({ date_of_birth });
 
-      expect(res.status).toBe(422);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('תאריך הלידה חייב להיות בפורמט YYYY-MM-DD');
     },
   );
 
@@ -121,6 +145,7 @@ describe('PUT /users/me', () =>
       .send({ date_of_birth: '1995-06-15' });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.date_of_birth).toBe('1995-06-15');
   });
 
@@ -130,10 +155,10 @@ describe('PUT /users/me', () =>
     const auth = { Authorization: `Bearer ${access_token}` };
 
     const emptyCity = await request(app).put('/users/me').set(auth).send({ city: '' });
-    expect(emptyCity.status).toBe(422);
+    expect(emptyCity.body.success).toBe(false);
 
     const emptyRegion = await request(app).put('/users/me').set(auth).send({ region: '' });
-    expect(emptyRegion.status).toBe(422);
+    expect(emptyRegion.body.success).toBe(false);
   });
 
   it('TC-612 ignores fields outside the allowlist (cannot self-set status via PUT)', async () =>
@@ -145,15 +170,18 @@ describe('PUT /users/me', () =>
       .send({ status: 'banned', name: 'Still Works' });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.name).toBe('Still Works');
     expect(res.body.status).toBeUndefined();
   });
 
-  it('TC-613 returns 401 with no token', async () =>
+  it('TC-613 fails with no token', async () =>
   {
     const res = await request(app).put('/users/me').send({ name: 'Nobody' });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 });
 
@@ -171,6 +199,7 @@ describe('POST /users/me/photo', () =>
       .attach('photo', tinyImageBuffer(), { filename: 'me.png', contentType: 'image/png' });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.photo_url).toMatch(/^\/uploads\//);
 
     const profile = await request(app).get('/users/me').set('Authorization', `Bearer ${access_token}`);
@@ -192,7 +221,7 @@ describe('POST /users/me/photo', () =>
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'b.png', contentType: 'image/png' });
 
-    expect(second.status).toBe(200);
+    expect(second.body.success).toBe(true);
     expect(second.body.photo_url).not.toBe(first.body.photo_url);
   });
 
@@ -203,7 +232,8 @@ describe('POST /users/me/photo', () =>
       .post('/users/me/photo')
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('missing_file');
   });
 
@@ -215,7 +245,8 @@ describe('POST /users/me/photo', () =>
       .set('Authorization', `Bearer ${access_token}`)
       .attach('photo', Buffer.from('not an image'), { filename: 'note.txt', contentType: 'text/plain' });
 
-    expect(res.status).toBe(415);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('invalid_file_type');
   });
 
@@ -229,7 +260,8 @@ describe('POST /users/me/photo', () =>
       .set('Authorization', `Bearer ${access_token}`)
       .attach('photo', oversized, { filename: 'huge.jpg', contentType: 'image/jpeg' });
 
-    expect(res.status).toBe(413);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('file_too_large');
   }, 30_000);
 
@@ -244,19 +276,21 @@ describe('POST /users/me/photo', () =>
         contentType: 'image/png',
       });
 
-    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     const basename = res.body.photo_url.split('/').pop();
     expect(basename).not.toContain('..');
     expect(basename).toMatch(/^[0-9a-f-]{36}\.png$/);
   });
 
-  it('TC-708 returns 401 with no token', async () =>
+  it('TC-708 fails with no token', async () =>
   {
     const res = await request(app)
       .post('/users/me/photo')
       .attach('photo', tinyImageBuffer(), { filename: 'x.png', contentType: 'image/png' });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 });
 
@@ -271,7 +305,8 @@ describe('Additional photos', () =>
     const res = await request(app).get('/users/me/photos').set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([]);
+    expect(res.body.success).toBe(true);
+    expect(res.body.photos).toEqual([]);
   });
 
   it('TC-802/803 allows exactly 4 photos then rejects the 5th', async () =>
@@ -286,7 +321,7 @@ describe('Additional photos', () =>
         .set(auth)
         .attach('photo', tinyImageBuffer(), { filename: `p${i}.png`, contentType: 'image/png' });
 
-      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
       expect(res.body.photo_id).toBeTruthy();
     }
 
@@ -295,11 +330,11 @@ describe('Additional photos', () =>
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'p5.png', contentType: 'image/png' });
 
-    expect(fifth.status).toBe(422);
+    expect(fifth.body.success).toBe(false);
     expect(fifth.body.error).toBe('photo_limit_reached');
 
     const list = await request(app).get('/users/me/photos').set(auth);
-    expect(list.body.length).toBe(4);
+    expect(list.body.photos.length).toBe(4);
   });
 
   it('TC-804 DELETE removes an owned photo', async () =>
@@ -314,10 +349,10 @@ describe('Additional photos', () =>
 
     const res = await request(app).delete(`/users/me/photos/${added.body.photo_id}`).set(auth);
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
+    expect(res.body.success).toBe(true);
 
     const list = await request(app).get('/users/me/photos').set(auth);
-    expect(list.body.find((p: { photo_id: string }) => p.photo_id === added.body.photo_id)).toBeUndefined();
+    expect(list.body.photos.find((p: { photo_id: string }) => p.photo_id === added.body.photo_id)).toBeUndefined();
   });
 
   it('TC-805 DELETE rejects a non-UUID photo_id', async () =>
@@ -327,17 +362,20 @@ describe('Additional photos', () =>
       .delete('/users/me/photos/not-a-uuid')
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 
-  it('TC-806 DELETE returns 404 for a UUID that does not exist', async () =>
+  it('TC-806 DELETE fails with not_found for a UUID that does not exist', async () =>
   {
     const { access_token } = await signupUser(app, '_nosuchphoto');
     const res = await request(app)
       .delete(`/users/me/photos/${makeUuid()}`)
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
   });
 
   it('TC-807 cannot delete a photo owned by a different user (IDOR)', async () =>
@@ -354,12 +392,13 @@ describe('Additional photos', () =>
       .delete(`/users/me/photos/${added.body.photo_id}`)
       .set('Authorization', `Bearer ${attacker.access_token}`);
 
-    expect(res.status).toBe(404);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
 
     const ownerList = await request(app)
       .get('/users/me/photos')
       .set('Authorization', `Bearer ${owner.access_token}`);
-    expect(ownerList.body.some((p: { photo_id: string }) => p.photo_id === added.body.photo_id)).toBe(true);
+    expect(ownerList.body.photos.some((p: { photo_id: string }) => p.photo_id === added.body.photo_id)).toBe(true);
   });
 
   it('TC-808 deleting a photo frees up a slot for another upload', async () =>
@@ -384,7 +423,7 @@ describe('Additional photos', () =>
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'refill.png', contentType: 'image/png' });
 
-    expect(res.status).toBe(201);
+    expect(res.body.success).toBe(true);
   });
 });
 
@@ -405,8 +444,9 @@ describe('GET /users/discover', () =>
       .query({ page: 1, limit: 10 });
 
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.some((u: { user_id: string }) => u.user_id === user_id)).toBe(false);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.candidates)).toBe(true);
+    expect(res.body.candidates.some((u: { user_id: string }) => u.user_id === user_id)).toBe(false);
   });
 
   it('TC-903 excludes a suspended user from every caller\'s feed', async () =>
@@ -431,7 +471,7 @@ describe('GET /users/discover', () =>
       .set('Authorization', `Bearer ${viewer.access_token}`)
       .query({ limit: 100 });
 
-    expect(res.body.some((u: { user_id: string }) => u.user_id === target.user_id)).toBe(false);
+    expect(res.body.candidates.some((u: { user_id: string }) => u.user_id === target.user_id)).toBe(false);
   });
 
   it('TC-906 pagination returns no duplicates across two pages', async () =>
@@ -446,16 +486,16 @@ describe('GET /users/discover', () =>
     const page1 = await request(app).get('/users/discover').set(auth).query({ page: 1, limit: 2 });
     const page2 = await request(app).get('/users/discover').set(auth).query({ page: 2, limit: 2 });
 
-    const idsPage1 = page1.body.map((u: { user_id: string }) => u.user_id);
-    const idsPage2 = page2.body.map((u: { user_id: string }) => u.user_id);
+    const idsPage1 = page1.body.candidates.map((u: { user_id: string }) => u.user_id);
+    const idsPage2 = page2.body.candidates.map((u: { user_id: string }) => u.user_id);
     const overlap = idsPage1.filter((id: string) => idsPage2.includes(id));
 
     expect(overlap).toEqual([]);
   });
 
-  it.each([[0, 422], [101, 422], [100, 200], [1, 200]])(
-    'TC-907 limit=%d responds with status %d',
-    async (limit, expectedStatus) =>
+  it.each([[0, false], [101, false], [100, true], [1, true]])(
+    'TC-907 limit=%d succeeds=%s',
+    async (limit, expectedSuccess) =>
     {
       const { access_token } = await signupUser(app, `_limitbound${limit}`);
       const res = await request(app)
@@ -463,7 +503,8 @@ describe('GET /users/discover', () =>
         .set('Authorization', `Bearer ${access_token}`)
         .query({ limit });
 
-      expect(res.status).toBe(expectedStatus);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(expectedSuccess);
     },
   );
 
@@ -475,7 +516,7 @@ describe('GET /users/discover', () =>
       .set('Authorization', `Bearer ${access_token}`)
       .query({ page: 0 });
 
-    expect(res.status).toBe(422);
+    expect(res.body.success).toBe(false);
   });
 
   it('TC-910 candidate objects never include email or password_hash', async () =>
@@ -488,18 +529,19 @@ describe('GET /users/discover', () =>
       .set('Authorization', `Bearer ${viewer.access_token}`)
       .query({ limit: 100 });
 
-    for (const candidate of res.body)
+    for (const candidate of res.body.candidates)
     {
       expect(candidate).not.toHaveProperty('email');
       expect(candidate).not.toHaveProperty('password_hash');
     }
   });
 
-  it('TC-911 returns 401 with no token', async () =>
+  it('TC-911 fails with no token', async () =>
   {
     const res = await request(app).get('/users/discover');
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 });
 
@@ -517,18 +559,20 @@ describe('GET /users/:id', () =>
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.user_id).toBe(peerId);
     expect(res.body).not.toHaveProperty('email');
   });
 
-  it('TC-1002 a non-UUID id returns 422, not swallowed by another route', async () =>
+  it('TC-1002 a non-UUID id fails cleanly, not swallowed by another route', async () =>
   {
     const { access_token } = await signupUser(app, '_notuuid');
     const res = await request(app)
       .get('/users/not-a-uuid')
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 
   it('TC-1002b /users/discover and /users/me are never captured by the /:id route', async () =>
@@ -539,18 +583,20 @@ describe('GET /users/:id', () =>
     const discover = await request(app).get('/users/discover').set(auth);
     const me = await request(app).get('/users/me').set(auth);
 
-    expect(Array.isArray(discover.body)).toBe(true);
+    expect(Array.isArray(discover.body.candidates)).toBe(true);
     expect(me.body).toHaveProperty('bio');
   });
 
-  it('TC-1003 returns 404 for a well-formed UUID that does not exist', async () =>
+  it('TC-1003 fails with not_found for a well-formed UUID that does not exist', async () =>
   {
     const { access_token } = await signupUser(app, '_peer404');
     const res = await request(app)
       .get(`/users/${makeUuid()}`)
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
   });
 
   it('TC-1005/1006 GET /:id/photos returns {name, photos} with an empty array by default', async () =>
@@ -563,6 +609,7 @@ describe('GET /users/:id', () =>
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body).toHaveProperty('name');
     expect(res.body.photos).toEqual([]);
   });
@@ -582,19 +629,19 @@ describe('POST /users/:id/block', () =>
       .get('/users/discover')
       .set('Authorization', `Bearer ${access_token}`)
       .query({ limit: 100 });
-    expect(before.body.some((u: { user_id: string }) => u.user_id === blocked)).toBe(true);
+    expect(before.body.candidates.some((u: { user_id: string }) => u.user_id === blocked)).toBe(true);
 
     const blockRes = await request(app)
       .post(`/users/${blocked}/block`)
       .set('Authorization', `Bearer ${access_token}`);
     expect(blockRes.status).toBe(200);
-    expect(blockRes.body.ok).toBe(true);
+    expect(blockRes.body.success).toBe(true);
 
     const after = await request(app)
       .get('/users/discover')
       .set('Authorization', `Bearer ${access_token}`)
       .query({ limit: 100 });
-    expect(after.body.some((u: { user_id: string }) => u.user_id === blocked)).toBe(false);
+    expect(after.body.candidates.some((u: { user_id: string }) => u.user_id === blocked)).toBe(false);
 
     const viewerId = (
       await request(app).get('/auth/me').set('Authorization', `Bearer ${access_token}`)
@@ -603,7 +650,7 @@ describe('POST /users/:id/block', () =>
       .get('/users/discover')
       .set('Authorization', `Bearer ${blockedToken}`)
       .query({ limit: 100 });
-    expect(afterReverse.body.some((u: { user_id: string }) => u.user_id === viewerId)).toBe(false);
+    expect(afterReverse.body.candidates.some((u: { user_id: string }) => u.user_id === viewerId)).toBe(false);
   });
 
   it('TC-1102 cannot block yourself', async () =>
@@ -613,7 +660,8 @@ describe('POST /users/:id/block', () =>
       .post(`/users/${user_id}/block`)
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('cannot_block_self');
   });
 
@@ -626,8 +674,8 @@ describe('POST /users/:id/block', () =>
     const first = await request(app).post(`/users/${blocked}/block`).set(auth);
     const second = await request(app).post(`/users/${blocked}/block`).set(auth);
 
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
+    expect(first.body.success).toBe(true);
+    expect(second.body.success).toBe(true);
   });
 
   it('TC-1104 rejects a non-UUID target id', async () =>
@@ -637,13 +685,16 @@ describe('POST /users/:id/block', () =>
       .post('/users/not-a-uuid/block')
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 
-  it('TC-1108b returns 401 with no token', async () =>
+  it('TC-1108b fails with no token', async () =>
   {
     const res = await request(app).post(`/users/${makeUuid()}/block`);
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 });

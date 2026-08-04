@@ -1,14 +1,22 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { api } from '../api/axios';
 import { authApi } from '../api/auth';
 import { tokenStore } from '../api/tokenStore';
 import type { AdminUser } from '../types';
 
+// Every server call resolves — success or failure is `{success, message}`,
+// never a thrown error (except for genuine network failures, which axios
+// still rejects). Callers read `.success`/`.message` directly instead of
+// try/catch, matching the backend's always-200 contract.
+export interface AuthResult {
+  success: boolean;
+  message: string;
+}
+
 interface AuthState {
   user: AdminUser | null;
   loading: boolean;
-  login: (identifier: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<AuthResult>;
   logout: () => Promise<void>;
 }
 
@@ -23,19 +31,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedRefresh = localStorage.getItem('refresh_token');
     if (!storedRefresh) { setLoading(false); return; }
 
-    api
-      .post<{ access_token: string; refresh_token: string; user_id: string; email: string; username: string; is_admin: boolean }>(
-        '/auth/refresh',
-        { refresh_token: storedRefresh },
-      )
-      .then((r) => {
-        tokenStore.set(r.data.access_token);
-        localStorage.setItem('refresh_token', r.data.refresh_token);
+    authApi
+      .refresh(storedRefresh)
+      .then((data) => {
+        if (!data.success) {
+          localStorage.removeItem('refresh_token');
+          return;
+        }
+
+        tokenStore.set(data.access_token);
+        localStorage.setItem('refresh_token', data.refresh_token);
         setUser({
-          user_id:  r.data.user_id,
-          email:    r.data.email,
-          username: r.data.username,
-          is_admin: r.data.is_admin,
+          user_id:  data.user_id,
+          email:    data.email,
+          username: data.username,
+          is_admin: data.is_admin,
         });
       })
       .catch(() => {
@@ -44,17 +54,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (identifier: string, password: string) => {
+  const login = useCallback(async (identifier: string, password: string): Promise<AuthResult> => {
     const data = await authApi.login(identifier, password);
-    if (!data.is_admin) throw new Error('not_admin');
+
+    if (!data.success) {
+      return { success: false, message: data.message };
+    }
+    if (!data.is_admin) {
+      return { success: false, message: 'משתמש זה אינו מנהל מערכת.' };
+    }
+
     tokenStore.set(data.access_token);
     localStorage.setItem('refresh_token', data.refresh_token);
     setUser({ user_id: data.user_id, email: data.email, username: data.username, is_admin: data.is_admin });
+
+    return { success: true, message: data.message };
   }, []);
 
   const logout = useCallback(async () => {
     const storedRefresh = localStorage.getItem('refresh_token');
-    if (storedRefresh) await authApi.logout(storedRefresh);
+    if (storedRefresh) await authApi.logout(storedRefresh).catch(() => {});
     tokenStore.set(null);
     localStorage.removeItem('refresh_token');
     setUser(null);

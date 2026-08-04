@@ -1,5 +1,6 @@
 import type { AxiosInstance } from 'axios';
-import type { Message, Conversation } from '../types/chat';
+import type { Message, Conversation, MsgType } from '../types/chat';
+import type { ApiEnvelope } from '../types/api';
 
 interface GetMessagesParams
 {
@@ -10,12 +11,12 @@ interface GetMessagesParams
 export function createChatApi(client: AxiosInstance)
 {
     return {
-        getConversations(): Promise<Conversation[]>
+        getConversations(): Promise<ApiEnvelope & { conversations: Conversation[] }>
         {
             return client.get('/chat/conversations').then((r) => r.data);
         },
 
-        getMessages(peer_id: string, params?: GetMessagesParams): Promise<Message[]>
+        getMessages(peer_id: string, params?: GetMessagesParams): Promise<ApiEnvelope & { messages: Message[] }>
         {
             return client
                 .get(`/chat/${peer_id}`, { params })
@@ -25,19 +26,19 @@ export function createChatApi(client: AxiosInstance)
         sendMessage(
             peer_id:  string,
             content:  string,
-            msg_type: string = 'TEXT',
-        ): Promise<Message>
+            msg_type: MsgType = 'TEXT',
+        ): Promise<ApiEnvelope & Message>
         {
             return client
                 .post(`/chat/${peer_id}`, { content, msg_type })
                 .then((r) => r.data);
         },
 
-        markRead(peer_id: string): Promise<void>
+        markRead(peer_id: string): Promise<ApiEnvelope>
         {
             return client
                 .put(`/chat/${peer_id}/read`)
-                .then(() => undefined);
+                .then((r) => r.data);
         },
     };
 }

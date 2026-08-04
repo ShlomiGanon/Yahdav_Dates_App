@@ -1,10 +1,11 @@
 interface Props
 {
-    onPress:   () => void;
+    onPress?:  () => void;
     label:     string;
     variant?:  'primary' | 'secondary';
     loading?:  boolean;
     disabled?: boolean;
+    type?:     'button' | 'submit';
 }
 
 export function Button(
@@ -14,6 +15,7 @@ export function Button(
     variant  = 'primary',
     loading  = false,
     disabled = false,
+    type     = 'button',
 }: Props)
 {
     const base = 'w-full py-4 rounded-card text-lg font-semibold transition-opacity';
@@ -24,7 +26,7 @@ export function Button(
 
     return (
         <button
-            type="button"
+            type={type}
             disabled={disabled || loading}
             onClick={onPress}
             className={`${base} ${colours} disabled:opacity-50 disabled:cursor-not-allowed`}

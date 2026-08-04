@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { usersApi } from '../../../api/users';
 import type { UserDetail, UserStatus } from '../../../types';
 
+interface ActionResult {
+  success: boolean;
+  message: string;
+}
+
 export function useUser(id: string) {
   const [user, setUser]       = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -14,6 +19,10 @@ export function useUser(id: string) {
     setError('');
     try {
       const data = await usersApi.get(id);
+      if (!data.success) {
+        setError(data.message);
+        return;
+      }
       setUser(data);
     } catch {
       setError('שגיאה בטעינת המשתמש');
@@ -24,25 +33,33 @@ export function useUser(id: string) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function updateStatus(status: UserStatus): Promise<void> {
-    if (!user) return;
+  async function updateStatus(status: UserStatus): Promise<ActionResult> {
+    if (!user) return { success: false, message: 'המשתמש לא נטען' };
     setSaving(true);
     try {
-      await usersApi.updateStatus(id, status);
-      setUser({ ...user, status });
+      const data = await usersApi.updateStatus(id, status);
+      if (data.success) {
+        setUser({ ...user, status });
+      }
+      return { success: data.success, message: data.message };
+    } catch {
+      return { success: false, message: 'שגיאת רשת, נסה שוב' };
     } finally {
       setSaving(false);
     }
   }
 
-  async function deleteUser(): Promise<void> {
+  async function deleteUser(): Promise<ActionResult> {
     setDeleting(true);
     try {
-      await usersApi.delete(id);
+      const data = await usersApi.delete(id);
+      return { success: data.success, message: data.message };
+    } catch {
+      return { success: false, message: 'שגיאת רשת, נסה שוב' };
     } finally {
       setDeleting(false);
     }
   }
 
-  return { user, loading, error, saving, deleting, updateStatus, deleteUser };
+  return { user, loading, error, saving, deleting, updateStatus, deleteUser, reload: load };
 }

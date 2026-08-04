@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import path from 'path';
 import { config } from './config';
 import { errorHandler } from './middleware/errorHandler';
@@ -9,6 +10,15 @@ import adminRoutes   from './routes/admin.routes';
 
 export function createApp(): express.Application {
   const app = express();
+
+  // CORS — the web and admin dashboards are served from different origins
+  // than this API in dev (and typically in production too), so browsers
+  // need an explicit Access-Control-Allow-Origin before they'll let
+  // frontend JS read the response.
+  app.use(cors({
+    origin: config.corsOrigins,
+    credentials: true,
+  }));
 
   // Body parsing
   app.use(express.json());

@@ -19,9 +19,13 @@ export function useCandidates() {
     else setLoadingMore(true);
     try {
       const data = await usersApi.discoverCandidates(pageNum, PAGE_SIZE);
-      if (initial) setCandidates(data);
-      else setCandidates((prev) => [...prev, ...data]);
-      setHasMore(data.length === PAGE_SIZE);
+      if (!data.success) {
+        setError(data.message);
+        return;
+      }
+      if (initial) setCandidates(data.candidates);
+      else setCandidates((prev) => [...prev, ...data.candidates]);
+      setHasMore(data.candidates.length === PAGE_SIZE);
       setPage(pageNum);
       setError('');
     } catch {

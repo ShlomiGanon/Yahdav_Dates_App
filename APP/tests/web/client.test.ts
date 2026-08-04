@@ -64,7 +64,7 @@ describe('request interceptor', () =>
         mock.onGet('/whoami').reply((config) =>
         {
             expect(config.headers?.Authorization).toBe('Bearer token-123');
-            return [200, { ok: true }];
+            return [200, { success: true, message: 'ok' }];
         });
 
         const res = await axiosClient.get('/whoami');
@@ -76,14 +76,19 @@ describe('request interceptor', () =>
         mock.onGet('/whoami').reply((config) =>
         {
             expect(config.headers?.Authorization).toBeUndefined();
-            return [200, { ok: true }];
+            return [200, { success: true, message: 'ok' }];
         });
 
         await axiosClient.get('/whoami');
     });
 });
 
-describe('response interceptor — 401 auto-refresh', () =>
+// The backend always answers HTTP 200; success/failure lives in the body
+// (`{success, message, error?}`). Axios never rejects for these — the
+// auto-refresh logic lives in the *success* branch of the interceptor,
+// keyed off `data.error === 'unauthorized'`.
+
+describe('response interceptor — auto-refresh on {success:false, error:"unauthorized"}', () =>
 {
     it('refreshes once, then retries the original request with the new token', async () =>
     {
@@ -94,7 +99,7 @@ describe('response interceptor — 401 auto-refresh', () =>
         mock.onPost('/auth/refresh').reply(() =>
         {
             refreshCalls += 1;
-            return [200, { access_token: 'fresh-token', refresh_token: 'new-refresh' }];
+            return [200, { success: true, message: 'ok', access_token: 'fresh-token', refresh_token: 'new-refresh' }];
         });
 
         let sawFreshToken = false;
@@ -102,21 +107,22 @@ describe('response interceptor — 401 auto-refresh', () =>
         {
             if (config.headers?.Authorization === 'Bearer expired-token')
             {
-                return [401, { error: 'expired' }];
+                return [200, { success: false, message: 'יש להתחבר מחדש', error: 'unauthorized' }];
             }
             sawFreshToken = config.headers?.Authorization === 'Bearer fresh-token';
-            return [200, { ok: true }];
+            return [200, { success: true, message: 'ok' }];
         });
 
         const res = await axiosClient.get('/protected');
 
         expect(res.status).toBe(200);
+        expect(res.data.success).toBe(true);
         expect(refreshCalls).toBe(1);
         expect(sawFreshToken).toBe(true);
         expect(webTokenStorage.setAccessToken).toHaveBeenCalledWith('fresh-token');
     });
 
-    it('queues concurrent 401s behind a single refresh call', async () =>
+    it('shares a single in-flight refresh across concurrent unauthorized responses', async () =>
     {
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('valid-refresh');
@@ -126,16 +132,16 @@ describe('response interceptor — 401 auto-refresh', () =>
         {
             refreshCalls += 1;
             await new Promise((resolve) => setTimeout(resolve, 20));
-            return [200, { access_token: 'fresh-token', refresh_token: 'new-refresh' }];
+            return [200, { success: true, message: 'ok', access_token: 'fresh-token', refresh_token: 'new-refresh' }];
         });
 
         mock.onGet('/protected').reply((config) =>
         {
             if (config.headers?.Authorization === 'Bearer expired-token')
             {
-                return [401, { error: 'expired' }];
+                return [200, { success: false, message: 'יש להתחבר מחדש', error: 'unauthorized' }];
             }
-            return [200, { ok: true }];
+            return [200, { success: true, message: 'ok' }];
         });
 
         const [a, b, c] = await Promise.all([
@@ -144,37 +150,96 @@ describe('response interceptor — 401 auto-refresh', () =>
             axiosClient.get('/protected'),
         ]);
 
-        expect(a.status).toBe(200);
-        expect(b.status).toBe(200);
-        expect(c.status).toBe(200);
+        expect(a.data.success).toBe(true);
+        expect(b.data.success).toBe(true);
+        expect(c.data.success).toBe(true);
         expect(refreshCalls).toBe(1);
     });
 
-    it('clears stored tokens when the refresh call fails at the network level', async () =>
+    it('clears stored tokens and redirects when the refresh call itself fails', async () =>
     {
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('also-invalid');
 
-        // A network-level failure (no response at all) rather than a 401 —
-        // see the note below on why a 401 from /auth/refresh itself isn't
-        // used here.
+        mock.onPost('/auth/refresh').reply(200, {
+            success: false, message: 'ההתחברות פגה, יש להתחבר מחדש', error: 'session_not_found',
+        });
+        mock.onGet('/protected').reply(200, {
+            success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
+        });
+
+        const res = await axiosClient.get('/protected');
+
+        // Resolves (never throws) with the original failed response, so
+        // every caller can use the same `if (!res.data.success)` pattern
+        // regardless of whether a refresh was attempted behind the scenes.
+        expect(res.data.success).toBe(false);
+        expect(webTokenStorage.clear).toHaveBeenCalledTimes(1);
+        expect(window.location.href).toBe('/login');
+    });
+
+    it('clears tokens when the refresh call fails at the network level', async () =>
+    {
+        webTokenStorage.setAccessToken('expired-token');
+        webTokenStorage.setRefreshToken('also-invalid');
+
         mock.onPost('/auth/refresh').networkError();
-        mock.onGet('/protected').reply(401, { error: 'expired' });
+        mock.onGet('/protected').reply(200, {
+            success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
+        });
 
-        await expect(axiosClient.get('/protected')).rejects.toBeTruthy();
+        const res = await axiosClient.get('/protected');
 
+        expect(res.data.success).toBe(false);
         expect(webTokenStorage.clear).toHaveBeenCalledTimes(1);
     });
 
-    // NOTE — investigated but deliberately not asserted here: making
-    // /auth/refresh itself respond 401 (instead of a network error) sends
-    // that response back through this same interceptor recursively. Because
-    // the interceptor doesn't special-case "this request IS the refresh
-    // call," and `_isRefreshing` is already true at that point, the inner
-    // 401 gets queued behind the very refresh attempt it's nested inside —
-    // a deadlock that hung this suite for 5s+ per run when written as a
-    // test. That hang is itself evidence of a real gap (the interceptor has
-    // no guard against /auth/refresh responding 401), worth a look — but
-    // encoding a test that hangs the suite isn't a reasonable way to track
-    // it, so it's flagged here in prose instead.
+    it('does not attempt a refresh loop for a second unauthorized response on the retried request', async () =>
+    {
+        webTokenStorage.setAccessToken('always-expired');
+        webTokenStorage.setRefreshToken('valid-refresh');
+
+        let refreshCalls = 0;
+        mock.onPost('/auth/refresh').reply(() =>
+        {
+            refreshCalls += 1;
+            return [200, { success: true, message: 'ok', access_token: 'still-bad-token', refresh_token: 'new-refresh' }];
+        });
+        mock.onGet('/always-unauthorized').reply(200, {
+            success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
+        });
+
+        const res = await axiosClient.get('/always-unauthorized');
+
+        expect(res.data.success).toBe(false);
+        expect(refreshCalls).toBe(1);
+    });
+
+    // Regression coverage for a real bug found while testing the OLD
+    // status-code-based interceptor: making /auth/refresh itself respond
+    // with an auth failure recursed back through the same interceptor and
+    // deadlocked, because nothing special-cased "this request IS the
+    // refresh call." The new error-CODE-based design (`error ===
+    // 'unauthorized'`) is structurally immune to that: /auth/refresh's own
+    // failure responses use codes like `session_not_found` /
+    // `invalid_token`, never `unauthorized` (that code only ever comes
+    // from the `authenticate` middleware, which /auth/refresh doesn't go
+    // through), so this can no longer recurse.
+    it('does not deadlock when /auth/refresh responds with a non-"unauthorized" failure', async () =>
+    {
+        webTokenStorage.setAccessToken('expired-token');
+        webTokenStorage.setRefreshToken('expired-refresh-too');
+
+        mock.onPost('/auth/refresh').reply(200, {
+            success: false, message: 'ההתחברות פגה, יש להתחבר מחדש', error: 'session_expired',
+        });
+        mock.onGet('/protected').reply(200, {
+            success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
+        });
+
+        const res = await axiosClient.get('/protected');
+
+        expect(res.data.success).toBe(false);
+        expect(webTokenStorage.clear).toHaveBeenCalledTimes(1);
+    });
 });

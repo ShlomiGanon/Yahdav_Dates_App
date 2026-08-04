@@ -14,6 +14,10 @@ export function usePeerProfile(peer_id: string, onBlocked: () => void) {
   const load = async () => {
     try {
       const data = await usersApi.getPeerProfile(peer_id);
+      if (!data.success) {
+        setLoadError(data.message);
+        return;
+      }
       setProfile(data);
     } catch {
       setLoadError('משהו השתבש בטעינת הפרופיל');
@@ -25,8 +29,12 @@ export function usePeerProfile(peer_id: string, onBlocked: () => void) {
   const handleBlock = async () => {
     setBlocking(true);
     try {
-      await usersApi.blockUser(peer_id);
-      onBlocked();
+      const data = await usersApi.blockUser(peer_id);
+      if (data.success) {
+        onBlocked();
+      } else {
+        Alert.alert('שגיאה', data.message);
+      }
     } catch {
       Alert.alert('שגיאה', 'החסימה נכשלה. נסה/י שנית.');
     } finally {

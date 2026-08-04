@@ -15,7 +15,11 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
   const load = async () => {
     try {
       const data = await usersApi.getMyPhotos();
-      setPhotos(data);
+      if (!data.success) {
+        onStatus(data.message, false);
+        return;
+      }
+      setPhotos(data.photos);
     } catch {
       onStatus('שגיאה בטעינת התמונות', false);
     } finally {
@@ -35,14 +39,16 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
     });
     if (result.canceled) return;
     const asset = result.assets[0];
-    const uri = await resizePhoto(asset.uri, asset.width ?? 0, asset.height ?? 0);
-    const form = new FormData();
-    form.append('photo', { uri, name: 'photo.jpg', type: 'image/jpeg' } as any);
     setUploading(true);
     try {
-      const photo = await usersApi.uploadPhoto(form);
-      setPhotos((prev) => [...prev, photo]);
-      onStatus('תמונה נוספה', true);
+      const uri = await resizePhoto(asset.uri, asset.width ?? 0, asset.height ?? 0);
+      const form = new FormData();
+      form.append('photo', { uri, name: 'photo.jpg', type: 'image/jpeg' } as any);
+      const data = await usersApi.uploadPhoto(form);
+      if (data.success) {
+        setPhotos((prev) => [...prev, data]);
+      }
+      onStatus(data.message, data.success);
     } catch {
       onStatus('שגיאה בהעלאת התמונה', false);
     } finally {
@@ -61,9 +67,11 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await usersApi.deletePhoto(photo_id);
-              setPhotos((prev) => prev.filter((p) => p.photo_id !== photo_id));
-              onStatus('תמונה הוסרה', true);
+              const data = await usersApi.deletePhoto(photo_id);
+              if (data.success) {
+                setPhotos((prev) => prev.filter((p) => p.photo_id !== photo_id));
+              }
+              onStatus(data.message, data.success);
             } catch {
               onStatus('שגיאה במחיקת התמונה', false);
             }

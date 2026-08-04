@@ -9,6 +9,9 @@ beforeAll(() =>
   app = buildApp();
 });
 
+// Every response is HTTP 200; success/failure is signaled by the body's
+// `success` boolean, with a human-readable Hebrew `message` alongside it.
+
 // ── POST /auth/signup ─────────────────────────────────────────────────────────
 // tests.md section 1
 
@@ -22,7 +25,10 @@ describe('POST /auth/signup', () =>
       password: 'Password123!',
     });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(typeof res.body.message).toBe('string');
+    expect(res.body.message.length).toBeGreaterThan(0);
     expect(res.body).toMatchObject({
       email: 'signup@test.com',
       username: 'signupuser',
@@ -41,6 +47,7 @@ describe('POST /auth/signup', () =>
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.name).toBe('');
     expect(res.body.bio).toBe('');
     expect(res.body.city).toBe('');
@@ -57,8 +64,10 @@ describe('POST /auth/signup', () =>
       email: 'caseuser2@test.com', username: 'caseuser', password: 'Password1!',
     });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('username_taken');
+    expect(res.body.message).toBe('שם המשתמש כבר תפוס');
   });
 
   it('TC-103 rejects duplicate email (case-insensitive)', async () =>
@@ -71,8 +80,10 @@ describe('POST /auth/signup', () =>
       email: 'dup@test.com', username: 'dupuser2', password: 'Password1!',
     });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('email_taken');
+    expect(res.body.message).toBe('האימייל כבר קיים במערכת');
   });
 
   it.each([
@@ -81,7 +92,7 @@ describe('POST /auth/signup', () =>
     ['bad username', 'contains a space'],
     ['bad-user', 'contains a hyphen'],
     ['משתמש', 'non-latin characters'],
-  ])('TC-104 rejects username %j (%s)', async (username) =>
+  ])('TC-104 rejects username %j (%s) with a specific message', async (username) =>
   {
     const res = await request(app).post('/auth/signup').send({
       email: `u${Date.now()}${Math.random()}@test.com`,
@@ -89,10 +100,15 @@ describe('POST /auth/signup', () =>
       password: 'Password123!',
     });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('validation_error');
+    expect(typeof res.body.message).toBe('string');
+    expect(res.body.message.length).toBeGreaterThan(0);
+    expect(Array.isArray(res.body.errors)).toBe(true);
   });
 
-  it('TC-105 rejects an invalid email format', async () =>
+  it('TC-105 rejects an invalid email format with a specific message', async () =>
   {
     const res = await request(app).post('/auth/signup').send({
       email: 'not-an-email',
@@ -100,7 +116,9 @@ describe('POST /auth/signup', () =>
       password: 'Password123!',
     });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('כתובת האימייל אינה תקינה');
   });
 
   it.each([
@@ -114,7 +132,9 @@ describe('POST /auth/signup', () =>
       password,
     });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('הסיסמה חייבת להכיל לפחות 8 תווים');
   });
 
   it('TC-108 accepts a password exactly at the 8-character minimum', async () =>
@@ -125,7 +145,8 @@ describe('POST /auth/signup', () =>
       password: '12345678',
     });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 
   it.each(['username', 'email', 'password'])('TC-109 rejects a signup missing "%s"', async (field) =>
@@ -139,7 +160,8 @@ describe('POST /auth/signup', () =>
 
     const res = await request(app).post('/auth/signup').send(body);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 
   it('TC-110 ignores a client-supplied is_admin field (cannot self-elevate)', async () =>
@@ -151,7 +173,8 @@ describe('POST /auth/signup', () =>
       is_admin: true,
     });
 
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.is_admin).toBe(false);
   });
 
@@ -165,44 +188,32 @@ describe('POST /auth/signup', () =>
 
     // The validators don't reject this shape (it's a legal >=8-char password);
     // the important assertion is that it doesn't error out or corrupt the DB.
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 
-  // SKIPPED — discovered while writing this test, not a pre-existing
-  // improve.md finding: /auth/signup's route handler is
-  // `async (req, res) => {...}`, and Express 4 does NOT catch rejected
-  // promises from async handlers (that only ships in Express 5). Two
-  // concurrent signups for the same username can both pass the pre-check
-  // (`authQueries.findByUsername`) before either INSERT commits — the
-  // loser's INSERT then throws a UNIQUE constraint violation, which becomes
-  // an unhandled promise rejection instead of a clean 409. The response is
-  // never sent for that request, so the client just hangs until timeout.
-  //
-  // `it.failing` doesn't fit this one: the failure surfaces as a leaked
-  // unhandled rejection plus a Jest-level timeout rather than a normal
-  // thrown/rejected assertion, and Jest doesn't invert that into a pass —
-  // it would just make this suite flakily red. Skipped with this note
-  // instead; un-skip once the same async-handler-safety fix that's needed
-  // for /auth/login and /auth/refresh (all three use bare `async` handlers
-  // with no wrapping try/catch or Express 5) lands.
-  it.skip(
-    'TC-113 only one of two concurrent signups with the same username succeeds',
-    async () =>
-    {
-      const username = `racer${Date.now()}`;
-      const [a, b] = await Promise.all([
-        request(app).post('/auth/signup').send({
-          email: `racer1_${Date.now()}@test.com`, username, password: 'Password123!',
-        }),
-        request(app).post('/auth/signup').send({
-          email: `racer2_${Date.now()}@test.com`, username, password: 'Password123!',
-        }),
-      ]);
+  it('TC-113 only one of two concurrent signups with the same username succeeds', async () =>
+  {
+    // Regression test — this used to hang indefinitely (Express 4 doesn't
+    // catch rejected promises from async handlers), fixed by wrapping the
+    // signup handler's DB write in try/catch.
+    const username = `racer${Date.now()}`;
+    const [a, b] = await Promise.all([
+      request(app).post('/auth/signup').send({
+        email: `racer1_${Date.now()}@test.com`, username, password: 'Password123!',
+      }),
+      request(app).post('/auth/signup').send({
+        email: `racer2_${Date.now()}@test.com`, username, password: 'Password123!',
+      }),
+    ]);
 
-      const statuses = [a.status, b.status].sort();
-      expect(statuses).toEqual([201, 409]);
-    },
-  );
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const successes = [a.body.success, b.body.success].sort();
+    expect(successes).toEqual([false, true]);
+    const loser = a.body.success ? b.body : a.body;
+    expect(loser.error).toBe('username_taken');
+  }, 10_000);
 
   it('TC-114 the issued access token is immediately usable on a protected route', async () =>
   {
@@ -212,6 +223,7 @@ describe('POST /auth/signup', () =>
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 
   it('TC-115 the response never echoes back a password hash', async () =>
@@ -246,6 +258,7 @@ describe('POST /auth/login', () =>
     const res = await request(app).post('/auth/login').send({ identifier: username, password });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.access_token).toBeTruthy();
     expect(res.body.refresh_token).toBeTruthy();
     expect(res.body.is_admin).toBe(false);
@@ -256,6 +269,7 @@ describe('POST /auth/login', () =>
     const res = await request(app).post('/auth/login').send({ identifier: email, password });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.access_token).toBeTruthy();
   });
 
@@ -263,15 +277,18 @@ describe('POST /auth/login', () =>
   {
     const res = await request(app).post('/auth/login').send({ identifier: username, password: 'wrongpassword' });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('invalid_credentials');
+    expect(res.body.message).toBe('שם משתמש או סיסמה שגויים');
   });
 
   it('TC-205 rejects an unknown identifier with the same error as a wrong password', async () =>
   {
     const res = await request(app).post('/auth/login').send({ identifier: 'nobody-here', password: 'anything123' });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('invalid_credentials');
   });
 
@@ -280,6 +297,7 @@ describe('POST /auth/login', () =>
     const res = await request(app).post('/auth/login').send({ identifier: username.toUpperCase(), password });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 
   it.each([
@@ -289,7 +307,8 @@ describe('POST /auth/login', () =>
   {
     const res = await request(app).post('/auth/login').send(body);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 
   it('TC-212 issuing a second login does not invalidate the first session', async () =>
@@ -297,14 +316,14 @@ describe('POST /auth/login', () =>
     const first = await request(app).post('/auth/login').send({ identifier: username, password });
     const second = await request(app).post('/auth/login').send({ identifier: username, password });
 
-    expect(first.status).toBe(200);
-    expect(second.status).toBe(200);
+    expect(first.body.success).toBe(true);
+    expect(second.body.success).toBe(true);
 
     const meFirst = await request(app).get('/auth/me').set('Authorization', `Bearer ${first.body.access_token}`);
     const meSecond = await request(app).get('/auth/me').set('Authorization', `Bearer ${second.body.access_token}`);
 
-    expect(meFirst.status).toBe(200);
-    expect(meSecond.status).toBe(200);
+    expect(meFirst.body.success).toBe(true);
+    expect(meSecond.body.success).toBe(true);
   });
 });
 
@@ -319,6 +338,7 @@ describe('POST /auth/refresh', () =>
     const res = await request(app).post('/auth/refresh').send({ refresh_token: rt1 });
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.access_token).toBeTruthy();
     expect(res.body.refresh_token).not.toBe(rt1);
   });
@@ -329,22 +349,25 @@ describe('POST /auth/refresh', () =>
     await request(app).post('/auth/refresh').send({ refresh_token: rt });
     const res2 = await request(app).post('/auth/refresh').send({ refresh_token: rt });
 
-    expect(res2.status).toBe(401);
+    expect(res2.status).toBe(200);
+    expect(res2.body.success).toBe(false);
   });
 
   it('TC-303 rejects a missing refresh_token', async () =>
   {
     const res = await request(app).post('/auth/refresh').send({});
 
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('Missing refresh_token');
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('missing_refresh_token');
   });
 
   it('TC-304 rejects a malformed token string', async () =>
   {
     const res = await request(app).post('/auth/refresh').send({ refresh_token: 'not-a-real-jwt' });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('invalid_token');
   });
 
@@ -355,7 +378,8 @@ describe('POST /auth/refresh', () =>
 
     const res = await request(app).post('/auth/refresh').send({ refresh_token });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('session_not_found');
   });
 
@@ -368,8 +392,8 @@ describe('POST /auth/refresh', () =>
       request(app).post('/auth/refresh').send({ refresh_token }),
     ]);
 
-    const statuses = [a.status, b.status].sort();
-    expect(statuses).toEqual([200, 401]);
+    const successes = [a.body.success, b.body.success].sort();
+    expect(successes).toEqual([false, true]);
   });
 
   it('TC-309 the refreshed response reflects the current is_admin value', async () =>
@@ -386,33 +410,35 @@ describe('POST /auth/refresh', () =>
 
 describe('POST /auth/logout', () =>
 {
-  it('TC-401 returns 204 and revokes the session', async () =>
+  it('TC-401 succeeds and revokes the session', async () =>
   {
     const { refresh_token } = await signupUser(app, '_logout');
     const logoutRes = await request(app).post('/auth/logout').send({ refresh_token });
 
-    expect(logoutRes.status).toBe(204);
+    expect(logoutRes.status).toBe(200);
+    expect(logoutRes.body.success).toBe(true);
 
     const refreshRes = await request(app).post('/auth/refresh').send({ refresh_token });
-    expect(refreshRes.status).toBe(401);
+    expect(refreshRes.body.success).toBe(false);
   });
 
-  it('TC-402 is a no-op (204) when no refresh_token is supplied', async () =>
+  it('TC-402 is a no-op (still success) when no refresh_token is supplied', async () =>
   {
     const res = await request(app).post('/auth/logout').send({});
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 
-  it('TC-403 is idempotent — logging out twice with the same token both return 204', async () =>
+  it('TC-403 is idempotent — logging out twice with the same token both succeed', async () =>
   {
     const { refresh_token } = await signupUser(app, '_doublelogout');
 
     const first = await request(app).post('/auth/logout').send({ refresh_token });
     const second = await request(app).post('/auth/logout').send({ refresh_token });
 
-    expect(first.status).toBe(204);
-    expect(second.status).toBe(204);
+    expect(first.body.success).toBe(true);
+    expect(second.body.success).toBe(true);
   });
 });
 
@@ -427,35 +453,41 @@ describe('GET /auth/me', () =>
     const res = await request(app).get('/auth/me').set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.email).toBe('user_me@test.com');
     expect(res.body).toHaveProperty('user_id');
     expect(res.body).toHaveProperty('username');
     expect(res.body).toHaveProperty('is_admin');
   });
 
-  it('TC-502 returns 401 with no Authorization header', async () =>
+  it('TC-502 fails with no Authorization header', async () =>
   {
     const res = await request(app).get('/auth/me');
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 
-  it('TC-503 returns 401 for a malformed bearer token', async () =>
+  it('TC-503 fails for a malformed bearer token', async () =>
   {
     const res = await request(app).get('/auth/me').set('Authorization', 'Bearer garbage.not.a.jwt');
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 
-  it('TC-503b returns 401 for an Authorization header with the wrong scheme', async () =>
+  it('TC-503b fails for an Authorization header with the wrong scheme', async () =>
   {
     const { access_token } = await signupUser(app, '_wrongscheme');
     const res = await request(app).get('/auth/me').set('Authorization', `Basic ${access_token}`);
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 
-  it('TC-504 returns 404 for a valid token whose user was since deleted', async () =>
+  it('TC-504 fails with not_found for a valid token whose user was since deleted', async () =>
   {
     const admin = await signupUser(app, '_deleter');
     const target = await signupUser(app, '_gone');
@@ -471,7 +503,9 @@ describe('GET /auth/me', () =>
 
     const res = await request(app).get('/auth/me').set('Authorization', `Bearer ${target.access_token}`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
   });
 });
 

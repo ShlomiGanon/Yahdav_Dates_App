@@ -60,7 +60,8 @@ describe('ON DELETE CASCADE when a user is deleted', () =>
     const del = await request(app)
       .delete(`/admin/users/${victim.user_id}`)
       .set('Authorization', `Bearer ${adminToken}`);
-    expect(del.status).toBe(204);
+    expect(del.status).toBe(200);
+    expect(del.body.success).toBe(true);
 
     expect(countWhere('auth_credentials', 'user_id', victim.user_id)).toBe(0);
     expect(countWhere('user_photos', 'user_id', victim.user_id)).toBe(0);

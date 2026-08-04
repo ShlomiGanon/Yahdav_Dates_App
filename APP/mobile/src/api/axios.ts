@@ -12,10 +12,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-refresh on 401 — queue concurrent requests while refreshing
-let isRefreshing = false;
-let pendingQueue: Array<{ resolve: () => void; reject: (e: unknown) => void }> = [];
-
 // Registered by AuthContext so the interceptor can trigger a logout
 // without importing AuthContext (avoids circular dependency)
 let onAuthFailure: (() => void) | null = null;
@@ -23,39 +19,65 @@ export function setOnAuthFailure(cb: () => void): void {
   onAuthFailure = cb;
 }
 
-api.interceptors.response.use(
-  (res) => res,
-  async (error) => {
-    const original = error.config;
+// The backend always answers HTTP 200; success/failure lives in the
+// response body (`{success, message, error?}`). Axios therefore never
+// rejects for business-logic failures (wrong password, validation errors,
+// blocked, ...) — only for genuine network failures. The token-refresh
+// trigger has to live in the *success* handler, keyed off
+// `data.error === 'unauthorized'` rather than a 401 status code.
+//
+// Concurrent requests that all expire at once share a single in-flight
+// refresh via `refreshPromise` instead of a manual queue — every caller
+// just awaits the same promise and gets the same true/false outcome. This
+// is also structurally immune to a deadlock the old status-code-based
+// version was exposed to: /auth/refresh's own failure codes
+// (session_not_found, session_expired, invalid_token, ...) are never
+// `unauthorized` — that code only ever comes from the `authenticate`
+// middleware, which /auth/refresh doesn't go through — so a failing
+// refresh call can't recurse back into this same trigger.
+let refreshPromise: Promise<boolean> | null = null;
 
-    if (error.response?.status !== 401 || original._retry) {
-      return Promise.reject(error);
-    }
-    original._retry = true;
+async function performRefresh(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
 
-    if (isRefreshing) {
-      return new Promise<void>((resolve, reject) => {
-        pendingQueue.push({ resolve, reject });
-      }).then(() => api(original));
-    }
-
-    isRefreshing = true;
+  refreshPromise = (async () => {
     try {
       const refreshToken = await getRefreshToken();
+      if (!refreshToken) return false;
+
       const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {
         refresh_token: refreshToken,
       });
+      if (!data.success) return false;
+
       await saveTokens(data.access_token, data.refresh_token);
-      pendingQueue.forEach((p) => p.resolve());
-      return api(original);
-    } catch (e) {
-      pendingQueue.forEach((p) => p.reject(e));
-      await clearTokens();
-      onAuthFailure?.();
-      return Promise.reject(error);
+      return true;
+    } catch {
+      return false;
     } finally {
-      pendingQueue = [];
-      isRefreshing = false;
+      refreshPromise = null;
     }
+  })();
+
+  return refreshPromise;
+}
+
+api.interceptors.response.use(async (response) => {
+  const original = response.config as typeof response.config & { _retry?: boolean };
+  const isUnauthorized = response.data?.success === false && response.data?.error === 'unauthorized';
+
+  if (!isUnauthorized || original._retry) {
+    return response;
   }
-);
+
+  original._retry = true;
+  const refreshed = await performRefresh();
+
+  if (!refreshed) {
+    await clearTokens();
+    onAuthFailure?.();
+    return response;
+  }
+
+  return api(original);
+});

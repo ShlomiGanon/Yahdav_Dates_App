@@ -24,6 +24,9 @@ beforeAll(async () =>
   targetId = target.user_id;
 });
 
+// Every response is HTTP 200; success/failure is signaled by the body's
+// `success` boolean.
+
 // ── GET /admin/users ───────────────────────────────────────────────────────────
 // tests.md section 14
 
@@ -36,26 +39,31 @@ describe('GET /admin/users', () =>
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body).toHaveProperty('total');
     expect(Array.isArray(res.body.users)).toBe(true);
     expect(res.body.total).toBeGreaterThanOrEqual(2);
   });
 
-  it('TC-1402 returns 403 for an authenticated non-admin', async () =>
+  it('TC-1402 fails with forbidden for an authenticated non-admin', async () =>
   {
     const { access_token } = await signupUser(app, '_nonadmin');
     const res = await request(app)
       .get('/admin/users')
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('forbidden');
   });
 
-  it('TC-1403 returns 401 with no token', async () =>
+  it('TC-1403 fails with unauthorized with no token', async () =>
   {
     const res = await request(app).get('/admin/users');
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 
   it('TC-1404 search matches a partial, case-insensitive substring of name/city/username/email', async () =>
@@ -100,16 +108,17 @@ describe('GET /admin/users', () =>
     expect(res.body.users.length).toBe(2);
   });
 
-  it.each([[0, 422], [201, 422], [200, 200], [1, 200]])(
-    'TC-1408 limit=%d responds with status %d',
-    async (limit, expectedStatus) =>
+  it.each([[0, false], [201, false], [200, true], [1, true]])(
+    'TC-1408 limit=%d succeeds=%s',
+    async (limit, expectedSuccess) =>
     {
       const res = await request(app)
         .get('/admin/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .query({ limit });
 
-      expect(res.status).toBe(expectedStatus);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(expectedSuccess);
     },
   );
 
@@ -120,7 +129,7 @@ describe('GET /admin/users', () =>
       .set('Authorization', `Bearer ${adminToken}`)
       .query({ offset: -1 });
 
-    expect(res.status).toBe(422);
+    expect(res.body.success).toBe(false);
   });
 });
 
@@ -135,28 +144,32 @@ describe('GET /admin/users/:id', () =>
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
     expect(res.body.user_id).toBe(targetId);
     expect(res.body).toHaveProperty('email');
     expect(res.body).toHaveProperty('username');
     expect(res.body).not.toHaveProperty('password_hash');
   });
 
-  it('TC-1410 returns 404 for an unknown id', async () =>
+  it('TC-1410 fails with not_found for an unknown id', async () =>
   {
     const res = await request(app)
       .get(`/admin/users/${makeUuid()}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
   });
 
-  it('TC-1411 returns 422 for a non-UUID id', async () =>
+  it('TC-1411 fails for a non-UUID id', async () =>
   {
     const res = await request(app)
       .get('/admin/users/not-a-uuid')
       .set('Authorization', `Bearer ${adminToken}`);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
   });
 });
 
@@ -171,21 +184,21 @@ describe('PUT /admin/users/:id/status', () =>
       .put(`/admin/users/${targetId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'suspended' });
-    expect(suspend.status).toBe(200);
+    expect(suspend.body.success).toBe(true);
     expect(suspend.body.status).toBe('suspended');
 
     const ban = await request(app)
       .put(`/admin/users/${targetId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'banned' });
-    expect(ban.status).toBe(200);
+    expect(ban.body.success).toBe(true);
     expect(ban.body.status).toBe('banned');
 
     const restore = await request(app)
       .put(`/admin/users/${targetId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'active' });
-    expect(restore.status).toBe(200);
+    expect(restore.body.success).toBe(true);
     expect(restore.body.status).toBe('active');
   });
 
@@ -196,7 +209,8 @@ describe('PUT /admin/users/:id/status', () =>
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'deleted' });
 
-    expect(res.status).toBe(422);
+    expect(res.body.success).toBe(false);
+    expect(res.body.message).toBe('סטטוס לא תקין');
   });
 
   it('TC-1504 an admin cannot change their own status', async () =>
@@ -206,18 +220,21 @@ describe('PUT /admin/users/:id/status', () =>
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'suspended' });
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('cannot_change_own_status');
   });
 
-  it('TC-1505 returns 404 for a status change on an unknown user', async () =>
+  it('TC-1505 fails with not_found for a status change on an unknown user', async () =>
   {
     const res = await request(app)
       .put(`/admin/users/${makeUuid()}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'active' });
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
   });
 
   it('a suspended user disappears from every other user\'s discover feed', async () =>
@@ -235,7 +252,7 @@ describe('PUT /admin/users/:id/status', () =>
       .set('Authorization', `Bearer ${viewer.access_token}`)
       .query({ limit: 100 });
 
-    expect(discover.body.some((u: { user_id: string }) => u.user_id === suspendMe.user_id)).toBe(false);
+    expect(discover.body.candidates.some((u: { user_id: string }) => u.user_id === suspendMe.user_id)).toBe(false);
 
     // restore for hygiene, in case other tests in this file rely on total counts
     await request(app)
@@ -249,19 +266,21 @@ describe('PUT /admin/users/:id/status', () =>
 
 describe('DELETE /admin/users/:id', () =>
 {
-  it('TC-1506 deletes a user; a subsequent lookup 404s', async () =>
+  it('TC-1506 deletes a user; a subsequent lookup fails with not_found', async () =>
   {
     const { user_id: deleteMe } = await signupUser(app, '_deleteme');
     const res = await request(app)
       .delete(`/admin/users/${deleteMe}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
 
     const check = await request(app)
       .get(`/admin/users/${deleteMe}`)
       .set('Authorization', `Bearer ${adminToken}`);
-    expect(check.status).toBe(404);
+    expect(check.body.success).toBe(false);
+    expect(check.body.error).toBe('not_found');
   });
 
   it('TC-1507 an admin cannot delete themselves', async () =>
@@ -270,17 +289,20 @@ describe('DELETE /admin/users/:id', () =>
       .delete(`/admin/users/${adminId}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('cannot_delete_self');
   });
 
-  it('TC-1508 returns 404 for deleting an unknown user', async () =>
+  it('TC-1508 fails with not_found for deleting an unknown user', async () =>
   {
     const res = await request(app)
       .delete(`/admin/users/${makeUuid()}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
-    expect(res.status).toBe(404);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
   });
 
   it('TC-1623 a deleted user\'s push token no longer receives push-eligible offline delivery attempts', async () =>
@@ -300,6 +322,7 @@ describe('DELETE /admin/users/:id', () =>
     const check = await request(app)
       .get(`/admin/users/${user_id}`)
       .set('Authorization', `Bearer ${adminToken}`);
-    expect(check.status).toBe(404);
+    expect(check.body.success).toBe(false);
+    expect(check.body.error).toBe('not_found');
   });
 });

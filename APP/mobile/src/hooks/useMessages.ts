@@ -38,8 +38,12 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
   const loadHistory = async () => {
     try {
       const data = await chatApi.getMessages(peer_id, { limit: PAGE_SIZE });
-      setMessages([...data].reverse());
-      setHasMore(data.length === PAGE_SIZE);
+      if (!data.success) {
+        onStatus(data.message, false);
+        return;
+      }
+      setMessages([...data.messages].reverse());
+      setHasMore(data.messages.length === PAGE_SIZE);
       chatApi.markRead(peer_id).catch(() => {});
     } catch {
       onStatus('טעינת השיחה נכשלה. אנא נסה/י שוב.', false);
@@ -59,8 +63,12 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
         before: oldest.message_id,
         limit: PAGE_SIZE,
       });
-      setMessages((cur) => [...cur, ...[...data].reverse()]);
-      setHasMore(data.length === PAGE_SIZE);
+      if (!data.success) {
+        onStatus(data.message, false);
+        return;
+      }
+      setMessages((cur) => [...cur, ...[...data.messages].reverse()]);
+      setHasMore(data.messages.length === PAGE_SIZE);
     } catch {
       onStatus('שגיאה בטעינת הודעות ישנות', false);
     } finally {
@@ -125,8 +133,17 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
       setSending(true);
       try {
         const data = await chatApi.sendMessage(peer_id, content, 'TEXT');
+        if (!data.success) {
+          setMessages((prev) =>
+            prev.filter((m) => m.message_id !== optimistic.message_id),
+          );
+          onStatus(data.message, false);
+          return;
+        }
+        const { message_id, sender_id, msg_type, created_at } = data;
+        const sent: Message = { message_id, sender_id, content: data.content, msg_type, created_at };
         setMessages((prev) =>
-          prev.map((m) => (m.message_id === optimistic.message_id ? data : m)),
+          prev.map((m) => (m.message_id === optimistic.message_id ? sent : m)),
         );
       } catch {
         setMessages((prev) =>

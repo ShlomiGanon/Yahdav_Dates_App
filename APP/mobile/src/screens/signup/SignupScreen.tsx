@@ -4,7 +4,7 @@ import {
   ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { api } from '../../api/axios';
+import { useAuth } from '../../auth/AuthContext';
 import { ScreenHeading } from '../../components/ScreenHeading';
 import { HebrewInput } from '../../components/HebrewInput';
 import { PrimaryButton } from '../../components/PrimaryButton';
@@ -24,6 +24,7 @@ function deriveUsername(email: string): string {
 }
 
 export function SignupScreen({ navigation }: Props) {
+  const { signup } = useAuth();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [confirm,  setConfirm]  = useState('');
@@ -47,14 +48,15 @@ export function SignupScreen({ navigation }: Props) {
     setError('');
     try {
       const username = deriveUsername(email.trim());
-      await api.post('/auth/signup', { email: email.trim(), username, password });
-      navigation.navigate('Login');
-    } catch (e: any) {
-      if (e?.response?.status === 409) {
-        setError('האימייל כבר קיים במערכת');
-      } else {
-        setError('שגיאה בהרשמה, נסה שנית');
+      const result = await signup(email.trim(), username, password);
+      if (!result.success) {
+        setError(result.message);
       }
+      // On success, RootNavigator auto-switches to MainStack when user
+      // state is set — signup logs the user straight in, no separate
+      // login step needed.
+    } catch {
+      setError('שגיאת רשת, נסה שנית');
     } finally {
       setLoading(false);
     }

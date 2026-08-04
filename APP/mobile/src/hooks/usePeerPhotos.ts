@@ -12,6 +12,10 @@ export function usePeerPhotos(peer_id: string) {
   const load = async () => {
     try {
       const data = await usersApi.getPeerPhotos(peer_id);
+      if (!data.success) {
+        setLoadError(data.message);
+        return;
+      }
       setPeerName(data.name ?? '');
       setPhotos(data.photos ?? []);
     } catch {

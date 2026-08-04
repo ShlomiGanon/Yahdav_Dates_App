@@ -30,12 +30,16 @@ beforeEach(() =>
   clearTokensMock.mockReset();
 });
 
+// The backend always answers HTTP 200; success/failure lives in the body
+// (`{success, message, error?}`). Axios only rejects for genuine
+// network-level failures now.
+
 describe('useAutoLogin', () =>
 {
   it('TC-506 silently logs in when a valid session is stored and /auth/me succeeds', async () =>
   {
     loadTokensMock.mockResolvedValue({ access: 'a1', refresh: 'r1' });
-    apiGetMock.mockResolvedValue({ data: FAKE_USER });
+    apiGetMock.mockResolvedValue({ data: { success: true, message: 'ok', ...FAKE_USER } });
 
     // renderHook() is async in @testing-library/react-native v14.
     const { result } = await renderHook(() => useAutoLogin());
@@ -43,6 +47,7 @@ describe('useAutoLogin', () =>
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(result.current.user).toEqual(FAKE_USER);
+    expect(result.current.offline).toBe(false);
     expect(clearTokensMock).not.toHaveBeenCalled();
   });
 
@@ -58,11 +63,12 @@ describe('useAutoLogin', () =>
     expect(result.current.user).toBeNull();
   });
 
-  it('TC-507 clears tokens when the stored session is genuinely invalid (401)', async () =>
+  it('TC-507 clears tokens when the stored session is genuinely invalid ({success:false})', async () =>
   {
     loadTokensMock.mockResolvedValue({ access: 'stale', refresh: 'stale' });
-    const unauthorized = Object.assign(new Error('unauthorized'), { response: { status: 401 } });
-    apiGetMock.mockRejectedValue(unauthorized);
+    apiGetMock.mockResolvedValue({
+      data: { success: false, message: 'יש להתחבר מחדש', error: 'unauthorized' },
+    });
 
     const { result } = await renderHook(() => useAutoLogin());
 
@@ -73,13 +79,16 @@ describe('useAutoLogin', () =>
   });
 
   // Regression test for improve.md Mobile High #2 / tests.md TC-505: a
-  // network-layer failure (no `error.response` at all — the request never
-  // reached the server) is currently treated identically to a real 401 by
-  // the hook's single unconditional `catch { clearTokens() }`, wiping a
-  // perfectly valid refresh token just because the device was briefly
-  // offline at boot. Correct behavior is to leave stored tokens alone when
-  // there's no server-confirmed rejection.
-  it.failing('TC-505 does not clear tokens on a pure network failure (no response from server)', async () =>
+  // network-layer failure (no HTTP response at all — the request never
+  // reached the server) used to be treated identically to a real invalid
+  // session by the hook's single unconditional `catch { clearTokens() }`,
+  // wiping a perfectly valid refresh token just because the device was
+  // briefly offline at boot. The always-200 contract fixes this as a
+  // natural consequence: a genuinely invalid session now resolves normally
+  // as {success:false} (asserted above), while only a true network failure
+  // still makes axios reject — so the catch block can safely mean "we
+  // couldn't reach the server" without also covering "the session is bad."
+  it('TC-505 does not clear tokens on a pure network failure (no response from server)', async () =>
   {
     loadTokensMock.mockResolvedValue({ access: 'a1', refresh: 'r1' });
     const networkError = Object.assign(new Error('Network Error'), { request: {} });
@@ -90,5 +99,6 @@ describe('useAutoLogin', () =>
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     expect(clearTokensMock).not.toHaveBeenCalled();
+    expect(result.current.offline).toBe(true);
   });
 });

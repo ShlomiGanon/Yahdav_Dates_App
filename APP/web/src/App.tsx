@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { RequireAuth }      from './auth/RequireAuth';
 import { LoginPage }        from './pages/LoginPage';
+import { SignupPage }       from './pages/SignupPage';
 import { DiscoverPage }     from './pages/DiscoverPage';
 import { ProfilePage }      from './pages/ProfilePage';
 import { PeerProfilePage }  from './pages/PeerProfilePage';
@@ -12,6 +13,7 @@ export default function App()
     return (
         <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
 
             <Route element={<RequireAuth />}>
                 <Route path="/discover"            element={<DiscoverPage />} />

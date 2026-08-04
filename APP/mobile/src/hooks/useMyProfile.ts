@@ -16,6 +16,10 @@ export function useMyProfile(onStatus: (msg: string, ok: boolean) => void) {
   const load = async () => {
     try {
       const data = await usersApi.getMyProfile();
+      if (!data.success) {
+        setLoadError(data.message);
+        return;
+      }
       setProfileData(data);
     } catch {
       setLoadError('שגיאה בטעינת הפרופיל');
@@ -27,8 +31,11 @@ export function useMyProfile(onStatus: (msg: string, ok: boolean) => void) {
   const save = async (data: Partial<Profile>) => {
     setSaving(true);
     try {
-      await usersApi.updateMyProfile(data);
-      onStatus('הפרופיל נשמר בהצלחה', true);
+      const res = await usersApi.updateMyProfile(data);
+      onStatus(res.message, res.success);
+      if (res.success) {
+        setProfileData(res);
+      }
     } catch {
       onStatus('שגיאה בשמירת הפרופיל', false);
     } finally {
@@ -50,14 +57,14 @@ export function useMyProfile(onStatus: (msg: string, ok: boolean) => void) {
     });
     if (result.canceled) return null;
     const asset = result.assets[0];
-    const uri = await resizePhoto(asset.uri, asset.width ?? 0, asset.height ?? 0);
-    const form = new FormData();
-    form.append('photo', { uri, name: 'photo.jpg', type: 'image/jpeg' } as any);
     setUploading(true);
     try {
-      const { photo_url } = await usersApi.uploadMainPhoto(form);
-      onStatus('תמונה עודכנה', true);
-      return photo_url;
+      const uri = await resizePhoto(asset.uri, asset.width ?? 0, asset.height ?? 0);
+      const form = new FormData();
+      form.append('photo', { uri, name: 'photo.jpg', type: 'image/jpeg' } as any);
+      const data = await usersApi.uploadMainPhoto(form);
+      onStatus(data.message, data.success);
+      return data.success ? data.photo_url : null;
     } catch {
       onStatus('שגיאה בהעלאת התמונה', false);
       return null;

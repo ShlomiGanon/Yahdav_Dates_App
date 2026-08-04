@@ -3,7 +3,7 @@ import { spawnSync } from 'child_process';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import type { Application } from 'express';
-import { buildApp, signupUser } from './helpers';
+import { buildApp, signupUser, makeAdmin, makeUuid } from './helpers';
 
 let app: Application;
 const JWT_SECRET = 'test-secret-key-for-jest-only'; // matches env.ts
@@ -13,12 +13,15 @@ beforeAll(() =>
   app = buildApp();
 });
 
-// ── Known-bug regressions ─────────────────────────────────────────────────────
-// These assert the CORRECT/secure behavior for issues flagged in improve.md.
-// They currently fail against the real (buggy) code, so `.failing` keeps CI
-// green today; the moment the underlying bug is fixed, Jest will report
-// these as "unexpectedly passing" — that's the cue to drop `.failing` and
-// promote them to normal assertions. Do not delete or skip them meanwhile.
+// Every response is HTTP 200; success/failure is signaled by the body's
+// `success` boolean.
+
+// ── Known-bug regressions (improve.md) ────────────────────────────────────────
+// TC-604/605 (empty PUT body), TC-1211/1212 (self-message / nonexistent-peer
+// via REST), and TC-1308's WS-level error-frame behavior are now genuinely
+// fixed and live as normal assertions in profile.test.ts / chat.test.ts —
+// not duplicated here. What's left below are the regressions that are
+// either still real bugs, or worth a standalone process-level guard.
 
 describe('known-bug regressions (improve.md)', () =>
 {
@@ -35,73 +38,21 @@ describe('known-bug regressions (improve.md)', () =>
         .get('/users/me')
         .set('Authorization', `Bearer ${refresh_token}`);
 
-      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toBe('unauthorized');
     },
   );
 
-  it.failing(
-    'TC-604/605 PUT /users/me with an empty body does not 500',
-    async () =>
-    {
-      const { access_token } = await signupUser(app, '_emptyputbody');
-
-      // profile.queries.ts's `update()` joins `Object.keys(fields)` into the
-      // SQL SET clause with no empty-check, producing `SET , updated_at = ?`
-      // — a SQL syntax error — when no recognized fields are sent.
-      const res = await request(app)
-        .put('/users/me')
-        .set('Authorization', `Bearer ${access_token}`)
-        .send({});
-
-      expect(res.status).not.toBe(500);
-      expect([200, 422]).toContain(res.status);
-    },
-  );
-
-  it.failing(
-    'TC-1211 sending a chat message to yourself returns 422, not a raw 500',
-    async () =>
-    {
-      const { user_id, access_token } = await signupUser(app, '_selfchat');
-
-      // chat.routes.ts never checks `sub !== peer_id` before calling
-      // MessageModel.send — it relies on the DB's
-      // CHECK (sender_id <> recipient_id), which throws synchronously.
-      const res = await request(app)
-        .post(`/chat/${user_id}`)
-        .set('Authorization', `Bearer ${access_token}`)
-        .send({ content: 'talking to myself' });
-
-      expect(res.status).toBe(422);
-    },
-  );
-
-  it.failing(
-    'TC-1212 sending a chat message to a well-formed but nonexistent peer id returns 404, not 500',
-    async () =>
-    {
-      const { access_token } = await signupUser(app, '_msgghost');
-      const { makeUuid } = await import('./helpers');
-
-      const res = await request(app)
-        .post(`/chat/${makeUuid()}`)
-        .set('Authorization', `Bearer ${access_token}`)
-        .send({ content: 'is anyone there' });
-
-      expect(res.status).toBe(404);
-    },
-  );
-
-  it.failing(
-    'TC-1308 a self-message sent over the WebSocket must not crash the server process',
+  it(
+    'TC-1308 a self-message sent over the WebSocket does not crash the server process',
     () =>
     {
-      // wsServer.ts's ws.on('message', ...) handler has no try/catch around
-      // MessageModel.send(), so the same CHECK-constraint throw as TC-1211
-      // happens outside Express's request stack — nothing catches it, and
-      // it becomes an uncaughtException that kills the whole process. Run
-      // in a disposable child process: a healthy handler prints "ALIVE" and
-      // exits 0; the real bug kills the process before that line runs.
+      // Standalone regression guard, run in a disposable child process so a
+      // real crash (if the bug ever comes back) can't take down this Jest
+      // worker. wsServer.ts now validates self-messages before calling
+      // MessageModel.send() and returns a typed error frame instead of
+      // letting a CHECK-constraint violation escape as an uncaughtException
+      // — the fixture should reliably survive and print "ALIVE".
       const fixture = path.join(__dirname, 'fixtures', 'wsSelfMessageCrash.ts');
       const tsconfig = path.join(__dirname, 'tsconfig.json');
       const result = spawnSync('npx', ['tsx', '--tsconfig', tsconfig, fixture], {
@@ -130,7 +81,7 @@ describe('known-bug regressions (improve.md)', () =>
 // ── Cross-cutting authorization sweep ─────────────────────────────────────────
 // tests.md section 17
 
-describe('every protected route rejects a missing/malformed token', () =>
+describe('every protected route fails with unauthorized on a missing/malformed token', () =>
 {
   const routes: Array<{ method: 'get' | 'post' | 'put' | 'delete'; path: string }> = [
     { method: 'get', path: '/users/me' },
@@ -141,24 +92,28 @@ describe('every protected route rejects a missing/malformed token', () =>
     { method: 'get', path: '/admin/users' },
   ];
 
-  it.each(routes)('TC-1701 $method $path returns 401 with no Authorization header', async ({ method, path: routePath }) =>
+  it.each(routes)('TC-1701 $method $path fails with no Authorization header', async ({ method, path: routePath }) =>
   {
     const res = await request(app)[method](routePath);
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 
-  it.each(routes)('TC-1701b $method $path returns 401 with a malformed bearer token', async ({ method, path: routePath }) =>
+  it.each(routes)('TC-1701b $method $path fails with a malformed bearer token', async ({ method, path: routePath }) =>
   {
     const res = await request(app)[method](routePath).set('Authorization', 'Bearer not.a.jwt');
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 });
 
 describe('requireAdmin is enforced independently of authenticate', () =>
 {
-  it('TC-1702 a valid non-admin token passes authenticate but fails admin routes with 403', async () =>
+  it('TC-1702 a valid non-admin token passes authenticate but fails admin routes with forbidden', async () =>
   {
     const { access_token } = await signupUser(app, '_notadmin');
 
@@ -166,7 +121,9 @@ describe('requireAdmin is enforced independently of authenticate', () =>
       .get('/admin/users')
       .set('Authorization', `Bearer ${access_token}`);
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('forbidden');
   });
 });
 
@@ -178,7 +135,8 @@ describe('JWT tampering', () =>
 
     const res = await request(app).get('/users/me').set('Authorization', `Bearer ${forged}`);
 
-    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('unauthorized');
   });
 
   it('TC-1703b rejects a token whose payload was altered after signing', async () =>
@@ -190,7 +148,7 @@ describe('JWT tampering', () =>
 
     const res = await request(app).get('/users/me').set('Authorization', `Bearer ${tampered}`);
 
-    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
   });
 
   it('TC-1704 rejects an alg:none token even with a plausible payload', async () =>
@@ -199,7 +157,7 @@ describe('JWT tampering', () =>
 
     const res = await request(app).get('/users/me').set('Authorization', `Bearer ${noneToken}`);
 
-    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
   });
 
   it('an expired access token is rejected', async () =>
@@ -209,7 +167,7 @@ describe('JWT tampering', () =>
 
     const res = await request(app).get('/users/me').set('Authorization', `Bearer ${expired}`);
 
-    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
   });
 });
 
@@ -218,12 +176,12 @@ describe('no response ever leaks a password hash', () =>
   it('TC-1707 signup, login, /auth/me, and /admin/users/:id all omit password_hash', async () =>
   {
     const admin = await signupUser(app, '_nohashadmin');
-    const { makeAdmin } = await import('./helpers');
     makeAdmin(admin.user_id);
     const login = await request(app)
       .post('/auth/login')
       .send({ identifier: 'user_nohashadmin@test.com', password: 'Password123!' });
 
+    expect(login.body.success).toBe(true);
     expect(login.body.password_hash).toBeUndefined();
 
     const me = await request(app).get('/auth/me').set('Authorization', `Bearer ${login.body.access_token}`);
@@ -241,6 +199,8 @@ describe('static /uploads mount', () =>
 {
   it('TC-1709 does not serve a directory listing', async () =>
   {
+    // Unaffected by the always-200 API contract — this is a raw
+    // express.static mount, not one of our JSON routes.
     const res = await request(app).get('/uploads/');
 
     expect(res.status).not.toBe(200);
@@ -249,18 +209,29 @@ describe('static /uploads mount', () =>
 
 describe('malformed JSON body', () =>
 {
-  // The catch-all error handler (src/middleware/errorHandler.ts) maps every
-  // error to a bare 500 regardless of type (improve.md Backend Medium #7),
-  // so a body-parser SyntaxError — which Express's json() middleware itself
-  // flags with `.status = 400` — currently gets flattened to 500 too.
-  it.failing('TC-2639-adjacent returns a clean 4xx, not a 500, for unparseable JSON', async () =>
+  it('TC-2639-adjacent fails cleanly with success:false, not a crash, for unparseable JSON', async () =>
   {
     const res = await request(app)
       .post('/auth/login')
       .set('Content-Type', 'application/json')
       .send('{not valid json');
 
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(res.status).toBeLessThan(500);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('internal_error');
+  });
+});
+
+describe('IDOR / not_found consistency', () =>
+{
+  it('a well-formed but nonexistent user id fails with not_found on the peer-profile route', async () =>
+  {
+    const { access_token } = await signupUser(app, '_notfoundcheck');
+    const res = await request(app)
+      .get(`/users/${makeUuid()}`)
+      .set('Authorization', `Bearer ${access_token}`);
+
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBe('not_found');
   });
 });

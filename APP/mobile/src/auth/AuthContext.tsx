@@ -3,6 +3,7 @@ import { api, setOnAuthFailure } from '../api/axios';
 import { usersApi } from '../api/users';
 import { saveTokens, clearTokens, getRefreshToken } from './storage';
 import { useAutoLogin } from './useAutoLogin';
+import type { ApiEnvelope } from '../types/api';
 
 type User = {
   user_id: string;
@@ -11,26 +12,63 @@ type User = {
   is_admin: boolean;
 };
 
+// Every server call resolves — success or failure is `{success, message}`,
+// never a thrown error (except for genuine network failures, which axios
+// still rejects). Callers read `.success`/`.message` directly instead of
+// try/catch, matching the backend's always-200 contract.
+export type AuthResult = {
+  success: boolean;
+  message: string;
+};
+
+type AuthTokensUser = ApiEnvelope & User & { access_token: string; refresh_token: string };
+
 type AuthContextValue = {
   user:      User | null;
   isLoading: boolean;
-  login:     (identifier: string, password: string) => Promise<void>;
+  offline:   boolean;
+  login:     (identifier: string, password: string) => Promise<AuthResult>;
+  signup:    (email: string, username: string, password: string) => Promise<AuthResult>;
   logout:    () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function extractUser(u: User): User {
+  return { user_id: u.user_id, email: u.email, username: u.username, is_admin: u.is_admin };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { user, setUser, isLoading } = useAutoLogin();
+  const { user, setUser, isLoading, offline } = useAutoLogin();
 
   useEffect(() => {
     setOnAuthFailure(() => setUser(null));
   }, [setUser]);
 
-  const login = async (identifier: string, password: string): Promise<void> => {
-    const { data } = await api.post('/auth/login', { identifier, password });
+  const login = async (identifier: string, password: string): Promise<AuthResult> => {
+    const { data } = await api.post<AuthTokensUser>('/auth/login', { identifier, password });
+
+    if (!data.success) {
+      return { success: false, message: data.message };
+    }
+
     await saveTokens(data.access_token, data.refresh_token);
-    setUser(data.user ?? data);
+    setUser(extractUser(data));
+
+    return { success: true, message: data.message };
+  };
+
+  const signup = async (email: string, username: string, password: string): Promise<AuthResult> => {
+    const { data } = await api.post<AuthTokensUser>('/auth/signup', { email, username, password });
+
+    if (!data.success) {
+      return { success: false, message: data.message };
+    }
+
+    await saveTokens(data.access_token, data.refresh_token);
+    setUser(extractUser(data));
+
+    return { success: true, message: data.message };
   };
 
   const logout = async (): Promise<void> => {
@@ -47,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, offline, login, signup, logout }}>
       {children}
     </AuthContext.Provider>
   );

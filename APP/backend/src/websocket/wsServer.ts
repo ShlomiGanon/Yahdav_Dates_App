@@ -15,6 +15,13 @@ interface IncomingFrame {
   msg_type?: string;
 }
 
+const VALID_MSG_TYPES = new Set(['TEXT', 'AUDIO', 'IMAGE']);
+const MAX_CONTENT_LENGTH = 4000;
+
+function sendError(ws: WebSocket, code: string, detail: string): void {
+  ws.send(JSON.stringify({ type: 'error', code, detail }));
+}
+
 export function attachWsServer(server: Server): void {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -52,13 +59,37 @@ export function attachWsServer(server: Server): void {
       const { peer_id, content, msg_type = 'TEXT' } = frame;
       if (!peer_id || !content?.trim()) return;
 
-      // Block check
+      const trimmedContent = content.trim();
+
+      if (trimmedContent.length > MAX_CONTENT_LENGTH) {
+        sendError(ws, 'validation_error', 'ההודעה ארוכה מדי (מקסימום 4000 תווים)');
+        return;
+      }
+      if (!VALID_MSG_TYPES.has(msg_type)) {
+        sendError(ws, 'validation_error', 'סוג הודעה לא תקין');
+        return;
+      }
+      if (peer_id === userId) {
+        sendError(ws, 'validation_error', 'לא ניתן לשלוח הודעה לעצמך');
+        return;
+      }
+      if (!profileQueries.findById(peer_id)) {
+        sendError(ws, 'not_found', 'המשתמש לא נמצא');
+        return;
+      }
       if (MessageModel.isBlocked(userId, peer_id)) {
-        ws.send(JSON.stringify({ type: 'error', code: 'blocked', detail: 'User is blocked' }));
+        sendError(ws, 'blocked', 'לא ניתן לשלוח הודעה למשתמש זה');
         return;
       }
 
-      const msg = MessageModel.send(userId, peer_id, content.trim(), msg_type);
+      let msg;
+      try {
+        msg = MessageModel.send(userId, peer_id, trimmedContent, msg_type);
+      } catch (err) {
+        console.error('[ws] failed to persist message', err);
+        sendError(ws, 'internal_error', 'אירעה שגיאה, נסה שוב מאוחר יותר');
+        return;
+      }
 
       // Acknowledge sender
       ws.send(JSON.stringify({ type: 'ack', message_id: msg.message_id }));
@@ -72,7 +103,7 @@ export function attachWsServer(server: Server): void {
         if (recipientProfile?.expo_push_token) {
           const senderCreds = authQueries.findById(userId);
           const senderName  = profileQueries.findById(userId)?.name ?? senderCreds?.username ?? 'משתמש';
-          const preview     = content.length > 60 ? content.slice(0, 60) + '…' : content;
+          const preview     = trimmedContent.length > 60 ? trimmedContent.slice(0, 60) + '…' : trimmedContent;
           sendPushNotification(recipientProfile.expo_push_token, senderName, preview, userId);
         }
       }

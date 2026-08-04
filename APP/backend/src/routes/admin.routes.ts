@@ -3,6 +3,7 @@ import { param, query, body, validationResult } from 'express-validator';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/authenticate';
 import { profileQueries } from '../database/queries/profile.queries';
 import { authQueries } from '../database/queries/auth.queries';
+import { ok, fail, failValidation } from '../utils/responses';
 
 const router = Router();
 router.use(authenticate, requireAdmin);
@@ -10,14 +11,16 @@ router.use(authenticate, requireAdmin);
 // ── GET /admin/users?limit=&offset=&search= ───────────────────────────────────
 
 const listRules = [
-  query('limit').optional().isInt({ min: 1, max: 200 }).toInt(),
-  query('offset').optional().isInt({ min: 0 }).toInt(),
+  query('limit').optional().isInt({ min: 1, max: 200 }).toInt()
+    .withMessage('מספר התוצאות חייב להיות בין 1 ל-200'),
+  query('offset').optional().isInt({ min: 0 }).toInt()
+    .withMessage('פרמטר עמוד לא תקין'),
   query('search').optional().trim(),
 ];
 
 router.get('/users', listRules, (req: Request, res: Response): void => {
   const errors = validationResult(req);
-  if (!errors.isEmpty()) { res.status(422).json({ errors: errors.array() }); return; }
+  if (!errors.isEmpty()) { failValidation(res, errors.array()); return; }
 
   const limit  = (req.query.limit  as unknown as number) || 50;
   const offset = (req.query.offset as unknown as number) || 0;
@@ -39,30 +42,30 @@ router.get('/users', listRules, (req: Request, res: Response): void => {
     const total = filtered.length;
     const paged = filtered.slice(offset, offset + limit);
     const users = paged.map(({ profile, creds: c }) => buildSummary(profile, c));
-    res.json({ total, users });
+    ok(res, { total, users });
     return;
   }
 
   const total = profileQueries.countAll();
   const creds = rows.map((p) => authQueries.findById(p.user_id));
   const users = rows.map((p, i) => buildSummary(p, creds[i]));
-  res.json({ total, users });
+  ok(res, { total, users });
 });
 
 // ── GET /admin/users/:id ──────────────────────────────────────────────────────
 
 router.get(
   '/users/:id',
-  [param('id').isUUID()],
+  [param('id').isUUID().withMessage('מזהה משתמש לא תקין')],
   (req: Request, res: Response): void => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) { res.status(422).json({ errors: errors.array() }); return; }
+    if (!errors.isEmpty()) { failValidation(res, errors.array()); return; }
 
     const profile = profileQueries.findById(req.params.id);
-    if (!profile) { res.status(404).json({ error: 'not_found' }); return; }
+    if (!profile) { fail(res, 'not_found'); return; }
     const creds = authQueries.findById(req.params.id);
 
-    res.json({
+    ok(res, {
       user_id:       profile.user_id,
       name:          profile.name,
       bio:           profile.bio,
@@ -86,22 +89,25 @@ router.get(
 
 router.put(
   '/users/:id/status',
-  [param('id').isUUID(), body('status').isIn(['active', 'suspended', 'banned'])],
+  [
+    param('id').isUUID().withMessage('מזהה משתמש לא תקין'),
+    body('status').isIn(['active', 'suspended', 'banned']).withMessage('סטטוס לא תקין'),
+  ],
   (req: Request, res: Response): void => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) { res.status(422).json({ errors: errors.array() }); return; }
+    if (!errors.isEmpty()) { failValidation(res, errors.array()); return; }
 
     const { sub } = (req as AuthRequest).user;
     if (req.params.id === sub) {
-      res.status(422).json({ error: 'cannot_change_own_status' });
+      fail(res, 'cannot_change_own_status');
       return;
     }
 
     const profile = profileQueries.findById(req.params.id);
-    if (!profile) { res.status(404).json({ error: 'not_found' }); return; }
+    if (!profile) { fail(res, 'not_found'); return; }
 
     profileQueries.updateStatus(req.params.id, req.body.status, new Date().toISOString());
-    res.json({ user_id: req.params.id, status: req.body.status });
+    ok(res, { user_id: req.params.id, status: req.body.status }, 'הסטטוס עודכן בהצלחה');
   },
 );
 
@@ -109,22 +115,22 @@ router.put(
 
 router.delete(
   '/users/:id',
-  [param('id').isUUID()],
+  [param('id').isUUID().withMessage('מזהה משתמש לא תקין')],
   (req: Request, res: Response): void => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) { res.status(422).json({ errors: errors.array() }); return; }
+    if (!errors.isEmpty()) { failValidation(res, errors.array()); return; }
 
     const { sub } = (req as AuthRequest).user;
     if (req.params.id === sub) {
-      res.status(422).json({ error: 'cannot_delete_self' });
+      fail(res, 'cannot_delete_self');
       return;
     }
 
     const profile = profileQueries.findById(req.params.id);
-    if (!profile) { res.status(404).json({ error: 'not_found' }); return; }
+    if (!profile) { fail(res, 'not_found'); return; }
 
     profileQueries.deleteUser(req.params.id);
-    res.status(204).end();
+    ok(res, {}, 'המשתמש נמחק בהצלחה');
   },
 );
 

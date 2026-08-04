@@ -32,7 +32,11 @@ export function useConversations() {
     if (isRefresh) setRefreshing(true);
     try {
       const data = await chatApi.getConversations();
-      setConversations(data);
+      if (!data.success) {
+        setError(data.message);
+        return;
+      }
+      setConversations(data.conversations);
       setError('');
     } catch {
       setError('טעינת השיחות נכשלה. אנא נסה/י שוב מאוחר יותר.');
