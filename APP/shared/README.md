@@ -15,6 +15,16 @@ APP/shared/
     flow/           session/routing flow rules — authFlow.ts (event +
                     guard rules mapping to a logical AuthDestination,
                     never a concrete route/screen)
+    pages/          the canonical page/screen registry — pageIds.ts
+                    declares the full PageId union (every page an
+                    end-user client must have); each platform maps every
+                    PageId to its own concrete route path or screen name
+                    (web/src/pages/routes.ts, mobile's
+                    navigation/screenNames.ts) via
+                    `as const satisfies Record<PageId, string>`, so
+                    adding a page here without updating both platforms
+                    fails to compile. The admin panel is a separate
+                    system and isn't part of this registry.
     validation/     signup/profile validation rules — credentials.ts,
                     profile.ts
     copy/           i18n message dictionaries — client/ and server/, kept

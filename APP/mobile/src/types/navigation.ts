@@ -6,7 +6,7 @@ export type AuthStackParams = {
 
 export type MainStackParams = {
   Menu:             undefined;
-  MyProfile:        undefined;
+  Profile:          undefined;
   AdditionalPhotos: undefined;
   Discover:         undefined;
   PeerProfile:      { peer_id: string };

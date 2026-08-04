@@ -56,7 +56,7 @@ export function AdditionalPhotosScreen({ navigation }: Props) {
             loading={uploading}
             disabled={photos.length >= 4}
           />
-          <SecondaryButton text="חזור לפרופיל שלי" onPress={() => navigation.navigate('MyProfile')} />
+          <SecondaryButton text="חזור לפרופיל שלי" onPress={() => navigation.navigate('Profile')} />
         </View>
       </View>
     </SafeAreaView>

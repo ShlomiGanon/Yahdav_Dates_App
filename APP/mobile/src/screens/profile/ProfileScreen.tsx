@@ -20,7 +20,7 @@ import { LoadingOverlay } from '../../components/LoadingOverlay';
 import type { MainStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
 
-type Props = NativeStackScreenProps<MainStackParams, 'MyProfile'>;
+type Props = NativeStackScreenProps<MainStackParams, 'Profile'>;
 
 const GENDER_OPTIONS: PickerOption[] = [
   { label: 'זכר',  value: 'male'   },
@@ -59,7 +59,7 @@ const REGION_OPTIONS: PickerOption[] = [
 
 const PHOTO_SIZE = 120;
 
-export function MyProfileScreen({ navigation }: Props) {
+export function ProfileScreen({ navigation }: Props) {
   const bannerRef = useRef<StatusBannerRef>(null);
 
   const { profileData, loading, saving, uploading, loadError, save, uploadPhoto } =

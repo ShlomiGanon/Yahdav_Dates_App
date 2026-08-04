@@ -19,7 +19,7 @@ export function MenuScreen({ navigation }: Props) {
       <View style={styles.container}>
         <ScreenHeading>תפריט ראשי</ScreenHeading>
         <View style={styles.buttons}>
-          <PrimaryButton text="עריכת הפרופיל שלי"    onPress={() => navigation.navigate('MyProfile')}   />
+          <PrimaryButton text="עריכת הפרופיל שלי"    onPress={() => navigation.navigate('Profile')}     />
           <PrimaryButton text="צפייה במשתמשים אחרים" onPress={() => navigation.navigate('Discover')}    />
           <PrimaryButton text="היסטוריית שיחות"       onPress={() => navigation.navigate('ChatHistory')} />
         </View>

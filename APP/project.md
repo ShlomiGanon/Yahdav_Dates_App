@@ -1,40 +1,53 @@
 # Yahdav — Project Overview
 
-יחדיו is a Hebrew-language Jewish dating app. It runs as three separate applications that communicate over HTTP and WebSocket:
+יחדיו is a Hebrew-language Jewish dating app. It runs as four separate
+applications that communicate over HTTP and WebSocket, plus one shared
+logic package that isn't a runtime service of its own:
 
 - **Backend** — Node.js / Express API server (the single source of truth)
 - **Admin Dashboard** — React web app for administrators to manage users
+- **Web App** — React web app for end-users (browser)
 - **Mobile App** — React Native (Expo) app for iOS and Android end-users
+- **Shared** — pure-TypeScript package holding logic common to the
+  end-user clients (validation rules, session/routing decisions, i18n
+  copy, typed API clients, the canonical page/screen registry) and, for
+  validation and copy, the backend too. See `architecture.md` and
+  `shared/README.md` for how it's structured and consumed.
 
 ---
 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Mobile App (iOS / Android)          Admin Dashboard (Web)   │
-│  React Native + Expo SDK 57          React 18 + Vite         │
-│                                                              │
-│  REST over HTTPS        WebSocket    REST over HTTPS         │
-└──────────────┬──────────────┬──────────────┬────────────────┘
-               │              │              │
-               ▼              ▼              ▼
-┌─────────────────────────────────────────────────────────────┐
-│           Backend — Node.js 20 + Express 4 + TypeScript      │
-│                                                              │
-│  /auth/*       /users/*      /chat/*      /admin/*           │
-│  /uploads/:f   ws:/ws?token= (WebSocket endpoint)            │
-│                                                              │
-│  ┌──────────────┐    ┌───────────────────────────────────┐  │
-│  │  SQLite WAL  │    │  data/uploads/  (photo files)     │  │
-│  │  (one file)  │    │  (swap to S3 by changing one svc) │  │
-│  └──────────────┘    └───────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│  Mobile App          Web App             Admin Dashboard              │
+│  React Native        React 19 + Vite     React 18 + Vite              │
+│  + Expo SDK 57        (end-users)         (admins)                    │
+│                                                                        │
+│  REST + WebSocket    REST over HTTPS     REST over HTTPS              │
+└──────────┬───────────────┬───────────────────┬───────────────────────┘
+           │               │                   │
+           ▼               ▼                   ▼
+┌───────────────────────────────────────────────────────────────────────┐
+│           Backend — Node.js 20 + Express 4 + TypeScript               │
+│                                                                        │
+│  /auth/*       /users/*      /chat/*      /admin/*                    │
+│  /uploads/:f   ws:/ws?token= (WebSocket endpoint)                     │
+│                                                                        │
+│  ┌──────────────┐    ┌───────────────────────────────────┐           │
+│  │  SQLite WAL  │    │  data/uploads/  (photo files)      │           │
+│  │  (one file)  │    │  (swap to S3 by changing one svc)  │           │
+│  └──────────────┘    └───────────────────────────────────┘           │
+└───────────────────────────────────────────────────────────────────────┘
 ```
+
+`shared` isn't pictured — it's a library, not a runtime service. It sits
+beside Web and Mobile (both import its `.ts` source directly, transpiled
+by their own bundler) and is a real compiled npm dependency of Backend.
 
 ---
 
-## The Three Parts
+## The Parts
 
 ### 1. Backend (`APP/backend/`)
 
@@ -91,7 +104,41 @@ Adding a new admin section = create one folder under `src/sections/`, add one en
 
 ---
 
-### 3. Mobile App (`APP/mobile/`)
+### 3. Web App (`APP/web/`)
+
+React web app for end-users — the browser counterpart to the mobile app.
+Hebrew-first, RTL everywhere. Every page defined in
+`shared/pages/pageIds.ts` is routed, but several are still placeholder
+stubs; see `web/next_missions.md` for exactly which ones and what's left
+to build in each.
+
+**Key responsibilities:**
+- Register and login
+- Edit own profile — text fields + main photo (fully built)
+- Browse the discover feed, view peer profiles, real-time chat — routed,
+  UI not yet built (tracked in `web/next_missions.md`)
+
+**Architecture pattern: Pages → typed API clients → Backend**
+```
+Pages (pure UI, state held inline — no hooks layer) → api/client.ts
+(typed factories from @shared/api) → Backend
+```
+
+No page calls `axios` directly — all network calls go through
+`api/client.ts`'s `authApi` / `usersApi` / `chatApi` singletons.
+
+**Auth:** Access token in `sessionStorage`; refresh token in
+`localStorage`. The axios response interceptor auto-refreshes on
+`{success:false, error:'unauthorized'}` (see the Authentication section
+below for why it isn't a 401 check) and retries the original request.
+
+**RTL:** `<html dir="rtl">` — Tailwind CSS flips layout automatically.
+
+**Runs on:** `localhost:5174` (dev, fixed port in `vite.config.ts`)
+
+---
+
+### 4. Mobile App (`APP/mobile/`)
 
 React Native Expo app for end-users. Hebrew-first, RTL everywhere.
 
@@ -122,7 +169,7 @@ No screen calls `axios` directly — all network calls go through `api/users.ts`
 
 ### Authentication
 
-All three parts share the same token pair. The backend issues both; the mobile and admin consume them independently.
+All three client apps share the same token pair shape. The backend issues both; mobile, web, and admin each consume them independently, storing them wherever fits their own platform (Expo SecureStore, `sessionStorage`/`localStorage`, and React state/`localStorage` respectively).
 
 ```
 POST /auth/login { identifier, password }
@@ -136,7 +183,7 @@ POST /auth/logout { refresh_token }
 ```
 
 Every protected request sends `Authorization: Bearer <access_token>`.  
-When the access token expires the axios interceptor (in both mobile and admin) automatically calls `/auth/refresh`, then retries the original request — transparent to the screen/page.
+When the access token expires, each client's axios interceptor (mobile, web, and admin all have one) automatically calls `/auth/refresh`, then retries the original request — transparent to the screen/page. The backend never uses HTTP 401 for this; it always answers 200 with `{success:false, error:'unauthorized'}` in the body, which is what each interceptor actually checks for.
 
 Admin-only routes additionally check `is_admin = 1` in the JWT payload. Non-admin users get `403`.
 
@@ -146,22 +193,23 @@ Admin-only routes additionally check `is_admin = 1` in the JWT payload. Non-admi
 
 | Prefix | Who uses it | What it does |
 |--------|-------------|--------------|
-| `POST /auth/*` | Mobile + Admin | Signup, login, refresh, logout |
-| `GET/PUT /users/me` | Mobile | Read/update own profile |
-| `POST /users/me/photos` | Mobile | Upload extra photos |
-| `GET /users/discover` | Mobile | Paginated candidate feed |
-| `GET /users/:id` | Mobile | Read peer profile |
+| `POST /auth/*` | Mobile + Web + Admin | Signup, login, refresh, logout |
+| `GET/PUT /users/me` | Mobile + Web | Read/update own profile |
+| `POST /users/me/photo` | Mobile + Web | Upload/replace the main profile photo |
+| `POST /users/me/photos` | Mobile | Upload extra photos (web: routed, not yet wired — `web/next_missions.md`) |
+| `GET /users/discover` | Mobile | Paginated candidate feed (web: routed, not yet wired) |
+| `GET /users/:id` | Mobile | Read peer profile (web: routed, not yet wired) |
 | `POST /users/:id/block` | Mobile | Block a user |
 | `POST /users/me/push-token` | Mobile | Register Expo push token after login |
-| `GET /chat/conversations` | Mobile | Conversation thread list |
-| `GET /chat/:peer_id` | Mobile | Message history (cursor-paginated) |
+| `GET /chat/conversations` | Mobile | Conversation thread list (web: routed, not yet wired) |
+| `GET /chat/:peer_id` | Mobile | Message history (cursor-paginated) (web: routed, not yet wired) |
 | `POST /chat/:peer_id` | Mobile | Send message (REST fallback) |
 | `PUT /chat/:peer_id/read` | Mobile | Mark thread as read |
 | `GET /admin/users` | Admin | Paginated user list with search |
 | `GET /admin/users/:id` | Admin | Full user detail |
 | `PUT /admin/users/:id/status` | Admin | Change user status |
 | `DELETE /admin/users/:id` | Admin | Delete user |
-| `GET /uploads/:filename` | Mobile + Admin | Serve uploaded photo files |
+| `GET /uploads/:filename` | Mobile + Web + Admin | Serve uploaded photo files |
 
 ---
 
@@ -302,11 +350,17 @@ Migrations are in `backend/migrations/*.sql` — applied automatically when the 
 | Admin routing | React Router v6 |
 | Admin styling | Tailwind CSS (`dir="rtl"`) |
 | Admin HTTP | Axios + JWT interceptor |
+| Web framework | React 19 + Vite + TypeScript |
+| Web routing | React Router v7 |
+| Web styling | Tailwind CSS 4 (`dir="rtl"`) |
+| Web token storage | `sessionStorage` (access) + `localStorage` (refresh) |
+| Web HTTP | Axios + JWT interceptor |
 | Mobile framework | React Native + Expo SDK 57 |
 | Mobile navigation | React Navigation v6 |
 | Mobile token storage | Expo SecureStore |
 | Mobile HTTP | Axios + JWT interceptor |
 | Mobile push | `expo-notifications` |
+| Shared logic | Pure TypeScript, zero framework deps (`APP/shared/`) |
 | Dates (all apps) | `date-fns` with Hebrew locale |
 
 ---
@@ -316,32 +370,53 @@ Migrations are in `backend/migrations/*.sql` — applied automatically when the 
 ```
 APP/
 ├── project.md           ← this file
-├── MASTER_PLAN.md       ← architecture decisions + remaining missions
-├── remove_docker.md     ← record of Docker removal + how to run without it
+├── architecture.md      ← design philosophy + structural map (the "how it thinks")
+├── package.json          ← npm workspace root (members: backend, shared)
 │
 ├── backend/
-│   ├── BACKEND_PLAN.md
 │   ├── src/             ← Express app source (TypeScript)
 │   ├── migrations/      ← versioned SQL files
-│   ├── tests/           ← 40 integration tests (supertest)
 │   ├── data/            ← SQLite file + uploads/ (runtime, not committed)
 │   ├── .env.example     ← template for production .env
 │   └── package.json
 │
 ├── admin/
-│   ├── ADMIN_PLAN.md
 │   ├── src/             ← React app source (TypeScript)
 │   ├── dist/            ← production build output (runtime, not committed)
 │   ├── nginx.conf       ← nginx SPA config for production server
 │   ├── .env.example     ← template for .env.local
 │   └── package.json
 │
-└── mobile/
-    ├── MOBILE_PLAN.md
-    ├── src/             ← React Native app source (TypeScript)
-    ├── app.json         ← Expo config (bundle IDs, splash, icons)
-    ├── eas.json         ← EAS Build profiles (dev / preview / production)
-    └── package.json
+├── web/
+│   ├── src/               ← React app source (TypeScript)
+│   ├── next_missions.md   ← tracked list of stub pages awaiting real features
+│   ├── dist/              ← production build output (runtime, not committed)
+│   └── package.json
+│
+├── mobile/
+│   ├── src/             ← React Native app source (TypeScript)
+│   ├── app.json         ← Expo config (bundle IDs, splash, icons)
+│   ├── eas.json         ← EAS Build profiles (dev / preview / production)
+│   └── package.json
+│
+├── shared/
+│   ├── api/            ← axios client factories (auth, users, chat)
+│   ├── flow/           ← session/routing flow rules
+│   ├── pages/          ← canonical PageId registry — the shared contract
+│   │                     every client's routes/screens must implement
+│   ├── validation/     ← signup/profile validation rules
+│   ├── copy/           ← i18n message dictionaries (client/ + server/)
+│   ├── theme/          ← design tokens
+│   ├── types/, utils/
+│   ├── README.md       ← this package's own conventions
+│   └── package.json
+│
+└── tests/                ← all test suites, one folder per package
+    ├── backend/
+    ├── web/
+    ├── mobile/
+    ├── admin/
+    └── shared/
 ```
 
 ---
@@ -370,7 +445,19 @@ npm run dev                   # Vite dev server
 
 Runs on `http://localhost:5173`. Login requires an account with `is_admin = 1`.
 
-### 3 — Start the mobile app
+### 3 — Start the web app
+
+```
+cd APP/web
+npm install
+npm run dev    # Vite dev server
+```
+
+Runs on `http://localhost:5174` (fixed port in `vite.config.ts`). Defaults
+to `VITE_API_BASE_URL=http://localhost:3000` if unset — there's no
+`.env.example` for web yet since the default already matches local dev.
+
+### 4 — Start the mobile app
 
 ```
 cd APP/mobile
@@ -380,11 +467,17 @@ npx expo start    # opens Expo dev tools — scan QR with Expo Go
 
 Set `EXPO_PUBLIC_API_BASE_URL=http://<your-local-IP>:3000` in `eas.json` (development profile) or `app.json` extra — Expo Go on a physical device cannot reach `localhost`.
 
-### 4 — Run backend tests
+### 5 — Run the test suites
+
+Each package's test suite lives under the top-level `APP/tests/` (see
+Folder Structure above), run from its own package directory:
 
 ```
-cd APP/backend
-npm test    # 40 tests, in-memory SQLite, ~20 s
+cd APP/backend && npm test    # integration tests, in-memory SQLite
+cd APP/shared  && npm test    # pure-logic unit tests
+cd APP/web     && npm test    # vitest
+cd APP/mobile  && npm test    # jest
+cd APP/admin   && npm test    # vitest
 ```
 
 ---
@@ -401,7 +494,7 @@ npm test    # 40 tests, in-memory SQLite, ~20 s
 | `JWT_SECRET` | **Yes** | — | Signs all JWTs; must be long + random |
 | `JWT_ACCESS_TTL` | No | `15m` | Access token lifetime |
 | `JWT_REFRESH_TTL_DAYS` | No | `30` | Refresh token lifetime in days |
-| `ADMIN_CORS_ORIGIN` | No | `http://localhost:5173` | Admin dashboard origin for CORS |
+| `ADMIN_CORS_ORIGIN` | No | `http://localhost:5173,http://localhost:5174` | Comma-separated allowed browser origins — despite the name, covers both the admin dashboard and the web app |
 | `EXPO_PUSH_URL` | No | Expo default | Expo push API endpoint |
 
 ### Admin (`.env.local`)
@@ -409,6 +502,15 @@ npm test    # 40 tests, in-memory SQLite, ~20 s
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `VITE_API_BASE_URL` | **Yes** | Backend URL (`http://localhost:3000` dev / `https://api.yahdav.app` prod) |
+
+### Web
+
+No `.env.local` template exists yet — `VITE_API_BASE_URL` falls back to
+`http://localhost:3000` if unset, which already matches local dev.
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `VITE_API_BASE_URL` | No | Backend URL (defaults to `http://localhost:3000`; set explicitly for prod) |
 
 ### Mobile
 
@@ -422,19 +524,24 @@ Set via `eas.json` build profiles or `app.json` extra:
 
 ## What Is Left To Do
 
-The code is complete and all 40 backend tests pass. The remaining work is operational — deploying to a real server and publishing to the app stores. See **MASTER_PLAN.md → Section 10** for the 10 remaining missions with detailed step-by-step instructions.
+Backend, admin, and mobile are feature-complete. Web is mid-buildout:
+routing and the shared page contract are fully wired for all pages, but
+several pages are still placeholder stubs — see `web/next_missions.md`
+for the exact list and what each one still needs.
 
-Quick summary:
+Beyond finishing web, the remaining work is operational — deploying to a
+real server and publishing to the app stores:
 
-| Mission | What |
-|---------|------|
-| 1 | Provision server, domain (`yahdav.app`), SSL, nginx |
-| 2 | Install Node.js + PM2 on server, deploy backend |
-| 3 | Build admin `dist/`, configure nginx on server |
-| 4 | Create first admin account in production DB |
-| 5 | Run `eas init` in `APP/mobile/`, fill in Expo project ID |
-| 6 | Enroll Apple Developer, build + submit iOS app |
-| 7 | Create Google Play account, build + submit Android app |
-| 8 | Device testing — RTL, push, WebSocket, deep links |
-| 9 | Set up daily SQLite backup to off-server storage |
-| 10 | Set up uptime monitoring + alerts for `/health` |
+| Area | What |
+|------|------|
+| Server | Provision server, domain (`yahdav.app`), SSL, nginx |
+| Backend deploy | Install Node.js + PM2 on server, deploy backend |
+| Admin deploy | Build admin `dist/`, configure nginx on server |
+| Web deploy | Build web `dist/`, configure nginx/static hosting on server |
+| Admin account | Create first admin account in production DB |
+| Mobile (EAS) | Run `eas init` in `APP/mobile/`, fill in Expo project ID |
+| iOS | Enroll Apple Developer, build + submit iOS app |
+| Android | Create Google Play account, build + submit Android app |
+| Device testing | RTL, push, WebSocket, deep links |
+| Backups | Set up daily SQLite backup to off-server storage |
+| Monitoring | Set up uptime monitoring + alerts for `/health` |

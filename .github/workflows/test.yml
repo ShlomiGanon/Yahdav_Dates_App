@@ -25,9 +25,24 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: APP/backend/package-lock.json
+          cache-dependency-path: |
+            APP/backend/package-lock.json
+            APP/package-lock.json
+            APP/shared/package-lock.json
 
       - run: npm ci
+
+      # backend resolves @yahdav/shared/* through the npm workspace symlink
+      # at APP/node_modules/@yahdav/shared, which only gets created by an
+      # install run at the workspace root — `npm ci` scoped to APP/backend
+      # alone (above) doesn't create it. It also needs shared's dist/
+      # built, since dist/ is gitignored and therefore absent from a fresh
+      # checkout.
+      - run: npm ci
+        working-directory: APP
+
+      - run: npm run build
+        working-directory: APP/shared
 
       - run: npm test
 
@@ -43,9 +58,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: APP/mobile/package-lock.json
+          cache-dependency-path: |
+            APP/mobile/package-lock.json
+            APP/shared/package-lock.json
 
       - run: npm ci
+
+      # mobile imports from ../shared (via the @shared babel alias), which
+      # is its own package with its own node_modules (date-fns, needed by
+      # @shared/utils/formatDate, used from ChatScreen/ChatHistoryScreen)
+      # — install it too, same reasoning as the web job above.
+      - run: npm ci
+        working-directory: APP/shared
 
       - run: npm test
 
