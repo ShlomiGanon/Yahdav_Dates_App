@@ -5,7 +5,7 @@ export function Sidebar() {
   return (
     <aside className="flex w-56 flex-col border-l border-gray-200 bg-white">
       <div className="flex h-14 items-center justify-center border-b border-gray-200">
-        <span className="text-lg font-bold text-blue-600">יחדב ניהול</span>
+        <span className="text-lg font-bold text-blue-600">יחדיו ניהול</span>
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3">

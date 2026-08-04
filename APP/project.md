@@ -1,6 +1,6 @@
 # Yahdav — Project Overview
 
-יחדב is a Hebrew-language Jewish dating app. It runs as three separate applications that communicate over HTTP and WebSocket:
+יחדיו is a Hebrew-language Jewish dating app. It runs as three separate applications that communicate over HTTP and WebSocket:
 
 - **Backend** — Node.js / Express API server (the single source of truth)
 - **Admin Dashboard** — React web app for administrators to manage users

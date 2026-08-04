@@ -38,7 +38,7 @@ export function LoginPage()
             <div className="w-full max-w-sm bg-surface rounded-card p-8 shadow-lg">
 
                 <h1 className="text-3xl font-bold text-center text-secondary mb-8">
-                    יחדב
+                    יחדיו
                 </h1>
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">

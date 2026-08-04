@@ -211,7 +211,7 @@ APP/
 > Prepare and submit the iOS build.
 
 - [ ] Enroll in the Apple Developer Program ($99/year) at [developer.apple.com](https://developer.apple.com)
-- [ ] Create an App Store Connect record for יחדב (bundle ID: `com.yahdav.app`)
+- [ ] Create an App Store Connect record for יחדיו (bundle ID: `com.yahdav.app`)
 - [ ] Fill in `eas.json` → `submit.production.ios`:
   - `appleId` — your Apple ID email
   - `ascAppId` — App Store Connect numeric app ID
@@ -227,7 +227,7 @@ APP/
 > Prepare and submit the Android build.
 
 - [ ] Create a Google Play Console account ($25 one-time) at [play.google.com/console](https://play.google.com/console)
-- [ ] Create a new app record for יחדב (package: `com.yahdav.app`)
+- [ ] Create a new app record for יחדיו (package: `com.yahdav.app`)
 - [ ] Create a service account in Google Cloud Console, grant Play Console access, download JSON key
 - [ ] Place the JSON key at `APP/mobile/google-play-service-account.json` (never committed)
 - [ ] Build: `eas build --platform android --profile production`
