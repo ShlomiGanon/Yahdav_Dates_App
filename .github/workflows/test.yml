@@ -61,9 +61,19 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: APP/web/package-lock.json
+          cache-dependency-path: |
+            APP/web/package-lock.json
+            APP/shared/package-lock.json
 
       - run: npm ci
+
+      # web imports from ../shared (via the @shared alias), which is its own
+      # package with its own node_modules (axios, date-fns) — install it too,
+      # or the alias-resolved import fails with nothing installed under
+      # APP/shared/node_modules (that folder is gitignored, same as any
+      # other node_modules).
+      - run: npm ci
+        working-directory: APP/shared
 
       - run: npm test
 
