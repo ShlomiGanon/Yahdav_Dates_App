@@ -1,12 +1,12 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, Dimensions, ViewToken } from 'react-native';
-import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { usePeerPhotos } from '../../hooks/usePeerPhotos';
 import { SecondaryButton } from '../../components/SecondaryButton';
 import { ErrorCard } from '../../components/ErrorCard';
 import { LoadingOverlay } from '../../components/LoadingOverlay';
+import { RemoteImage } from '../../components/RemoteImage';
 import type { MainStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
 
@@ -69,7 +69,7 @@ export function PeerPhotosScreen({ route, navigation }: Props) {
             viewabilityConfig={viewabilityConfig}
             renderItem={({ item }) => (
               <View style={styles.page}>
-                <Image source={{ uri: item.url }} style={styles.photo} contentFit="contain" />
+                <RemoteImage uri={item.url} style={styles.photo} contentFit="contain" />
               </View>
             )}
           />

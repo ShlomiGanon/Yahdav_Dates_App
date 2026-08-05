@@ -2,10 +2,11 @@ import axios from 'axios';
 import { createAuthApi }  from '@shared/api/auth';
 import { createUsersApi } from '@shared/api/users';
 import { createChatApi }  from '@shared/api/chat';
+import { DEFAULT_API_BASE_URL } from '@shared/config';
 import { webTokenStorage } from '../auth/storage';
 import type { AuthUser } from '@shared/types/auth';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL;
 
 export const axiosClient = axios.create({ baseURL: BASE_URL });
 

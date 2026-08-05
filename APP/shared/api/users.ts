@@ -51,6 +51,13 @@ export function createUsersApi(client: AxiosInstance)
             return client.get('/users/me/photos').then((r) => r.data);
         },
 
+        uploadPhoto(form: FormData): Promise<ApiEnvelope & Photo>
+        {
+            return client.post('/users/me/photos', form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            }).then((r) => r.data);
+        },
+
         deleteMyPhoto(photo_id: string): Promise<ApiEnvelope>
         {
             return client.delete(`/users/me/photos/${photo_id}`).then((r) => r.data);

@@ -2,7 +2,6 @@ import React from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView, ScrollView, Pressable,
 } from 'react-native';
-import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { usePeerProfile } from '../../hooks/usePeerProfile';
@@ -11,6 +10,7 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { SecondaryButton } from '../../components/SecondaryButton';
 import { ErrorCard } from '../../components/ErrorCard';
 import { LoadingOverlay } from '../../components/LoadingOverlay';
+import { RemoteImage } from '../../components/RemoteImage';
 import type { MainStackParams } from '../../types/navigation';
 import type { PeerProfile } from '../../types/user';
 import { theme } from '../../style/theme';
@@ -85,7 +85,7 @@ export function PeerProfileScreen({ route, navigation }: Props) {
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.photoWrap}>
           {profile.photo_url ? (
-            <Image source={{ uri: profile.photo_url }} style={styles.photo} contentFit="cover" />
+            <RemoteImage uri={profile.photo_url} style={styles.photo} contentFit="cover" />
           ) : (
             <View style={styles.photoPlaceholder}>
               <MaterialIcons name="person" size={60} color={theme.palette.offline} />

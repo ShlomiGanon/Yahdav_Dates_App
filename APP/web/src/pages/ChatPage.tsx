@@ -1,15 +1,9 @@
-import { useParams } from 'react-router-dom';
-import { PageShell } from '../components/PageShell';
+import { ChatMasterDetail } from '../components/ChatMasterDetail';
 
+// Same master-detail view as ChatHistoryPage — see ChatMasterDetail for why
+// both PageIds render it. Here peer_id comes from the route, so the right
+// pane opens straight to that conversation.
 export function ChatPage()
 {
-    const { peer_id } = useParams<{ peer_id: string }>();
-
-    return (
-        <PageShell title="שיחה">
-            <p className="text-secondary opacity-60">
-                השיחה עם {peer_id} תוצג כאן.
-            </p>
-        </PageShell>
-    );
+    return <ChatMasterDetail />;
 }

@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { getAccessToken, getRefreshToken, saveTokens, clearTokens } from '../auth/storage';
+import { DEFAULT_API_BASE_URL } from '@shared/config';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL;
 
 export const api = axios.create({ baseURL: BASE_URL });
 

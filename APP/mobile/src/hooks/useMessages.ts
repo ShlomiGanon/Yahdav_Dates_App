@@ -3,7 +3,8 @@ import { chatApi } from '../api/chat';
 import { getAccessToken } from '../auth/storage';
 import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/axios';
-import { WS_RECONNECT } from '../utils/constants';
+import { buildWsUrl, openReconnectingSocket } from '@shared/utils/reconnectingSocket';
+import type { ReconnectingSocketHandle } from '@shared/utils/reconnectingSocket';
 import type { Message } from '../types/chat';
 
 const PAGE_SIZE = 20;
@@ -11,11 +12,7 @@ const PAGE_SIZE = 20;
 export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean) => void) {
   const { user } = useAuth();
 
-  const wsRef          = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectDelay = useRef<number>(WS_RECONNECT.INITIAL_DELAY_MS);
-  const reconnectCount = useRef(0);
-  const unmounted      = useRef(false);
+  const socketRef      = useRef<ReconnectingSocketHandle | null>(null);
   const loadingMoreRef = useRef(false);
 
   const [messages,    setMessages]    = useState<Message[]>([]);
@@ -26,12 +23,20 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
 
   useEffect(() => {
     loadHistory();
-    connectWs();
+    socketRef.current = openReconnectingSocket({
+      buildUrl: () => buildWsUrl(api.defaults.baseURL ?? '', getAccessToken() ?? ''),
+      onMessage: (raw) => {
+        try {
+          const msg = JSON.parse(raw) as Message & { type?: string };
+          if (msg.sender_id && msg.sender_id !== user?.user_id) {
+            setMessages((prev) => [msg, ...prev]);
+          }
+        } catch {}
+      },
+    });
     return () => {
-      unmounted.current = true;
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
-      wsRef.current = null;
+      socketRef.current?.close();
+      socketRef.current = null;
     };
   }, []);
 
@@ -77,44 +82,6 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
     }
   };
 
-  const connectWs = () => {
-    const token = getAccessToken();
-    if (!token || unmounted.current) return;
-    const wsBase = (api.defaults.baseURL ?? '').replace(/^https?/, (p) =>
-      p === 'https' ? 'wss' : 'ws',
-    );
-    const ws = new WebSocket(`${wsBase}/ws?token=${encodeURIComponent(token)}`);
-
-    ws.onopen = () => {
-      reconnectDelay.current = WS_RECONNECT.INITIAL_DELAY_MS;
-      reconnectCount.current = 0;
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data as string) as Message & { type?: string };
-        if (msg.sender_id && msg.sender_id !== user?.user_id) {
-          setMessages((prev) => [msg, ...prev]);
-        }
-      } catch {}
-    };
-
-    ws.onclose = () => {
-      if (unmounted.current) return;
-      if (reconnectCount.current >= WS_RECONNECT.MAX_ATTEMPTS) return;
-      reconnectTimer.current = setTimeout(() => {
-        reconnectCount.current += 1;
-        reconnectDelay.current = Math.min(
-          reconnectDelay.current * WS_RECONNECT.BACKOFF_FACTOR,
-          WS_RECONNECT.MAX_DELAY_MS,
-        );
-        connectWs();
-      }, reconnectDelay.current);
-    };
-
-    wsRef.current = ws;
-  };
-
   const sendMessage = async (content: string) => {
     if (!content || sending) return;
 
@@ -127,9 +94,11 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
     };
     setMessages((prev) => [optimistic, ...prev]);
 
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ peer_id, content, msg_type: 'TEXT' }));
-    } else {
+    const sentOverSocket = socketRef.current?.send(
+      JSON.stringify({ peer_id, content, msg_type: 'TEXT' }),
+    );
+
+    if (!sentOverSocket) {
       setSending(true);
       try {
         const data = await chatApi.sendMessage(peer_id, content, 'TEXT');

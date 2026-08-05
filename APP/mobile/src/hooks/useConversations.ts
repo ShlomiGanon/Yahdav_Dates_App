@@ -2,15 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { chatApi } from '../api/chat';
 import { getAccessToken } from '../auth/storage';
 import { api } from '../api/axios';
-import { WS_RECONNECT } from '../utils/constants';
+import { buildWsUrl, openReconnectingSocket } from '@shared/utils/reconnectingSocket';
+import type { ReconnectingSocketHandle } from '@shared/utils/reconnectingSocket';
 import type { Conversation } from '../types/chat';
 
 export function useConversations() {
-  const wsRef          = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const reconnectDelay = useRef<number>(WS_RECONNECT.INITIAL_DELAY_MS);
-  const reconnectCount = useRef(0);
-  const unmounted      = useRef(false);
+  const socketRef = useRef<ReconnectingSocketHandle | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading,       setLoading]       = useState(true);
@@ -19,12 +16,13 @@ export function useConversations() {
 
   useEffect(() => {
     load();
-    connectWs();
+    socketRef.current = openReconnectingSocket({
+      buildUrl: () => buildWsUrl(api.defaults.baseURL ?? '', getAccessToken() ?? ''),
+      onMessage: () => { load(); },
+    });
     return () => {
-      unmounted.current = true;
-      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
-      wsRef.current = null;
+      socketRef.current?.close();
+      socketRef.current = null;
     };
   }, []);
 
@@ -44,37 +42,6 @@ export function useConversations() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  const connectWs = () => {
-    const token = getAccessToken();
-    if (!token || unmounted.current) return;
-    const wsBase = (api.defaults.baseURL ?? '').replace(/^https?/, (p) =>
-      p === 'https' ? 'wss' : 'ws',
-    );
-    const ws = new WebSocket(`${wsBase}/ws?token=${encodeURIComponent(token)}`);
-
-    ws.onopen = () => {
-      reconnectDelay.current = WS_RECONNECT.INITIAL_DELAY_MS;
-      reconnectCount.current = 0;
-    };
-
-    ws.onmessage = () => { load(); };
-
-    ws.onclose = () => {
-      if (unmounted.current) return;
-      if (reconnectCount.current >= WS_RECONNECT.MAX_ATTEMPTS) return;
-      reconnectTimer.current = setTimeout(() => {
-        reconnectCount.current += 1;
-        reconnectDelay.current = Math.min(
-          reconnectDelay.current * WS_RECONNECT.BACKOFF_FACTOR,
-          WS_RECONNECT.MAX_DELAY_MS,
-        );
-        connectWs();
-      }, reconnectDelay.current);
-    };
-
-    wsRef.current = ws;
   };
 
   return {

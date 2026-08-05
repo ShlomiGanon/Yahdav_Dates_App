@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { Image } from 'expo-image';
+import { RemoteImage } from './RemoteImage';
 import { theme } from '../style/theme';
 
 type Props = {
@@ -17,8 +17,8 @@ export function Avatar({ src, name = '', diameter = theme.sizing.avatarSm, onlin
   return (
     <View style={{ width: diameter, height: diameter }}>
       {src ? (
-        <Image
-          source={{ uri: src }}
+        <RemoteImage
+          uri={src}
           style={{ width: diameter, height: diameter, borderRadius: radius }}
           contentFit="cover"
         />

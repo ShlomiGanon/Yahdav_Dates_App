@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
-import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
+import { RemoteImage } from './RemoteImage';
 import { theme } from '../style/theme';
 
 type Props = {
@@ -18,8 +18,8 @@ export function PhotoTile({ uri, onPress, showRemove = false, onRemove, size = 1
       onPress={onPress}
       style={({ pressed }) => [{ width: size, height: size }, pressed && styles.pressed]}
     >
-      <Image
-        source={{ uri }}
+      <RemoteImage
+        uri={uri}
         style={{ width: size, height: size, borderRadius: theme.radius.card }}
         contentFit="cover"
       />

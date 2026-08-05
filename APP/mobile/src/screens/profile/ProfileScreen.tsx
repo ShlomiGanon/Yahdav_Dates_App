@@ -3,7 +3,6 @@ import {
   View, StyleSheet, SafeAreaView, ScrollView,
   KeyboardAvoidingView, Platform, Pressable, Dimensions,
 } from 'react-native';
-import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { validateDateOfBirth } from '@shared/validation/profile';
@@ -17,6 +16,7 @@ import { SecondaryButton } from '../../components/SecondaryButton';
 import { ErrorCard } from '../../components/ErrorCard';
 import { StatusBanner, StatusBannerRef } from '../../components/StatusBanner';
 import { LoadingOverlay } from '../../components/LoadingOverlay';
+import { RemoteImage } from '../../components/RemoteImage';
 import type { MainStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
 
@@ -130,7 +130,7 @@ export function ProfileScreen({ navigation }: Props) {
 
           <Pressable onPress={handlePickPhoto} style={styles.photoPressable}>
             {photoUrl ? (
-              <Image source={{ uri: photoUrl }} style={styles.photo} contentFit="cover" />
+              <RemoteImage uri={photoUrl} style={styles.photo} contentFit="cover" />
             ) : (
               <View style={styles.photoPlaceholder}>
                 <MaterialIcons name="add-a-photo" size={40} color={theme.palette.offline} />
