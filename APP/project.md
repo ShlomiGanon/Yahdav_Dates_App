@@ -108,15 +108,19 @@ Adding a new admin section = create one folder under `src/sections/`, add one en
 
 React web app for end-users — the browser counterpart to the mobile app.
 Hebrew-first, RTL everywhere. Every page defined in
-`shared/pages/pageIds.ts` is routed, but several are still placeholder
-stubs; see `web/next_missions.md` for exactly which ones and what's left
-to build in each.
+`shared/pages/pageIds.ts` is routed and fully built, at feature parity
+with mobile's equivalent screens except where a deliberate,
+web-appropriate UX difference applies (see below and `architecture.md`).
 
 **Key responsibilities:**
 - Register and login
-- Edit own profile — text fields + main photo (fully built)
-- Browse the discover feed, view peer profiles, real-time chat — routed,
-  UI not yet built (tracked in `web/next_missions.md`)
+- Edit own profile — text fields, main photo, and extra photos
+- Browse the discover feed, view peer profiles (including their extra
+  photos), block users
+- Real-time chat via WebSocket, as a single master-detail view
+  (`ChatMasterDetail.tsx`) rather than mobile's two separate screens —
+  both the `chatHistory` and `chat` pages render it, one WebSocket per
+  mount feeding both the conversation list and the open thread
 
 **Architecture pattern: Pages → typed API clients → Backend**
 ```
@@ -196,15 +200,15 @@ Admin-only routes additionally check `is_admin = 1` in the JWT payload. Non-admi
 | `POST /auth/*` | Mobile + Web + Admin | Signup, login, refresh, logout |
 | `GET/PUT /users/me` | Mobile + Web | Read/update own profile |
 | `POST /users/me/photo` | Mobile + Web | Upload/replace the main profile photo |
-| `POST /users/me/photos` | Mobile | Upload extra photos (web: routed, not yet wired — `web/next_missions.md`) |
-| `GET /users/discover` | Mobile | Paginated candidate feed (web: routed, not yet wired) |
-| `GET /users/:id` | Mobile | Read peer profile (web: routed, not yet wired) |
-| `POST /users/:id/block` | Mobile | Block a user |
-| `POST /users/me/push-token` | Mobile | Register Expo push token after login |
-| `GET /chat/conversations` | Mobile | Conversation thread list (web: routed, not yet wired) |
-| `GET /chat/:peer_id` | Mobile | Message history (cursor-paginated) (web: routed, not yet wired) |
-| `POST /chat/:peer_id` | Mobile | Send message (REST fallback) |
-| `PUT /chat/:peer_id/read` | Mobile | Mark thread as read |
+| `POST /users/me/photos` | Mobile + Web | Upload extra photos |
+| `GET /users/discover` | Mobile + Web | Paginated candidate feed |
+| `GET /users/:id` | Mobile + Web | Read peer profile |
+| `POST /users/:id/block` | Mobile + Web | Block a user |
+| `POST /users/me/push-token` | Mobile | Register Expo push token after login (mobile-only feature — no web push) |
+| `GET /chat/conversations` | Mobile + Web | Conversation thread list |
+| `GET /chat/:peer_id` | Mobile + Web | Message history (cursor-paginated) |
+| `POST /chat/:peer_id` | Mobile + Web | Send message (REST fallback if the WebSocket send fails) |
+| `PUT /chat/:peer_id/read` | Mobile + Web | Mark thread as read |
 | `GET /admin/users` | Admin | Paginated user list with search |
 | `GET /admin/users/:id` | Admin | Full user detail |
 | `PUT /admin/users/:id/status` | Admin | Change user status |
@@ -389,7 +393,7 @@ APP/
 │
 ├── web/
 │   ├── src/               ← React app source (TypeScript)
-│   ├── next_missions.md   ← tracked list of stub pages awaiting real features
+│   ├── next_missions.md   ← historical record of the (now-completed) page buildout
 │   ├── dist/              ← production build output (runtime, not committed)
 │   └── package.json
 │
@@ -524,22 +528,27 @@ Set via `eas.json` build profiles or `app.json` extra:
 
 ## What Is Left To Do
 
-Backend, admin, and mobile are feature-complete. Web is mid-buildout:
-routing and the shared page contract are fully wired for all pages, but
-several pages are still placeholder stubs — see `web/next_missions.md`
-for the exact list and what each one still needs.
+Backend, admin, web, and mobile are all feature-complete — every page
+`shared/pages/pageIds.ts` declares is routed and fully built on both web
+and mobile, at feature parity except where a documented, deliberate UX
+difference applies (see `architecture.md`). `web/next_missions.md` no
+longer tracks any open work; it's kept only as a record of the buildout.
 
-Beyond finishing web, the remaining work is operational — deploying to a
-real server and publishing to the app stores:
+What remains is one open product decision, one code-quality item, and the
+operational work of deploying to a real server and publishing to the app
+stores:
 
 | Area | What |
 |------|------|
+| Web photo resize (product decision) | Mobile downsizes photos client-side before upload (1080px longest edge, 0.8 JPEG quality via `expo-image-manipulator`); web currently uploads the original file as-is. Needs a decision on whether web should get an equivalent (e.g. Canvas-based) resize before this is built. |
+| Mobile brace style (code quality) | Standardize Allman brace style across the entire mobile codebase — currently inconsistent (most of `mobile/src` is K&R-brace) despite `architecture.md` listing "Allman brace style throughout" as a project-wide leading principle. |
 | Server | Provision server, domain (`yahdav.app`), SSL, nginx |
 | Backend deploy | Install Node.js + PM2 on server, deploy backend |
+| Backend hardening | No rate limiting (e.g. on `/auth/*`) and no security-headers middleware (e.g. `helmet`) are wired into `app.ts` yet |
 | Admin deploy | Build admin `dist/`, configure nginx on server |
 | Web deploy | Build web `dist/`, configure nginx/static hosting on server |
-| Admin account | Create first admin account in production DB |
-| Mobile (EAS) | Run `eas init` in `APP/mobile/`, fill in Expo project ID |
+| Admin account | No seed/bootstrap script exists yet — create the first `is_admin = 1` account by hand in the production DB |
+| Mobile (EAS) | Run `eas init` in `APP/mobile/` — `app.json`'s `projectId` is still the placeholder `REPLACE_WITH_EAS_PROJECT_ID` |
 | iOS | Enroll Apple Developer, build + submit iOS app |
 | Android | Create Google Play account, build + submit Android app |
 | Device testing | RTL, push, WebSocket, deep links |

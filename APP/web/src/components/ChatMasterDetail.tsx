@@ -6,6 +6,7 @@ import { formatConversationTime } from '@shared/utils/formatDate';
 import { formatConversationPreview } from '@shared/utils/formatConversationPreview';
 import { CHAT_PAGE_SIZE, hasMorePages } from '@shared/utils/chatPagination';
 import { createOptimisticMessage } from '@shared/utils/createOptimisticMessage';
+import { classifyChatSocketFrame } from '@shared/utils/classifyChatSocketFrame';
 import { clientMessage } from '@shared/copy/client';
 import type { Conversation, Message } from '@shared/types/chat';
 import { AppShell } from './AppShell';
@@ -67,18 +68,14 @@ export function ChatMasterDetail()
 
     function handleSocketFrame(raw: string): void
     {
-        let frame: (Message & { type?: string }) | { type: string; message_id?: string };
+        const frame = classifyChatSocketFrame(raw);
 
-        try
-        {
-            frame = JSON.parse(raw);
-        }
-        catch
+        if (frame.kind === 'ignore')
         {
             return;
         }
 
-        if (frame.type === 'ack' && 'message_id' in frame && frame.message_id)
+        if (frame.kind === 'ack')
         {
             const tempId = pendingSendIdsRef.current.shift();
             if (tempId)
@@ -89,13 +86,8 @@ export function ChatMasterDetail()
             return;
         }
 
-        if (frame.type === 'error' || frame.type === 'pong')
-        {
-            return;
-        }
-
-        const incoming = frame as Message;
-        if (!incoming.sender_id || incoming.content === undefined)
+        const incoming = frame.message;
+        if (incoming.content === undefined)
         {
             return;
         }
