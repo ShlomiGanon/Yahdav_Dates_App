@@ -343,7 +343,7 @@ Migrations are in `backend/migrations/*.sql` — applied automatically when the 
 
 | Layer | Technology |
 |-------|------------|
-| Backend runtime | Node.js 20 LTS |
+| Backend runtime | Node.js 22 |
 | Backend framework | Express 4 + TypeScript 5 |
 | SQLite driver | `node:sqlite` (built-in, no native compile step) |
 | WebSocket | `ws` 8 |
