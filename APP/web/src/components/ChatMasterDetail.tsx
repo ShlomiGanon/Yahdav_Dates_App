@@ -3,6 +3,10 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { buildWsUrl, openReconnectingSocket } from '@shared/utils/reconnectingSocket';
 import type { ReconnectingSocketHandle } from '@shared/utils/reconnectingSocket';
 import { formatConversationTime } from '@shared/utils/formatDate';
+import { formatConversationPreview } from '@shared/utils/formatConversationPreview';
+import { CHAT_PAGE_SIZE, hasMorePages } from '@shared/utils/chatPagination';
+import { createOptimisticMessage } from '@shared/utils/createOptimisticMessage';
+import { clientMessage } from '@shared/copy/client';
 import type { Conversation, Message } from '@shared/types/chat';
 import { AppShell } from './AppShell';
 import { ChatBubble } from './ChatBubble';
@@ -10,34 +14,6 @@ import { chatApi, usersApi, axiosClient } from '../api/client';
 import { webTokenStorage } from '../auth/storage';
 import { useAuth } from '../auth/AuthContext';
 import { PAGE_ROUTES } from '../pages/routes';
-
-const PAGE_SIZE = 20;
-const PREVIEW_MAX = 38;
-
-function buildPreview(conv: Conversation, selfId: string): string
-{
-    let body: string;
-
-    if (conv.last_msg_type === 'AUDIO')
-    {
-        body = '🎤 הודעה קולית';
-    }
-    else if (conv.last_msg_type === 'IMAGE')
-    {
-        body = '📷 תמונה';
-    }
-    else
-    {
-        body = (conv.last_content || '').trim();
-        if (body.length > PREVIEW_MAX)
-        {
-            body = body.slice(0, PREVIEW_MAX) + '…';
-        }
-    }
-
-    const prefix = conv.last_sender_id === selfId ? 'את/ה: ' : '';
-    return prefix + body;
-}
 
 // Desktop's master-detail chat: mobile's ChatHistoryScreen (conversation
 // list) and ChatScreen (one conversation) live as separate stack screens
@@ -174,7 +150,7 @@ export function ChatMasterDetail()
         }
         catch
         {
-            setConversationsError('טעינת השיחות נכשלה. אנא נסה/י שוב מאוחר יותר.');
+            setConversationsError(clientMessage('load_conversations_failed'));
         }
         finally
         {
@@ -194,11 +170,11 @@ export function ChatMasterDetail()
         try
         {
             const data = await usersApi.getPeerProfile(peerId);
-            setPeerName(data.success ? (data.name || 'משתמש/ת') : 'משתמש/ת');
+            setPeerName(data.success ? (data.name || clientMessage('unknown_user_label')) : clientMessage('unknown_user_label'));
         }
         catch
         {
-            setPeerName('משתמש/ת');
+            setPeerName(clientMessage('unknown_user_label'));
         }
     }
 
@@ -207,20 +183,20 @@ export function ChatMasterDetail()
         setMessagesLoading(true);
         try
         {
-            const data = await chatApi.getMessages(peerId, { limit: PAGE_SIZE });
+            const data = await chatApi.getMessages(peerId, { limit: CHAT_PAGE_SIZE });
             if (!data.success)
             {
                 setMessagesError(data.message);
                 return;
             }
             setMessages([...data.messages].reverse());
-            setHasOlder(data.messages.length === PAGE_SIZE);
+            setHasOlder(hasMorePages(data.messages.length));
             chatApi.markRead(peerId).catch(() => {});
             requestAnimationFrame(scrollToBottom);
         }
         catch
         {
-            setMessagesError('טעינת השיחה נכשלה. אנא נסה/י שוב.');
+            setMessagesError(clientMessage('load_messages_failed'));
         }
         finally
         {
@@ -241,18 +217,18 @@ export function ChatMasterDetail()
         setLoadingOlder(true);
         try
         {
-            const data = await chatApi.getMessages(peerId, { before: oldest.message_id, limit: PAGE_SIZE });
+            const data = await chatApi.getMessages(peerId, { before: oldest.message_id, limit: CHAT_PAGE_SIZE });
             if (!data.success)
             {
                 setMessagesError(data.message);
                 return;
             }
             setMessages((prev) => [...[...data.messages].reverse(), ...prev]);
-            setHasOlder(data.messages.length === PAGE_SIZE);
+            setHasOlder(hasMorePages(data.messages.length));
         }
         catch
         {
-            setMessagesError('שגיאה בטעינת הודעות ישנות');
+            setMessagesError(clientMessage('load_older_messages_failed'));
         }
         finally
         {
@@ -291,14 +267,8 @@ export function ChatMasterDetail()
         }
 
         setComposerText('');
-        const tempId = `tmp-${Date.now()}`;
-        const optimistic: Message = {
-            message_id: tempId,
-            sender_id:  user?.user_id ?? '',
-            content,
-            msg_type:   'TEXT',
-            created_at: new Date().toISOString(),
-        };
+        const optimistic = createOptimisticMessage(content, user?.user_id ?? '');
+        const tempId = optimistic.message_id;
         setMessages((prev) => [...prev, optimistic]);
         requestAnimationFrame(scrollToBottom);
 
@@ -334,7 +304,7 @@ export function ChatMasterDetail()
         catch
         {
             setMessages((prev) => prev.filter((m) => m.message_id !== tempId));
-            setMessagesError('שליחת ההודעה נכשלה. נסה/י שנית.');
+            setMessagesError(clientMessage('send_message_failed'));
         }
         finally
         {
@@ -373,7 +343,7 @@ export function ChatMasterDetail()
                             >
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="font-semibold text-secondary truncate">
-                                        {conv.peer_name || 'משתמש/ת'}
+                                        {conv.peer_name || clientMessage('unknown_user_label')}
                                     </span>
                                     <span className="text-xs text-secondary opacity-50 shrink-0">
                                         {formatConversationTime(conv.last_created_at)}
@@ -381,7 +351,7 @@ export function ChatMasterDetail()
                                 </div>
                                 <div className="flex items-center justify-between gap-2 mt-1">
                                     <span className="text-sm text-secondary opacity-60 truncate">
-                                        {buildPreview(conv, user?.user_id ?? '')}
+                                        {formatConversationPreview(conv, user?.user_id ?? '')}
                                     </span>
                                     {conv.unread_count > 0 && (
                                         <span className="shrink-0 min-w-5 h-5 px-1.5 rounded-full bg-primary
@@ -405,7 +375,7 @@ export function ChatMasterDetail()
                     {peer_id && (
                         <>
                             <div className="px-6 py-4 border-b border-black/10 bg-surface">
-                                <h2 className="font-bold text-secondary">{peerName || 'משתמש/ת'}</h2>
+                                <h2 className="font-bold text-secondary">{peerName || clientMessage('unknown_user_label')}</h2>
                             </div>
 
                             <div ref={messageListRef} className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-1">

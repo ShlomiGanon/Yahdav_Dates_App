@@ -2,6 +2,7 @@ import
 {
     validateRequired,
     validateDateOfBirth,
+    validateProfileForm,
 } from '../../../shared/validation/profile';
 
 describe('validateRequired', () =>
@@ -83,5 +84,76 @@ describe('validateDateOfBirth', () =>
     it('accepts a real leap-day date of birth', () =>
     {
         expect(validateDateOfBirth('2000-02-29')).toBeNull();
+    });
+});
+
+// Pins the exact validation precedence + exact clientMessage keys that were
+// previously duplicated in mobile's ProfileScreen.tsx (validateAndSave) and
+// web's ProfilePage.tsx (handleSave). Was verified against a local
+// verbatim-copied reference implementation before validateProfileForm
+// existed (see APP/review.md finding 2.6 for that pinning pass); these are
+// the same assertions, now run against the real export.
+describe('validateProfileForm', () =>
+{
+    const VALID =
+    {
+        name:          'ישראל ישראלי',
+        gender:        'male',
+        date_of_birth: '1995-06-15',
+        city:          'תל אביב',
+    };
+
+    it('accepts a fully valid form', () =>
+    {
+        expect(validateProfileForm(VALID)).toBeNull();
+    });
+
+    it('rejects a missing name, ahead of every other field', () =>
+    {
+        expect(validateProfileForm({ ...VALID, name: '', gender: null, date_of_birth: '', city: '' })).toBe('name_required');
+    });
+
+    it('rejects a whitespace-only name', () =>
+    {
+        expect(validateProfileForm({ ...VALID, name: '   ' })).toBe('name_required');
+    });
+
+    it('rejects a missing gender once name is present, ahead of date/city', () =>
+    {
+        expect(validateProfileForm({ ...VALID, gender: null, date_of_birth: '', city: '' })).toBe('gender_required');
+    });
+
+    it('rejects a missing date of birth once name/gender are present, ahead of city', () =>
+    {
+        expect(validateProfileForm({ ...VALID, date_of_birth: '', city: '' })).toBe('date_of_birth_required');
+    });
+
+    it('rejects a missing city once name/gender/date are present', () =>
+    {
+        expect(validateProfileForm({ ...VALID, city: '' })).toBe('city_required');
+    });
+
+    it('rejects a whitespace-only city', () =>
+    {
+        expect(validateProfileForm({ ...VALID, city: '   ' })).toBe('city_required');
+    });
+
+    it('rejects an unparseable date of birth once all required fields are present', () =>
+    {
+        expect(validateProfileForm({ ...VALID, date_of_birth: 'not-a-date' })).toBe('invalid_date');
+    });
+
+    it('rejects an under-18 date of birth once all required fields are present', () =>
+    {
+        const now = new Date();
+        const seventeen = `${now.getFullYear() - 17}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        expect(validateProfileForm({ ...VALID, date_of_birth: seventeen })).toBe('age_too_young');
+    });
+
+    it('rejects an over-100 date of birth once all required fields are present', () =>
+    {
+        const now = new Date();
+        const oneOhOne = `${now.getFullYear() - 101}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        expect(validateProfileForm({ ...VALID, date_of_birth: oneOhOne })).toBe('age_too_old');
     });
 });

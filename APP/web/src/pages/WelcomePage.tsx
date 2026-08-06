@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
 import { PAGE_ROUTES } from './routes';
 import heroImage from '../assets/hero.png';
+import { clientMessage } from '@shared/copy/client';
 
 export function WelcomePage()
 {
@@ -23,9 +24,9 @@ export function WelcomePage()
                     </p>
 
                     <div className="flex flex-col gap-3">
-                        <Button label="התחברות" onPress={() => navigate(PAGE_ROUTES.login)} />
+                        <Button label={clientMessage('login_label')} onPress={() => navigate(PAGE_ROUTES.login)} />
                         <Button
-                            label="הרשמה"
+                            label={clientMessage('signup_entry_label')}
                             variant="secondary"
                             onPress={() => navigate(PAGE_ROUTES.signup)}
                         />

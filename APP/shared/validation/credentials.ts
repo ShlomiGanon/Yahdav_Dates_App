@@ -62,3 +62,59 @@ export function deriveUsername(email: string): string
         ? stripped
         : stripped.padEnd(USERNAME_MIN, '0');
 }
+
+export type LoginFormError = 'missing_all_fields';
+
+// The login form's single pre-flight check — was duplicated identically in
+// mobile's LoginScreen.tsx and web's LoginPage.tsx. Deliberately narrow
+// scope per the report: the rest of each screen's submit orchestration
+// (call login(), navigate on success, network-error catch) stays
+// duplicated — the navigation call itself differs per platform and isn't
+// worth abstracting for one pre-flight check. See APP/review.md
+// finding 2.9.
+export function validateLoginForm(identifier: string, password: string): LoginFormError | null
+{
+    if (!identifier.trim() || !password)
+    {
+        return 'missing_all_fields';
+    }
+
+    return null;
+}
+
+export type SignupFormError =
+    | 'missing_all_fields'
+    | 'passwords_dont_match'
+    | 'password_too_short';
+
+export interface SignupFormInput
+{
+    email:    string;
+    password: string;
+    confirm:  string;
+}
+
+// The signup form's validation precedence — was duplicated identically
+// (same order, same clientMessage keys) in mobile's SignupScreen.tsx and
+// web's SignupPage.tsx. Note this never validates email format, only
+// presence — matching both screens' actual current behavior. See
+// APP/review.md finding 2.10.
+export function validateSignupForm(input: SignupFormInput): SignupFormError | null
+{
+    if (!input.email.trim() || !input.password || !input.confirm)
+    {
+        return 'missing_all_fields';
+    }
+
+    if (validatePasswordsMatch(input.password, input.confirm))
+    {
+        return 'passwords_dont_match';
+    }
+
+    if (validatePassword(input.password))
+    {
+        return 'password_too_short';
+    }
+
+    return null;
+}

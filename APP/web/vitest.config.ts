@@ -14,6 +14,11 @@ export default defineConfig(
             // directory (APP/tests/web), which never reaches this package's
             // node_modules.
             'axios-mock-adapter': `${import.meta.dirname}/node_modules/axios-mock-adapter`,
+            // Same reason — tests/web/client.test.ts now imports axios
+            // directly (finding 2.1: mocking the raw axios.post used by
+            // createApiClient's refresh call, separate from axiosClient's
+            // own mock adapter).
+            axios: `${import.meta.dirname}/node_modules/axios`,
         },
     },
     // Test files live outside this package (APP/tests/web), so Vite's dev

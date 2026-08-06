@@ -4,30 +4,15 @@ import { AppShell } from '../components/AppShell';
 import { RemoteImage } from '../components/RemoteImage';
 import { usersApi } from '../api/client';
 import { PAGE_ROUTES } from './routes';
+import { formatCandidateMetaSegments, EMPTY_CANDIDATE_META_LABEL } from '@shared/utils/formatCandidateMeta';
+import { DISCOVER_PAGE_SIZE, hasMoreCandidates } from '@shared/utils/discoverPagination';
+import { clientMessage } from '@shared/copy/client';
 import type { Candidate } from '@shared/types/user';
-
-const PAGE_SIZE = 20;
 
 function metaLine(c: Candidate): string
 {
-    const parts: string[] = [];
-
-    if (c.date_of_birth)
-    {
-        const dob = new Date(c.date_of_birth);
-        if (!isNaN(dob.getTime()) && dob.getFullYear() > 1900)
-        {
-            const age  = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
-            const word = c.gender === 'male' ? 'בן' : c.gender === 'female' ? 'בת' : 'בן/בת';
-            parts.push(`${word} ${age}`);
-        }
-    }
-    if (c.city?.trim())
-    {
-        parts.push(c.city.trim());
-    }
-
-    return parts.length ? parts.join(' · ') : 'חבר/ה חדש/ה';
+    const segments = formatCandidateMetaSegments(c);
+    return segments.length ? segments.join(' · ') : EMPTY_CANDIDATE_META_LABEL;
 }
 
 export function DiscoverPage()
@@ -60,20 +45,20 @@ export function DiscoverPage()
 
         try
         {
-            const data = await usersApi.discoverCandidates(pageNum, PAGE_SIZE);
+            const data = await usersApi.discoverCandidates(pageNum, DISCOVER_PAGE_SIZE);
             if (!data.success)
             {
                 setError(data.message);
                 return;
             }
             setCandidates((prev) => (initial ? data.candidates : [...prev, ...data.candidates]));
-            setHasMore(data.candidates.length === PAGE_SIZE);
+            setHasMore(hasMoreCandidates(data.candidates.length));
             setPage(pageNum);
             setError('');
         }
         catch
         {
-            setError('טעינת האנשים נכשלה. אנא נסה/י שוב מאוחר יותר.');
+            setError(clientMessage('load_candidates_failed'));
         }
         finally
         {
@@ -135,7 +120,7 @@ export function DiscoverPage()
                                     </div>
                                     <div className="p-3">
                                         <p className="font-semibold text-secondary truncate">
-                                            {candidate.name || 'משתמש/ת'}
+                                            {candidate.name || clientMessage('unknown_user_label')}
                                         </p>
                                         <p className="text-sm text-secondary opacity-60 truncate">
                                             {metaLine(candidate)}
@@ -175,7 +160,7 @@ export function DiscoverPage()
                     <>
                         <button
                             type="button"
-                            aria-label="סגירה"
+                            aria-label={clientMessage('close_label')}
                             onClick={() => setSelected(null)}
                             className="fixed inset-0 bg-black/40 z-10"
                         />
@@ -194,7 +179,7 @@ export function DiscoverPage()
                                     </div>
                                 )}
                                 <h2 className="text-xl font-bold text-secondary">
-                                    {selected.name || 'משתמש/ת'}
+                                    {selected.name || clientMessage('unknown_user_label')}
                                 </h2>
                                 <p className="text-secondary opacity-70">{metaLine(selected)}</p>
                             </div>
@@ -218,7 +203,7 @@ export function DiscoverPage()
                                 onClick={() => setSelected(null)}
                                 className="w-full py-2 text-sm text-secondary underline"
                             >
-                                סגירה
+                                {clientMessage('close_label')}
                             </button>
                         </aside>
                     </>

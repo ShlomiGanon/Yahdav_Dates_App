@@ -6,23 +6,11 @@ import { RemoteImage } from '../components/RemoteImage';
 import { ConfirmBanner } from '../components/ConfirmBanner';
 import { usersApi } from '../api/client';
 import { PAGE_ROUTES } from './routes';
+import { calcAge } from '@shared/utils/calcAge';
+import { genderLabel } from '@shared/utils/genderLabel';
+import { blockPeer } from '@shared/utils/blockPeer';
+import { clientMessage } from '@shared/copy/client';
 import type { PeerProfile } from '@shared/types/user';
-
-function genderLabel(g: string | null): string | null
-{
-    if (g === 'male')   return 'זכר';
-    if (g === 'female') return 'נקבה';
-    if (g === 'other')  return 'אחר';
-    return null;
-}
-
-function calcAge(dob: string | null): number | null
-{
-    if (!dob) return null;
-    const d = new Date(dob);
-    if (isNaN(d.getTime()) || d.getFullYear() <= 1900) return null;
-    return Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 3600 * 1000));
-}
 
 function FieldRow({ label, value }: { label: string; value: string })
 {
@@ -64,7 +52,7 @@ export function PeerProfilePage()
             }
             catch
             {
-                setLoadError('משהו השתבש בטעינת הפרופיל');
+                setLoadError(clientMessage('load_peer_profile_failed'));
             }
             finally
             {
@@ -84,19 +72,10 @@ export function PeerProfilePage()
         setBlocking(true);
         try
         {
-            const data = await usersApi.blockUser(peer_id);
-            if (data.success)
-            {
-                navigate(PAGE_ROUTES.discover);
-            }
-            else
-            {
-                setBlockError(data.message);
-            }
-        }
-        catch
-        {
-            setBlockError('החסימה נכשלה. נסה/י שנית.');
+            await blockPeer(usersApi.blockUser, peer_id, {
+                onSuccess: () => navigate(PAGE_ROUTES.discover),
+                onError:   setBlockError,
+            });
         }
         finally
         {
@@ -121,7 +100,7 @@ export function PeerProfilePage()
             <AppShell>
                 <PageShell title="פרופיל">
                     <p className="text-danger text-sm mb-4" role="alert">
-                        {loadError || 'הפרופיל לא נמצא.'}
+                        {loadError || clientMessage('peer_profile_not_found')}
                     </p>
                     <button
                         type="button"
@@ -141,7 +120,7 @@ export function PeerProfilePage()
 
     return (
         <AppShell>
-            <PageShell title={profile.name || 'משתמש/ת'}>
+            <PageShell title={profile.name || clientMessage('unknown_user_label')}>
                 <div className="flex justify-end mb-2">
                     <button
                         type="button"
@@ -155,7 +134,7 @@ export function PeerProfilePage()
 
                 {confirmingBlock && (
                     <ConfirmBanner
-                        message={`האם לחסום את ${profile.name || 'משתמש/ת'}?`}
+                        message={`האם לחסום את ${profile.name || clientMessage('unknown_user_label')}?`}
                         confirmLabel="חסום משתמש"
                         onConfirm={confirmBlock}
                         onCancel={() => setConfirmingBlock(false)}
@@ -181,12 +160,12 @@ export function PeerProfilePage()
                 </div>
 
                 <div className="flex flex-col">
-                    {gender && <FieldRow label="מין" value={gender} />}
-                    {age !== null && <FieldRow label="גיל" value={String(age)} />}
-                    {location && <FieldRow label="מיקום" value={location} />}
-                    {!!profile.bio && <FieldRow label="קצת עליי" value={profile.bio} />}
+                    {gender && <FieldRow label={clientMessage('gender_label')} value={gender} />}
+                    {age !== null && <FieldRow label={clientMessage('age_label')} value={String(age)} />}
+                    {location && <FieldRow label={clientMessage('location_label')} value={location} />}
+                    {!!profile.bio && <FieldRow label={clientMessage('about_me_label')} value={profile.bio} />}
                     {!gender && age === null && !location && !profile.bio && (
-                        <FieldRow label="פרטים נוספים" value="המשתמש/ת עדיין לא השלים/ה את הפרופיל." />
+                        <FieldRow label={clientMessage('more_details_label')} value={clientMessage('profile_incomplete_message')} />
                     )}
                 </div>
 

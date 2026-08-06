@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 import { usersApi } from '../api/users';
+import { blockPeer } from '@shared/utils/blockPeer';
+import { clientMessage } from '@shared/copy/client';
 import type { PeerProfile } from '../types/user';
 
 export function usePeerProfile(peer_id: string, onBlocked: () => void) {
@@ -20,7 +22,7 @@ export function usePeerProfile(peer_id: string, onBlocked: () => void) {
       }
       setProfile(data);
     } catch {
-      setLoadError('משהו השתבש בטעינת הפרופיל');
+      setLoadError(clientMessage('load_peer_profile_failed'));
     } finally {
       setLoading(false);
     }
@@ -29,14 +31,10 @@ export function usePeerProfile(peer_id: string, onBlocked: () => void) {
   const handleBlock = async () => {
     setBlocking(true);
     try {
-      const data = await usersApi.blockUser(peer_id);
-      if (data.success) {
-        onBlocked();
-      } else {
-        Alert.alert('שגיאה', data.message);
-      }
-    } catch {
-      Alert.alert('שגיאה', 'החסימה נכשלה. נסה/י שנית.');
+      await blockPeer(usersApi.blockUser, peer_id, {
+        onSuccess: onBlocked,
+        onError: (message) => Alert.alert('שגיאה', message),
+      });
     } finally {
       setBlocking(false);
     }
@@ -45,7 +43,7 @@ export function usePeerProfile(peer_id: string, onBlocked: () => void) {
   const confirmBlock = () => {
     Alert.alert(
       'חסימת משתמש',
-      `האם לחסום את ${profile?.name || 'משתמש/ת'}?`,
+      `האם לחסום את ${profile?.name || clientMessage('unknown_user_label')}?`,
       [
         { text: 'ביטול', style: 'cancel' },
         { text: 'חסום משתמש', style: 'destructive', onPress: handleBlock },

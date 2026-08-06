@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { validateDateOfBirth } from '@shared/validation/profile';
+import { validateProfileForm } from '@shared/validation/profile';
 import { clientMessage } from '@shared/copy/client';
 import { AppShell } from '../components/AppShell';
 import { PageShell } from '../components/PageShell';
@@ -9,23 +9,9 @@ import { RemoteImage } from '../components/RemoteImage';
 import { Button } from '../components/Button';
 import { usersApi } from '../api/client';
 import { PAGE_ROUTES } from './routes';
+import { GENDER_OPTIONS } from '@shared/reference/genderOptions';
+import { REGION_OPTIONS } from '@shared/reference/regionOptions';
 import type { Gender } from '@shared/types/user';
-
-const GENDER_OPTIONS: Array<{ value: Gender; label: string }> = [
-    { value: 'male',   label: 'זכר'  },
-    { value: 'female', label: 'נקבה' },
-    { value: 'other',  label: 'אחר'  },
-];
-
-const REGION_OPTIONS = [
-    'מחוז הצפון',
-    'מחוז חיפה',
-    'מחוז המרכז',
-    'מחוז תל אביב',
-    'מחוז ירושלים',
-    'מחוז הדרום',
-    'יהודה ושומרון',
-];
 
 const inputClass =
     'border border-gray-300 rounded-lg px-4 py-3 text-base text-right ' +
@@ -72,7 +58,7 @@ export function ProfilePage()
             }
             catch
             {
-                setLoadError('שגיאה בטעינת הפרופיל');
+                setLoadError(clientMessage('load_my_profile_failed'));
             }
             finally
             {
@@ -98,7 +84,7 @@ export function ProfilePage()
         }
         catch
         {
-            setStatus({ message: 'שגיאה בהעלאת התמונה', ok: false });
+            setStatus({ message: clientMessage('upload_photo_failed'), ok: false });
         }
         finally
         {
@@ -112,41 +98,10 @@ export function ProfilePage()
         setValidationError('');
         setStatus(null);
 
-        if (!name.trim())
+        const formError = validateProfileForm({ name, gender, date_of_birth: dateOfBirth, city });
+        if (formError)
         {
-            setValidationError(clientMessage('name_required'));
-            return;
-        }
-        if (!gender)
-        {
-            setValidationError(clientMessage('gender_required'));
-            return;
-        }
-        if (!dateOfBirth)
-        {
-            setValidationError(clientMessage('date_of_birth_required'));
-            return;
-        }
-        if (!city.trim())
-        {
-            setValidationError(clientMessage('city_required'));
-            return;
-        }
-
-        const dateError = validateDateOfBirth(dateOfBirth);
-        if (dateError === 'invalid_date')
-        {
-            setValidationError(clientMessage('invalid_date'));
-            return;
-        }
-        if (dateError === 'age_too_young')
-        {
-            setValidationError(clientMessage('age_too_young'));
-            return;
-        }
-        if (dateError === 'age_too_old')
-        {
-            setValidationError(clientMessage('age_too_old'));
+            setValidationError(clientMessage(formError));
             return;
         }
 
@@ -156,7 +111,11 @@ export function ProfilePage()
             const data = await usersApi.updateMyProfile({
                 name: name.trim(),
                 bio: bio.trim(),
-                gender,
+                // validateProfileForm above already guarantees gender is
+                // non-empty when formError is falsy — TS just can't narrow
+                // across that separate function call the way it could when
+                // this was an inline `if (!gender) return;` in this scope.
+                gender: gender as Gender,
                 date_of_birth: dateOfBirth,
                 city: city.trim(),
                 region,
@@ -264,7 +223,7 @@ export function ProfilePage()
                         >
                             <option value="">בחר אזור</option>
                             {REGION_OPTIONS.map((r) => (
-                                <option key={r} value={r}>{r}</option>
+                                <option key={r.value} value={r.value}>{r.label}</option>
                             ))}
                         </select>
                     </div>
@@ -290,7 +249,7 @@ export function ProfilePage()
                         </p>
                     )}
 
-                    <Button type="submit" label="שמור שינויים" loading={saving} />
+                    <Button type="submit" label={clientMessage('save_changes_label')} loading={saving} />
                 </form>
 
                 <button

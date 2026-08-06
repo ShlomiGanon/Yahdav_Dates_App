@@ -1,17 +1,6 @@
+import { createChatApi } from '@shared/api/chat';
 import { api } from './axios';
-import type { Conversation, Message } from '../types/chat';
-import type { ApiEnvelope } from '../types/api';
 
-export const chatApi = {
-  getConversations: () =>
-    api.get<ApiEnvelope & { conversations: Conversation[] }>('/chat/conversations').then((r) => r.data),
-
-  getMessages: (peer_id: string, params?: { limit?: number; before?: string }) =>
-    api.get<ApiEnvelope & { messages: Message[] }>(`/chat/${peer_id}`, { params }).then((r) => r.data),
-
-  sendMessage: (peer_id: string, content: string, msg_type: string) =>
-    api.post<ApiEnvelope & Message>(`/chat/${peer_id}`, { content, msg_type }).then((r) => r.data),
-
-  markRead: (peer_id: string) =>
-    api.put<ApiEnvelope>(`/chat/${peer_id}/read`).then((r) => r.data),
-};
+// All four endpoints match shared/api/chat.ts's signatures exactly — no
+// bridging needed. See APP/review.md finding 2.2.
+export const chatApi = createChatApi(api);

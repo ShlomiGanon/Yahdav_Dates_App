@@ -6,6 +6,7 @@ import { PrimaryButton } from '../../components/PrimaryButton';
 import { SecondaryButton } from '../../components/SecondaryButton';
 import type { AuthStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
+import { clientMessage } from '@shared/copy/client';
 
 type Props = NativeStackScreenProps<AuthStackParams, 'Welcome'>;
 
@@ -15,8 +16,8 @@ export function WelcomeScreen({ navigation }: Props) {
       <View style={styles.container}>
         <ScreenHeading>יחדיו</ScreenHeading>
         <View style={styles.buttons}>
-          <PrimaryButton   text="התחברות" onPress={() => navigation.navigate('Login')}  />
-          <SecondaryButton text="הרשמה"   onPress={() => navigation.navigate('Signup')} />
+          <PrimaryButton   text={clientMessage('login_label')}        onPress={() => navigation.navigate('Login')}  />
+          <SecondaryButton text={clientMessage('signup_entry_label')} onPress={() => navigation.navigate('Signup')} />
         </View>
       </View>
     </SafeAreaView>

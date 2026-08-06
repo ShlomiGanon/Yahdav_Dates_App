@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
-import { deriveUsername, validatePassword, validatePasswordsMatch } from '@shared/validation/credentials';
+import { deriveUsername, validateSignupForm } from '@shared/validation/credentials';
 import { clientMessage } from '@shared/copy/client';
 import { useAuth } from '../../auth/AuthContext';
 import { MOBILE_DESTINATIONS } from '../../navigation/destinations';
@@ -28,16 +28,9 @@ export function SignupScreen({ navigation }: Props) {
   const [error,    setError]    = useState('');
 
   const handleSignup = async () => {
-    if (!email.trim() || !password || !confirm) {
-      setError(clientMessage('missing_all_fields'));
-      return;
-    }
-    if (validatePasswordsMatch(password, confirm)) {
-      setError(clientMessage('passwords_dont_match'));
-      return;
-    }
-    if (validatePassword(password)) {
-      setError(clientMessage('password_too_short'));
+    const formError = validateSignupForm({ email, password, confirm });
+    if (formError) {
+      setError(clientMessage(formError));
       return;
     }
     setLoading(true);
@@ -80,7 +73,7 @@ export function SignupScreen({ navigation }: Props) {
               value={password}
               onChangeText={setPassword}
               isPassword
-              placeholder="לפחות 8 תווים"
+              placeholder={clientMessage('password_min_length_hint')}
             />
             <HebrewInput
               label="אימות סיסמה"
@@ -91,7 +84,7 @@ export function SignupScreen({ navigation }: Props) {
               onSubmitEditing={handleSignup}
             />
             {!!error && <ErrorCard message={error} />}
-            <PrimaryButton   text="הירשם"                    onPress={handleSignup}                    loading={loading} />
+            <PrimaryButton   text={clientMessage('signup_submit_label')} onPress={handleSignup}         loading={loading} />
             <SecondaryButton text="יש לך חשבון? התחברות" onPress={() => navigation.navigate('Login')} />
           </View>
         </ScrollView>

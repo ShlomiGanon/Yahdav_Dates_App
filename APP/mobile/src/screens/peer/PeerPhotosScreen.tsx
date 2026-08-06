@@ -9,6 +9,7 @@ import { LoadingOverlay } from '../../components/LoadingOverlay';
 import { RemoteImage } from '../../components/RemoteImage';
 import type { MainStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
+import { clientMessage } from '@shared/copy/client';
 
 type Props = NativeStackScreenProps<MainStackParams, 'PeerPhotos'>;
 
@@ -31,14 +32,14 @@ export function PeerPhotosScreen({ route, navigation }: Props) {
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 51 }).current;
 
-  const heading = peerName ? `התמונות של ${peerName}` : 'תמונות נוספות';
+  const heading = peerName ? `התמונות של ${peerName}` : clientMessage('additional_photos_label');
 
   if (loadError) {
     return (
       <View style={[styles.fallback, { paddingTop: insets.top + theme.spacing.lg }]}>
         <ErrorCard message={loadError} />
         <SecondaryButton
-          text="חזרה"
+          text={clientMessage('back_label')}
           onPress={() => navigation.navigate('PeerProfile', { peer_id })}
         />
       </View>
@@ -53,7 +54,7 @@ export function PeerPhotosScreen({ route, navigation }: Props) {
         <View style={[styles.fallback, { paddingTop: insets.top + theme.spacing.lg }]}>
           <Text style={styles.emptyText}>אין תמונות להצגה.</Text>
           <SecondaryButton
-            text="חזרה"
+            text={clientMessage('back_label')}
             onPress={() => navigation.navigate('PeerProfile', { peer_id })}
           />
         </View>
@@ -86,7 +87,7 @@ export function PeerPhotosScreen({ route, navigation }: Props) {
 
           <View style={[styles.bottomOverlay, { paddingBottom: insets.bottom + theme.spacing.md }]}>
             <SecondaryButton
-              text="חזרה"
+              text={clientMessage('back_label')}
               onPress={() => navigation.navigate('PeerProfile', { peer_id })}
             />
           </View>

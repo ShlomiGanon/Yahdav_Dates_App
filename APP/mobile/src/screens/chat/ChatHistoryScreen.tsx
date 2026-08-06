@@ -10,25 +10,12 @@ import { ErrorCard } from '../../components/ErrorCard';
 import { LoadingOverlay } from '../../components/LoadingOverlay';
 import { useAuth } from '../../auth/AuthContext';
 import type { MainStackParams } from '../../types/navigation';
-import type { Conversation } from '../../types/chat';
 import { theme } from '../../style/theme';
 import { formatConversationTime } from '@shared/utils/formatDate';
+import { formatConversationPreview } from '@shared/utils/formatConversationPreview';
+import { clientMessage } from '@shared/copy/client';
 
 type Props = NativeStackScreenProps<MainStackParams, 'ChatHistory'>;
-
-const PREVIEW_MAX = 38;
-
-function buildPreview(conv: Conversation, selfId: string): string {
-  let body = '';
-  if (conv.last_msg_type === 'AUDIO')      body = '🎤 הודעה קולית';
-  else if (conv.last_msg_type === 'IMAGE') body = '📷 תמונה';
-  else {
-    body = (conv.last_content || '').trim();
-    if (body.length > PREVIEW_MAX) body = body.slice(0, PREVIEW_MAX) + '…';
-  }
-  const prefix = conv.last_sender_id === selfId ? 'את/ה: ' : '';
-  return prefix + body;
-}
 
 export function ChatHistoryScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -57,8 +44,8 @@ export function ChatHistoryScreen({ navigation }: Props) {
             }
             renderItem={({ item }) => (
               <MemberRow
-                name={item.peer_name || 'משתמש/ת'}
-                subtitle={buildPreview(item, user?.user_id ?? '')}
+                name={item.peer_name || clientMessage('unknown_user_label')}
+                subtitle={formatConversationPreview(item, user?.user_id ?? '')}
                 timestamp={formatConversationTime(item.last_created_at)}
                 onPress={() =>
                   navigation.navigate('Chat', {

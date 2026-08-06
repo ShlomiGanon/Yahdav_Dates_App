@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
+import axios from 'axios';
 import MockAdapter from 'axios-mock-adapter';
 
 vi.mock('../../web/src/auth/storage', () =>
@@ -28,7 +29,15 @@ vi.mock('../../web/src/auth/storage', () =>
 const { axiosClient } = await import('../../web/src/api/client');
 const { webTokenStorage } = await import('../../web/src/auth/storage');
 
-const mock = new MockAdapter(axiosClient);
+// createApiClient's refresh call deliberately uses a raw axios.post rather
+// than the interceptor-wired client instance (see shared/api/client.ts —
+// APP/review.md finding 2.1), so it needs its own mock adapter mounted on
+// the global axios module; axiosClient's adapter can't see it. Matched by
+// RegExp since the raw call uses a full absolute URL
+// (`${baseURL}/auth/refresh`), not the relative path axiosClient's
+// baseURL-relative requests use.
+const clientMock  = new MockAdapter(axiosClient);
+const refreshMock = new MockAdapter(axios);
 
 // jsdom doesn't implement real navigation — assigning window.location.href
 // (as the interceptor does on an unrecoverable refresh failure) otherwise
@@ -37,7 +46,8 @@ const originalLocation = window.location;
 
 beforeEach(() =>
 {
-    mock.reset();
+    clientMock.reset();
+    refreshMock.reset();
     webTokenStorage.clear();
     vi.mocked(webTokenStorage.getAccessToken).mockClear();
     vi.mocked(webTokenStorage.setAccessToken).mockClear();
@@ -56,12 +66,19 @@ afterEach(() =>
     window.location = originalLocation;
 });
 
+afterAll(() =>
+{
+    // Unmount from the shared global axios module so this file's mocking
+    // can't leak into any other test file's use of raw axios.
+    refreshMock.restore();
+});
+
 describe('request interceptor', () =>
 {
     it('attaches a Bearer header when an access token is stored', async () =>
     {
         webTokenStorage.setAccessToken('token-123');
-        mock.onGet('/whoami').reply((config) =>
+        clientMock.onGet('/whoami').reply((config) =>
         {
             expect(config.headers?.Authorization).toBe('Bearer token-123');
             return [200, { success: true, message: 'ok' }];
@@ -73,7 +90,7 @@ describe('request interceptor', () =>
 
     it('omits the Authorization header when no token is stored', async () =>
     {
-        mock.onGet('/whoami').reply((config) =>
+        clientMock.onGet('/whoami').reply((config) =>
         {
             expect(config.headers?.Authorization).toBeUndefined();
             return [200, { success: true, message: 'ok' }];
@@ -96,14 +113,14 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setRefreshToken('valid-refresh');
 
         let refreshCalls = 0;
-        mock.onPost('/auth/refresh').reply(() =>
+        refreshMock.onPost(/\/auth\/refresh$/).reply(() =>
         {
             refreshCalls += 1;
             return [200, { success: true, message: 'ok', access_token: 'fresh-token', refresh_token: 'new-refresh' }];
         });
 
         let sawFreshToken = false;
-        mock.onGet('/protected').reply((config) =>
+        clientMock.onGet('/protected').reply((config) =>
         {
             if (config.headers?.Authorization === 'Bearer expired-token')
             {
@@ -128,14 +145,14 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setRefreshToken('valid-refresh');
 
         let refreshCalls = 0;
-        mock.onPost('/auth/refresh').reply(async () =>
+        refreshMock.onPost(/\/auth\/refresh$/).reply(async () =>
         {
             refreshCalls += 1;
             await new Promise((resolve) => setTimeout(resolve, 20));
             return [200, { success: true, message: 'ok', access_token: 'fresh-token', refresh_token: 'new-refresh' }];
         });
 
-        mock.onGet('/protected').reply((config) =>
+        clientMock.onGet('/protected').reply((config) =>
         {
             if (config.headers?.Authorization === 'Bearer expired-token')
             {
@@ -161,10 +178,10 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('also-invalid');
 
-        mock.onPost('/auth/refresh').reply(200, {
+        refreshMock.onPost(/\/auth\/refresh$/).reply(200, {
             success: false, message: 'ההתחברות פגה, יש להתחבר מחדש', error: 'session_not_found',
         });
-        mock.onGet('/protected').reply(200, {
+        clientMock.onGet('/protected').reply(200, {
             success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
         });
 
@@ -183,8 +200,8 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('also-invalid');
 
-        mock.onPost('/auth/refresh').networkError();
-        mock.onGet('/protected').reply(200, {
+        refreshMock.onPost(/\/auth\/refresh$/).networkError();
+        clientMock.onGet('/protected').reply(200, {
             success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
         });
 
@@ -200,12 +217,12 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setRefreshToken('valid-refresh');
 
         let refreshCalls = 0;
-        mock.onPost('/auth/refresh').reply(() =>
+        refreshMock.onPost(/\/auth\/refresh$/).reply(() =>
         {
             refreshCalls += 1;
             return [200, { success: true, message: 'ok', access_token: 'still-bad-token', refresh_token: 'new-refresh' }];
         });
-        mock.onGet('/always-unauthorized').reply(200, {
+        clientMock.onGet('/always-unauthorized').reply(200, {
             success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
         });
 
@@ -230,10 +247,10 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('expired-refresh-too');
 
-        mock.onPost('/auth/refresh').reply(200, {
+        refreshMock.onPost(/\/auth\/refresh$/).reply(200, {
             success: false, message: 'ההתחברות פגה, יש להתחבר מחדש', error: 'session_expired',
         });
-        mock.onGet('/protected').reply(200, {
+        clientMock.onGet('/protected').reply(200, {
             success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
         });
 

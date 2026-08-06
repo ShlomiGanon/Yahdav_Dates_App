@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
-import { deriveUsername, validatePassword, validatePasswordsMatch } from '@shared/validation/credentials';
+import { deriveUsername, validateSignupForm } from '@shared/validation/credentials';
 import { clientMessage } from '@shared/copy/client';
 import { useAuth } from '../auth/AuthContext';
 import { WEB_DESTINATIONS } from '../auth/destinations';
@@ -22,19 +22,10 @@ export function SignupPage()
         e.preventDefault();
         setError('');
 
-        if (!email.trim() || !password || !confirm)
+        const formError = validateSignupForm({ email, password, confirm });
+        if (formError)
         {
-            setError(clientMessage('missing_all_fields'));
-            return;
-        }
-        if (validatePasswordsMatch(password, confirm))
-        {
-            setError(clientMessage('passwords_dont_match'));
-            return;
-        }
-        if (validatePassword(password))
-        {
-            setError(clientMessage('password_too_short'));
+            setError(clientMessage(formError));
             return;
         }
 
@@ -96,7 +87,7 @@ export function SignupPage()
                             type="password"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            placeholder="לפחות 8 תווים"
+                            placeholder={clientMessage('password_min_length_hint')}
                             className="border border-gray-300 rounded-lg px-4 py-3
                                        text-base text-right focus:outline-none
                                        focus:border-primary"
@@ -124,7 +115,7 @@ export function SignupPage()
 
                     <Button
                         type="submit"
-                        label="הירשם"
+                        label={clientMessage('signup_submit_label')}
                         loading={loading}
                     />
 

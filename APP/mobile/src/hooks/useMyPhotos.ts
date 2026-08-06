@@ -3,6 +3,7 @@ import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { usersApi } from '../api/users';
 import { resizePhoto } from '../utils/resizePhoto';
+import { clientMessage } from '@shared/copy/client';
 import type { Photo } from '../types/user';
 
 export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
@@ -21,7 +22,7 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
       }
       setPhotos(data.photos);
     } catch {
-      onStatus('שגיאה בטעינת התמונות', false);
+      onStatus(clientMessage('load_photos_failed'), false);
     } finally {
       setLoading(false);
     }
@@ -30,7 +31,7 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
   const addPhoto = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      onStatus('נדרשת הרשאה לגישה לגלריה', false);
+      onStatus(clientMessage('gallery_permission_required'), false);
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -50,7 +51,7 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
       }
       onStatus(data.message, data.success);
     } catch {
-      onStatus('שגיאה בהעלאת התמונה', false);
+      onStatus(clientMessage('upload_photo_failed'), false);
     } finally {
       setUploading(false);
     }
@@ -59,7 +60,7 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
   const removePhoto = (photo_id: string) => {
     Alert.alert(
       'מחיקת תמונה',
-      'האם למחוק את התמונה?',
+      clientMessage('confirm_delete_photo_message'),
       [
         { text: 'ביטול', style: 'cancel' },
         {
@@ -73,7 +74,7 @@ export function useMyPhotos(onStatus: (msg: string, ok: boolean) => void) {
               }
               onStatus(data.message, data.success);
             } catch {
-              onStatus('שגיאה במחיקת התמונה', false);
+              onStatus(clientMessage('delete_photo_failed'), false);
             }
           },
         },

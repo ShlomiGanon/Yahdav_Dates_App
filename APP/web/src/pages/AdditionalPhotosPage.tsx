@@ -7,9 +7,9 @@ import { RemoteImage } from '../components/RemoteImage';
 import { ConfirmBanner } from '../components/ConfirmBanner';
 import { usersApi } from '../api/client';
 import { PAGE_ROUTES } from './routes';
+import { MAX_ADDITIONAL_PHOTOS } from '@shared/config';
+import { clientMessage } from '@shared/copy/client';
 import type { Photo } from '@shared/types/user';
-
-const MAX_PHOTOS = 4;
 
 export function AdditionalPhotosPage()
 {
@@ -39,7 +39,7 @@ export function AdditionalPhotosPage()
             }
             catch
             {
-                setStatus({ message: 'שגיאה בטעינת התמונות', ok: false });
+                setStatus({ message: clientMessage('load_photos_failed'), ok: false });
             }
             finally
             {
@@ -65,7 +65,7 @@ export function AdditionalPhotosPage()
         }
         catch
         {
-            setStatus({ message: 'שגיאה בהעלאת התמונה', ok: false });
+            setStatus({ message: clientMessage('upload_photo_failed'), ok: false });
         }
         finally
         {
@@ -93,15 +93,15 @@ export function AdditionalPhotosPage()
         }
         catch
         {
-            setStatus({ message: 'שגיאה במחיקת התמונה', ok: false });
+            setStatus({ message: clientMessage('delete_photo_failed'), ok: false });
         }
     }
 
-    const atLimit = photos.length >= MAX_PHOTOS;
+    const atLimit = photos.length >= MAX_ADDITIONAL_PHOTOS;
 
     return (
         <AppShell>
-            <PageShell title="תמונות נוספות">
+            <PageShell title={clientMessage('additional_photos_label')}>
                 {loading ? (
                     <p className="text-secondary opacity-60">טוען...</p>
                 ) : (
@@ -117,7 +117,7 @@ export function AdditionalPhotosPage()
 
                         {pendingDeleteId && (
                             <ConfirmBanner
-                                message="האם למחוק את התמונה?"
+                                message={clientMessage('confirm_delete_photo_message')}
                                 confirmLabel="מחק תמונה"
                                 onConfirm={confirmRemove}
                                 onCancel={() => setPendingDeleteId(null)}
@@ -155,7 +155,7 @@ export function AdditionalPhotosPage()
                             <PhotoUpload
                                 onFile={handleFile}
                                 disabled={uploading || atLimit}
-                                label={atLimit ? 'הגעת למקסימום תמונות' : 'הוסף תמונה'}
+                                label={atLimit ? clientMessage('photo_limit_reached') : clientMessage('add_photo_label')}
                             />
                             <button
                                 type="button"

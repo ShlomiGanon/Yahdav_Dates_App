@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { usersApi } from '../api/users';
+import { clientMessage } from '@shared/copy/client';
 
 export function usePeerPhotos(peer_id: string) {
   const [photos,    setPhotos]    = useState<Array<{ url: string }>>([]);
@@ -19,7 +20,7 @@ export function usePeerPhotos(peer_id: string) {
       setPeerName(data.name ?? '');
       setPhotos(data.photos ?? []);
     } catch {
-      setLoadError('משהו השתבש בטעינת התמונות');
+      setLoadError(clientMessage('load_peer_photos_failed'));
     } finally {
       setLoading(false);
     }

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { usersApi } from '../api/users';
+import { DISCOVER_PAGE_SIZE, hasMoreCandidates } from '@shared/utils/discoverPagination';
+import { clientMessage } from '@shared/copy/client';
 import type { Candidate } from '../types/user';
-
-const PAGE_SIZE = 20;
 
 export function useCandidates() {
   const [candidates,  setCandidates]  = useState<Candidate[]>([]);
@@ -18,18 +18,18 @@ export function useCandidates() {
     if (initial) setLoading(true);
     else setLoadingMore(true);
     try {
-      const data = await usersApi.discoverCandidates(pageNum, PAGE_SIZE);
+      const data = await usersApi.discoverCandidates(pageNum, DISCOVER_PAGE_SIZE);
       if (!data.success) {
         setError(data.message);
         return;
       }
       if (initial) setCandidates(data.candidates);
       else setCandidates((prev) => [...prev, ...data.candidates]);
-      setHasMore(data.candidates.length === PAGE_SIZE);
+      setHasMore(hasMoreCandidates(data.candidates.length));
       setPage(pageNum);
       setError('');
     } catch {
-      setError('טעינת האנשים נכשלה. אנא נסה/י שוב מאוחר יותר.');
+      setError(clientMessage('load_candidates_failed'));
     } finally {
       setLoading(false);
       setLoadingMore(false);

@@ -15,22 +15,16 @@ import { LoadingOverlay } from '../../components/LoadingOverlay';
 import type { MainStackParams } from '../../types/navigation';
 import type { Candidate } from '../../types/user';
 import { theme } from '../../style/theme';
+import { formatCandidateMetaSegments, EMPTY_CANDIDATE_META_LABEL } from '@shared/utils/formatCandidateMeta';
+import { clientMessage } from '@shared/copy/client';
 
 type Props = NativeStackScreenProps<MainStackParams, 'Discover'>;
 
-function metaLine(c: Candidate): string {
-  const parts: string[] = [];
-  if (c.date_of_birth) {
-    const dob = new Date(c.date_of_birth);
-    if (!isNaN(dob.getTime()) && dob.getFullYear() > 1900) {
-      const age  = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 3600 * 1000));
-      const word = c.gender === 'male' ? 'בן' : c.gender === 'female' ? 'בת' : 'בן/בת';
-      parts.push(`${word} ${age}`);
-    }
-  }
-  if (c.city?.trim()) parts.push(c.city.trim());
-  return parts.length ? parts.join('  ·  ') : 'חבר/ה חדש/ה';
-}
+const metaLine = (c: Candidate) =>
+{
+    const segments = formatCandidateMetaSegments(c);
+    return segments.length ? segments.join('  ·  ') : EMPTY_CANDIDATE_META_LABEL;
+};
 
 export function DiscoverScreen({ navigation }: Props) {
   const sheetRef   = useRef<BottomSheet>(null);
@@ -82,7 +76,7 @@ export function DiscoverScreen({ navigation }: Props) {
               renderItem={({ item }) => (
                 <MemberRow
                   src={item.photo_url}
-                  name={item.name || 'משתמש/ת'}
+                  name={item.name || clientMessage('unknown_user_label')}
                   subtitle={metaLine(item)}
                   onPress={() => handleTap(item)}
                 />
@@ -118,12 +112,12 @@ export function DiscoverScreen({ navigation }: Props) {
         <BottomSheetView style={styles.sheetContent}>
           {selected && (
             <>
-              <Text style={styles.sheetName}>{selected.name || 'משתמש/ת'}</Text>
+              <Text style={styles.sheetName}>{selected.name || clientMessage('unknown_user_label')}</Text>
               <Text style={styles.sheetMeta}>{metaLine(selected)}</Text>
               <Text style={styles.sheetPrompt}>מה תרצו לעשות?</Text>
               <PrimaryButton   text="צפייה בפרופיל שלו / שלה"  onPress={handleViewProfile} />
               <PrimaryButton   text="התחל שיחה / שלח הודעה"    onPress={handleStartChat}   />
-              <SecondaryButton text="סגירה"                      onPress={() => sheetRef.current?.close()} />
+              <SecondaryButton text={clientMessage('close_label')} onPress={() => sheetRef.current?.close()} />
             </>
           )}
         </BottomSheetView>

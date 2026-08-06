@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
 import { clientMessage } from '@shared/copy/client';
+import { validateLoginForm } from '@shared/validation/credentials';
 import { useAuth } from '../auth/AuthContext';
 import { WEB_DESTINATIONS } from '../auth/destinations';
 import { Button } from '../components/Button';
@@ -21,9 +22,10 @@ export function LoginPage()
         setError('');
 
         // Client-side validation before ever hitting the server.
-        if (!identifier.trim() || !password)
+        const formError = validateLoginForm(identifier, password);
+        if (formError)
         {
-            setError(clientMessage('missing_all_fields'));
+            setError(clientMessage(formError));
             return;
         }
 
@@ -96,7 +98,7 @@ export function LoginPage()
 
                     <Button
                         type="submit"
-                        label="התחברות"
+                        label={clientMessage('login_label')}
                         loading={loading}
                     />
 

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { RemoteImage } from '../components/RemoteImage';
 import { usersApi } from '../api/client';
 import { PAGE_ROUTES } from './routes';
+import { clientMessage } from '@shared/copy/client';
 
 // Deliberately outside AppShell — mobile's version is a full-bleed,
 // distraction-free photo viewer, and the sidebar nav would only get in the
@@ -37,7 +38,7 @@ export function PeerPhotosPage()
             }
             catch
             {
-                setLoadError('משהו השתבש בטעינת התמונות');
+                setLoadError(clientMessage('load_peer_photos_failed'));
             }
             finally
             {
@@ -51,7 +52,7 @@ export function PeerPhotosPage()
         navigate(PAGE_ROUTES.peerProfile.replace(':peer_id', peer_id ?? ''));
     }
 
-    const heading = peerName ? `התמונות של ${peerName}` : 'תמונות נוספות';
+    const heading = peerName ? `התמונות של ${peerName}` : clientMessage('additional_photos_label');
 
     if (loading)
     {

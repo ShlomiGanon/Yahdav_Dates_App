@@ -12,3 +12,9 @@
 // via EXPO_PUBLIC_API_BASE_URL (see mobile/eas.json) — web has no
 // equivalent constraint.
 export const DEFAULT_API_BASE_URL = 'http://localhost:3000';
+
+// How many additional (non-main) photos a profile may have. Was a named
+// const on web (AdditionalPhotosPage.tsx) but a bare literal `4`, used
+// twice, on mobile (AdditionalPhotosScreen.tsx) — the exact drift-prone
+// pattern this file exists to prevent. See APP/review.md finding 2.8.
+export const MAX_ADDITIONAL_PHOTOS = 4;

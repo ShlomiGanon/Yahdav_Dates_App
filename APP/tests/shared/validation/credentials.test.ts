@@ -5,6 +5,7 @@ import
     validatePasswordsMatch,
     validateUsername,
     deriveUsername,
+    validateSignupForm,
 } from '../../../shared/validation/credentials';
 
 describe('validateEmail', () =>
@@ -124,5 +125,61 @@ describe('deriveUsername', () =>
         const derived = deriveUsername('a@x.com');
         expect(derived.length).toBeGreaterThanOrEqual(3);
         expect(validateUsername(derived)).toBeNull();
+    });
+});
+
+// Pins the exact validation precedence + exact clientMessage keys that were
+// previously duplicated in mobile's SignupScreen.tsx (handleSignup) and
+// web's SignupPage.tsx (handleSubmit). Was verified against a local
+// verbatim-copied reference implementation before validateSignupForm
+// existed (see APP/review.md finding 2.10 for that pinning pass); these are
+// the same assertions, now run against the real export.
+describe('validateSignupForm', () =>
+{
+    const VALID = { email: 'user@example.com', password: 'abc12345', confirm: 'abc12345' };
+
+    it('accepts a fully valid form', () =>
+    {
+        expect(validateSignupForm(VALID)).toBeNull();
+    });
+
+    it('rejects a missing email', () =>
+    {
+        expect(validateSignupForm({ ...VALID, email: '' })).toBe('missing_all_fields');
+    });
+
+    it('rejects a whitespace-only email', () =>
+    {
+        expect(validateSignupForm({ ...VALID, email: '   ' })).toBe('missing_all_fields');
+    });
+
+    it('rejects a missing password', () =>
+    {
+        expect(validateSignupForm({ ...VALID, password: '' })).toBe('missing_all_fields');
+    });
+
+    it('rejects a missing confirm', () =>
+    {
+        expect(validateSignupForm({ ...VALID, confirm: '' })).toBe('missing_all_fields');
+    });
+
+    it('rejects mismatched passwords once all fields are present', () =>
+    {
+        expect(validateSignupForm({ ...VALID, confirm: 'different1' })).toBe('passwords_dont_match');
+    });
+
+    it('rejects a too-short password once all fields are present and matching', () =>
+    {
+        expect(validateSignupForm({ email: 'user@example.com', password: 'abc12', confirm: 'abc12' })).toBe('password_too_short');
+    });
+
+    it('checks password match before password length (mismatch wins when both fail)', () =>
+    {
+        expect(validateSignupForm({ email: 'user@example.com', password: 'abc12', confirm: 'xyz99' })).toBe('passwords_dont_match');
+    });
+
+    it('never validates email format — only presence, matching current screen behavior', () =>
+    {
+        expect(validateSignupForm({ ...VALID, email: 'not-an-email' })).toBeNull();
     });
 });

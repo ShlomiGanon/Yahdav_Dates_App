@@ -10,6 +10,8 @@ import { StatusBanner, StatusBannerRef } from '../../components/StatusBanner';
 import { LoadingOverlay } from '../../components/LoadingOverlay';
 import type { MainStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
+import { MAX_ADDITIONAL_PHOTOS } from '@shared/config';
+import { clientMessage } from '@shared/copy/client';
 
 type Props = NativeStackScreenProps<MainStackParams, 'AdditionalPhotos'>;
 
@@ -51,10 +53,10 @@ export function AdditionalPhotosScreen({ navigation }: Props) {
 
         <View style={styles.actions}>
           <PrimaryButton
-            text={photos.length >= 4 ? 'הגעת למקסימום תמונות' : 'הוסף תמונה'}
+            text={photos.length >= MAX_ADDITIONAL_PHOTOS ? clientMessage('photo_limit_reached') : clientMessage('add_photo_label')}
             onPress={addPhoto}
             loading={uploading}
-            disabled={photos.length >= 4}
+            disabled={photos.length >= MAX_ADDITIONAL_PHOTOS}
           />
           <SecondaryButton text="חזור לפרופיל שלי" onPress={() => navigation.navigate('Profile')} />
         </View>

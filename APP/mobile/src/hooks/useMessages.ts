@@ -5,9 +5,10 @@ import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/axios';
 import { buildWsUrl, openReconnectingSocket } from '@shared/utils/reconnectingSocket';
 import type { ReconnectingSocketHandle } from '@shared/utils/reconnectingSocket';
+import { CHAT_PAGE_SIZE, hasMorePages } from '@shared/utils/chatPagination';
+import { createOptimisticMessage } from '@shared/utils/createOptimisticMessage';
+import { clientMessage } from '@shared/copy/client';
 import type { Message } from '../types/chat';
-
-const PAGE_SIZE = 20;
 
 export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean) => void) {
   const { user } = useAuth();
@@ -42,16 +43,16 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
 
   const loadHistory = async () => {
     try {
-      const data = await chatApi.getMessages(peer_id, { limit: PAGE_SIZE });
+      const data = await chatApi.getMessages(peer_id, { limit: CHAT_PAGE_SIZE });
       if (!data.success) {
         onStatus(data.message, false);
         return;
       }
       setMessages([...data.messages].reverse());
-      setHasMore(data.messages.length === PAGE_SIZE);
+      setHasMore(hasMorePages(data.messages.length));
       chatApi.markRead(peer_id).catch(() => {});
     } catch {
-      onStatus('טעינת השיחה נכשלה. אנא נסה/י שוב.', false);
+      onStatus(clientMessage('load_messages_failed'), false);
     } finally {
       setLoading(false);
     }
@@ -66,16 +67,16 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
     try {
       const data = await chatApi.getMessages(peer_id, {
         before: oldest.message_id,
-        limit: PAGE_SIZE,
+        limit: CHAT_PAGE_SIZE,
       });
       if (!data.success) {
         onStatus(data.message, false);
         return;
       }
       setMessages((cur) => [...cur, ...[...data.messages].reverse()]);
-      setHasMore(data.messages.length === PAGE_SIZE);
+      setHasMore(hasMorePages(data.messages.length));
     } catch {
-      onStatus('שגיאה בטעינת הודעות ישנות', false);
+      onStatus(clientMessage('load_older_messages_failed'), false);
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);
@@ -85,13 +86,7 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
   const sendMessage = async (content: string) => {
     if (!content || sending) return;
 
-    const optimistic: Message = {
-      message_id: `tmp-${Date.now()}`,
-      sender_id:  user?.user_id ?? '',
-      content,
-      msg_type:   'TEXT',
-      created_at: new Date().toISOString(),
-    };
+    const optimistic = createOptimisticMessage(content, user?.user_id ?? '');
     setMessages((prev) => [optimistic, ...prev]);
 
     const sentOverSocket = socketRef.current?.send(
@@ -118,7 +113,7 @@ export function useMessages(peer_id: string, onStatus: (msg: string, ok: boolean
         setMessages((prev) =>
           prev.filter((m) => m.message_id !== optimistic.message_id),
         );
-        onStatus('שליחת ההודעה נכשלה. נסה/י שנית.', false);
+        onStatus(clientMessage('send_message_failed'), false);
       } finally {
         setSending(false);
       }

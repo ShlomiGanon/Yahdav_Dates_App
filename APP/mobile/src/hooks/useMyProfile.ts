@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { usersApi } from '../api/users';
 import { resizePhoto } from '../utils/resizePhoto';
+import { clientMessage } from '@shared/copy/client';
 import type { Profile } from '../types/user';
 
 export function useMyProfile(onStatus: (msg: string, ok: boolean) => void) {
@@ -22,7 +23,7 @@ export function useMyProfile(onStatus: (msg: string, ok: boolean) => void) {
       }
       setProfileData(data);
     } catch {
-      setLoadError('שגיאה בטעינת הפרופיל');
+      setLoadError(clientMessage('load_my_profile_failed'));
     } finally {
       setLoading(false);
     }
@@ -46,7 +47,7 @@ export function useMyProfile(onStatus: (msg: string, ok: boolean) => void) {
   const uploadPhoto = async (): Promise<string | null> => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      onStatus('נדרשת הרשאה לגישה לגלריה', false);
+      onStatus(clientMessage('gallery_permission_required'), false);
       return null;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -66,7 +67,7 @@ export function useMyProfile(onStatus: (msg: string, ok: boolean) => void) {
       onStatus(data.message, data.success);
       return data.success ? data.photo_url : null;
     } catch {
-      onStatus('שגיאה בהעלאת התמונה', false);
+      onStatus(clientMessage('upload_photo_failed'), false);
       return null;
     } finally {
       setUploading(false);

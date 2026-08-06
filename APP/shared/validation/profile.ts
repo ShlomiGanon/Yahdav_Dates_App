@@ -40,3 +40,48 @@ export function validateDateOfBirth(dateOfBirth: string): ValidationError
 
     return null;
 }
+
+export type ProfileFormError =
+    | 'name_required'
+    | 'gender_required'
+    | 'date_of_birth_required'
+    | 'city_required'
+    | 'invalid_date'
+    | 'age_too_young'
+    | 'age_too_old';
+
+export interface ProfileFormInput
+{
+    name:          string;
+    gender:        string | null;
+    date_of_birth: string;   // '' if not yet fully specified by the caller
+    city:          string;
+}
+
+// The profile-edit form's validation precedence — was duplicated identically
+// (same order, same clientMessage keys) in mobile's ProfileScreen.tsx and
+// web's ProfilePage.tsx. See APP/review.md finding 2.6.
+export function validateProfileForm(input: ProfileFormInput): ProfileFormError | null
+{
+    if (!input.name.trim())
+    {
+        return 'name_required';
+    }
+
+    if (!input.gender)
+    {
+        return 'gender_required';
+    }
+
+    if (!input.date_of_birth)
+    {
+        return 'date_of_birth_required';
+    }
+
+    if (!input.city.trim())
+    {
+        return 'city_required';
+    }
+
+    return validateDateOfBirth(input.date_of_birth) as ProfileFormError | null;
+}

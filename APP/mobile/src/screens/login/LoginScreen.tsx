@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { clientMessage } from '@shared/copy/client';
+import { validateLoginForm } from '@shared/validation/credentials';
 import { useAuth } from '../../auth/AuthContext';
 import { ScreenHeading } from '../../components/ScreenHeading';
 import { HebrewInput } from '../../components/HebrewInput';
@@ -24,8 +25,9 @@ export function LoginScreen({ navigation }: Props) {
   const [error,      setError]      = useState('');
 
   const handleLogin = async () => {
-    if (!identifier.trim() || !password) {
-      setError(clientMessage('missing_all_fields'));
+    const formError = validateLoginForm(identifier, password);
+    if (formError) {
+      setError(clientMessage(formError));
       return;
     }
     setLoading(true);

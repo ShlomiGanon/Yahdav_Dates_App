@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { validateDateOfBirth } from '@shared/validation/profile';
+import { validateProfileForm } from '@shared/validation/profile';
 import { clientMessage } from '@shared/copy/client';
 import { useMyProfile } from '../../hooks/useMyProfile';
 import { ScreenHeading } from '../../components/ScreenHeading';
@@ -19,14 +19,10 @@ import { LoadingOverlay } from '../../components/LoadingOverlay';
 import { RemoteImage } from '../../components/RemoteImage';
 import type { MainStackParams } from '../../types/navigation';
 import { theme } from '../../style/theme';
+import { GENDER_OPTIONS } from '@shared/reference/genderOptions';
+import { REGION_OPTIONS } from '@shared/reference/regionOptions';
 
 type Props = NativeStackScreenProps<MainStackParams, 'Profile'>;
-
-const GENDER_OPTIONS: PickerOption[] = [
-  { label: 'זכר',  value: 'male'   },
-  { label: 'נקבה', value: 'female' },
-  { label: 'אחר',  value: 'other'  },
-];
 
 const DAY_OPTIONS: PickerOption[] = Array.from({ length: 31 }, (_, i) => ({
   label: String(i + 1),
@@ -46,16 +42,6 @@ const YEAR_OPTIONS: PickerOption[] = Array.from(
     return { label: String(year), value: String(year) };
   },
 );
-
-const REGION_OPTIONS: PickerOption[] = [
-  { label: 'מחוז הצפון',    value: 'מחוז הצפון'    },
-  { label: 'מחוז חיפה',     value: 'מחוז חיפה'     },
-  { label: 'מחוז המרכז',    value: 'מחוז המרכז'    },
-  { label: 'מחוז תל אביב',  value: 'מחוז תל אביב'  },
-  { label: 'מחוז ירושלים',  value: 'מחוז ירושלים'  },
-  { label: 'מחוז הדרום',    value: 'מחוז הדרום'    },
-  { label: 'יהודה ושומרון', value: 'יהודה ושומרון' },
-];
 
 const PHOTO_SIZE = 120;
 
@@ -99,16 +85,16 @@ export function ProfileScreen({ navigation }: Props) {
 
   const validateAndSave = async () => {
     setValidationError('');
-    if (!name.trim())                     { setValidationError(clientMessage('name_required'));          return; }
-    if (!gender)                          { setValidationError(clientMessage('gender_required'));        return; }
-    if (!dobDay || !dobMonth || !dobYear) { setValidationError(clientMessage('date_of_birth_required')); return; }
-    if (!city.trim())                     { setValidationError(clientMessage('city_required'));          return; }
 
-    const dobStr = `${dobYear}-${dobMonth}-${String(dobDay).padStart(2, '0')}`;
-    const dateError = validateDateOfBirth(dobStr);
-    if (dateError === 'invalid_date')  { setValidationError(clientMessage('invalid_date'));  return; }
-    if (dateError === 'age_too_young') { setValidationError(clientMessage('age_too_young')); return; }
-    if (dateError === 'age_too_old')   { setValidationError(clientMessage('age_too_old'));   return; }
+    // Mobile only has a fully-specified date once all three pickers are
+    // set — an incomplete date collapses to '' so validateProfileForm's
+    // date_of_birth_required branch fires, same as before this extraction.
+    const dobStr = dobDay && dobMonth && dobYear
+      ? `${dobYear}-${dobMonth}-${String(dobDay).padStart(2, '0')}`
+      : '';
+
+    const formError = validateProfileForm({ name, gender, date_of_birth: dobStr, city });
+    if (formError) { setValidationError(clientMessage(formError)); return; }
 
     await save({
       name:          name.trim(),
@@ -142,7 +128,7 @@ export function ProfileScreen({ navigation }: Props) {
             {!!loadError && <ErrorCard message={loadError} />}
 
             <HebrewInput label="שם מלא"   value={name} onChangeText={setName} placeholder="הכנס שם מלא" />
-            <ModalPicker label="מין"       options={GENDER_OPTIONS}  value={gender}    onChange={setGender}   placeholder="בחר מין"  />
+            <ModalPicker label={clientMessage('gender_label')} options={GENDER_OPTIONS}  value={gender}    onChange={setGender}   placeholder="בחר מין"  />
 
             <View style={styles.dobRow}>
               <View style={styles.dobCell}>
@@ -159,7 +145,7 @@ export function ProfileScreen({ navigation }: Props) {
             <HebrewInput label="עיר"     value={city} onChangeText={setCity} placeholder="הכנס עיר" />
             <ModalPicker label="אזור"    options={REGION_OPTIONS} value={region} onChange={setRegion} placeholder="בחר אזור" />
             <HebrewInput
-              label="קצת עליי"
+              label={clientMessage('about_me_label')}
               value={bio}
               onChangeText={(t) => setBio(t.slice(0, 1000))}
               placeholder="ספר/י קצת על עצמך"
@@ -168,8 +154,8 @@ export function ProfileScreen({ navigation }: Props) {
             />
 
             {!!validationError && <ErrorCard message={validationError} />}
-            <SecondaryButton text="תמונות נוספות"      onPress={() => navigation.navigate('AdditionalPhotos')} />
-            <PrimaryButton   text="שמור שינויים"        onPress={validateAndSave} loading={saving} />
+            <SecondaryButton text={clientMessage('additional_photos_label')} onPress={() => navigation.navigate('AdditionalPhotos')} />
+            <PrimaryButton   text={clientMessage('save_changes_label')}      onPress={validateAndSave} loading={saving} />
             <SecondaryButton text="חזור לתפריט הראשי"  onPress={() => navigation.navigate('Menu')} />
           </View>
         </ScrollView>

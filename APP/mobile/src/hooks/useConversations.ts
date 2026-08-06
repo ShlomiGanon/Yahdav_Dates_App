@@ -4,6 +4,7 @@ import { getAccessToken } from '../auth/storage';
 import { api } from '../api/axios';
 import { buildWsUrl, openReconnectingSocket } from '@shared/utils/reconnectingSocket';
 import type { ReconnectingSocketHandle } from '@shared/utils/reconnectingSocket';
+import { clientMessage } from '@shared/copy/client';
 import type { Conversation } from '../types/chat';
 
 export function useConversations() {
@@ -37,7 +38,7 @@ export function useConversations() {
       setConversations(data.conversations);
       setError('');
     } catch {
-      setError('טעינת השיחות נכשלה. אנא נסה/י שוב מאוחר יותר.');
+      setError(clientMessage('load_conversations_failed'));
     } finally {
       setLoading(false);
       setRefreshing(false);

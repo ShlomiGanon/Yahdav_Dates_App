@@ -14,24 +14,13 @@ import { RemoteImage } from '../../components/RemoteImage';
 import type { MainStackParams } from '../../types/navigation';
 import type { PeerProfile } from '../../types/user';
 import { theme } from '../../style/theme';
+import { calcAge } from '@shared/utils/calcAge';
+import { genderLabel } from '@shared/utils/genderLabel';
+import { clientMessage } from '@shared/copy/client';
 
 type Props = NativeStackScreenProps<MainStackParams, 'PeerProfile'>;
 
 const PHOTO_SIZE = 120;
-
-function genderLabel(g: string | null): string | null {
-  if (g === 'male')   return 'זכר';
-  if (g === 'female') return 'נקבה';
-  if (g === 'other')  return 'אחר';
-  return null;
-}
-
-function calcAge(dob: string | null): number | null {
-  if (!dob) return null;
-  const d = new Date(dob);
-  if (isNaN(d.getTime()) || d.getFullYear() <= 1900) return null;
-  return Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 3600 * 1000));
-}
 
 function formatDob(dob: string | null): string | null {
   if (!dob) return null;
@@ -60,7 +49,7 @@ export function PeerProfileScreen({ route, navigation }: Props) {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.errorContainer}>
-          <ErrorCard message={loadError || 'הפרופיל לא נמצא.'} />
+          <ErrorCard message={loadError || clientMessage('peer_profile_not_found')} />
           <SecondaryButton text="חזור" onPress={() => navigation.goBack()} />
         </View>
       </SafeAreaView>
@@ -93,16 +82,16 @@ export function PeerProfileScreen({ route, navigation }: Props) {
           )}
         </View>
 
-        <ScreenHeading>{profile.name || 'משתמש/ת'}</ScreenHeading>
+        <ScreenHeading>{profile.name || clientMessage('unknown_user_label')}</ScreenHeading>
 
         <View style={styles.fields}>
-          {gender     && <FieldRow label="מין"          value={gender} />}
-          {age !== null && <FieldRow label="גיל"         value={String(age)} />}
+          {gender     && <FieldRow label={clientMessage('gender_label')}       value={gender} />}
+          {age !== null && <FieldRow label={clientMessage('age_label')}        value={String(age)} />}
           {dob        && <FieldRow label="תאריך לידה"   value={dob} />}
-          {location   && <FieldRow label="מיקום"         value={location} />}
-          {!!profile.bio && <FieldRow label="קצת עליי"  value={profile.bio} multiline />}
+          {location   && <FieldRow label={clientMessage('location_label')}     value={location} />}
+          {!!profile.bio && <FieldRow label={clientMessage('about_me_label')} value={profile.bio} multiline />}
           {!gender && age === null && !location && !profile.bio && (
-            <FieldRow label="פרטים נוספים" value="המשתמש/ת עדיין לא השלים/ה את הפרופיל." />
+            <FieldRow label={clientMessage('more_details_label')} value={clientMessage('profile_incomplete_message')} />
           )}
         </View>
 
