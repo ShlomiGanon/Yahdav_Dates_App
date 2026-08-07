@@ -169,15 +169,118 @@ jobs:
         run: |
           set -eu
           PKG="yahdav-server-${{ github.event.release.tag_name }}"
-          mkdir -p "$PKG/dist" "$PKG/migrations" "$PKG/docs" "$PKG/public/web" "$PKG/public/admin"
+          mkdir -p "$PKG/dist" "$PKG/migrations" "$PKG/docs" "$PKG/public/web" "$PKG/public/admin" "$PKG/shared/dist"
 
           cp -r APP/backend/dist/.      "$PKG/dist/"
           cp -r APP/backend/migrations/. "$PKG/migrations/"
           cp    APP/backend/package.json APP/backend/package-lock.json "$PKG/"
           cp    APP/backend/.env.example "$PKG/"
+
+          # Production-ready .env, pre-filled with sensible defaults so the
+          # server starts immediately after `npm install` — see
+          # docs/LOCAL_SETUP.md / docs/REMOTE_SETUP.md. .env.example (copied
+          # above) is left untouched as the blank-slate reference; this is a
+          # second, ready-to-run file alongside it. Built as an array (not a
+          # heredoc) so this step's own indentation cannot leak into the
+          # generated file's content.
+          ENV_LINES=(
+            '# ── Runtime environment ────────────────────────────────────────'
+            '# Standard Node.js convention read by Express and other libraries'
+            '# to enable production mode (for example, less verbose error'
+            '# output). Not read directly by application code in this'
+            '# project, but left set for compatibility with tooling and'
+            '# process managers that check it.'
+            'NODE_ENV=production'
+            ''
+            '# ── Server ──────────────────────────────────────────────────────'
+            '# Port the backend listens on. Change only if 3000 is already in'
+            '# use, or if the reverse proxy (see docs/REMOTE_SETUP.md) expects'
+            '# a different internal port.'
+            'PORT=3000'
+            ''
+            '# ── Database ────────────────────────────────────────────────────'
+            '# Path to the SQLite file, created automatically on first start.'
+            '# Use an absolute path (for example /var/lib/yahdav/yahdav.sqlite3)'
+            '# for a real deployment, so it does not depend on the working'
+            '# directory the process happens to be started from.'
+            'DB_PATH=data/yahdav.sqlite3'
+            ''
+            '# ── File uploads ────────────────────────────────────────────────'
+            '# Directory where uploaded profile photos are stored, created'
+            '# automatically on first start. Use an absolute path for a real'
+            '# deployment, same reasoning as DB_PATH above.'
+            'UPLOADS_DIR=data/uploads'
+            ''
+            '# ── Frontend bundles served same-origin ────────────────────────'
+            '# The built web app, served at / (see'
+            '# backend/src/utils/mountSpa.ts). Already correct for this'
+            '# package layout — only change if the public/web folder is moved.'
+            'WEB_PUBLIC_DIR=public/web'
+            ''
+            '# The built admin dashboard, served at /admin. Already correct'
+            '# for this package layout — only change if the public/admin'
+            '# folder is moved.'
+            'ADMIN_PUBLIC_DIR=public/admin'
+            ''
+            '# ── Domain (see docs/REMOTE_SETUP.md) ──────────────────────────'
+            '# Not read by the application itself — a placeholder and'
+            '# reminder of what else needs the real domain once one exists:'
+            '# nginx server_name, the SSL certificate, and ADMIN_CORS_ORIGIN'
+            '# below (only if web/admin ever end up hosted on a different'
+            '# origin than this server). Replace with the real production'
+            '# domain.'
+            'DOMAIN=your-domain.example.com'
+            ''
+            '# ── Auth ────────────────────────────────────────────────────────'
+            '# REQUIRED. Signs and verifies JWT access/refresh tokens — every'
+            '# login stays broken until this is set to a real value. MUST be'
+            '# changed before this server is exposed to real users: generate'
+            '# one with:'
+            "#   node -e \"console.log(require('crypto').randomBytes(48).toString('hex'))\""
+            '# Never reuse this placeholder, and never commit the real value'
+            '# to git.'
+            'JWT_SECRET=REPLACE_ME_BEFORE_GOING_LIVE_generate_a_real_secret_see_comment_above'
+            ''
+            '# How long an access token stays valid before the client must'
+            '# refresh it.'
+            'JWT_ACCESS_TTL=15m'
+            ''
+            '# How long a refresh token stays valid, in days, before the user'
+            '# must log in again from scratch.'
+            'JWT_REFRESH_TTL_DAYS=30'
+            ''
+            '# ── CORS ────────────────────────────────────────────────────────'
+            '# Comma-separated list of allowed browser origins. Not needed'
+            '# for this package default setup — web and admin are served by'
+            '# this same server, same origin. Only relevant when either'
+            '# frontend is hosted elsewhere instead — if so, replace these'
+            '# with the real production URLs.'
+            'ADMIN_CORS_ORIGIN=http://localhost:5173,http://localhost:5174'
+            ''
+            '# ── Push notifications ──────────────────────────────────────────'
+            '# Expo push notification gateway. Leave as the default unless'
+            '# there is a specific reason to change it.'
+            'EXPO_PUSH_URL=https://exp.host/--/api/v2/push/send'
+          )
+          printf '%s\n' "${ENV_LINES[@]}" > "$PKG/.env"
           cp    APP/backend/docs/LOCAL_SETUP.md APP/backend/docs/REMOTE_SETUP.md "$PKG/docs/"
           cp -r APP/web/dist/.   "$PKG/public/web/"
           cp -r APP/admin/dist/. "$PKG/public/admin/"
+
+          # Vendor @yahdav/shared's compiled output as a sibling folder (not under
+          # node_modules/ — a bare node_modules/@yahdav/shared with no matching
+          # package.json entry gets deleted the moment LOCAL_SETUP.md's documented
+          # `npm install --omit=dev` step runs, since npm prunes anything on disk
+          # that isn't declared). backend/package.json declares "file:../shared",
+          # correct for the monorepo; rewritten below to "file:./shared" to match
+          # this package's own layout, where shared/ sits next to package.json
+          # instead of one level up. npm then symlinks node_modules/@yahdav/shared
+          # -> ./shared on install, same mechanism as the monorepo's workspace link.
+          cp -r APP/shared/dist/. "$PKG/shared/dist/"
+          cp    APP/shared/package.json "$PKG/shared/"
+          sed -i 's#"file:\.\./shared"#"file:./shared"#' "$PKG/package.json"
+          sed -i 's#"resolved": "\.\./shared"#"resolved": "./shared"#' "$PKG/package-lock.json"
+          sed -i 's#^    "\.\./shared": {#    "shared": {#' "$PKG/package-lock.json"
 
           zip -r "$PKG.zip" "$PKG"
           echo "PACKAGE_PATH=$PKG.zip" >> "$GITHUB_ENV"

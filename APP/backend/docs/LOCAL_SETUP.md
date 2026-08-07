@@ -15,6 +15,8 @@ For deploying this same package to a real remote server instead, see
 ```
 yahdav-server-<version>/
 ├── dist/                 ← compiled backend (run this, not src/)
+├── shared/                ← compiled @yahdav/shared, vendored so the backend
+│                             doesn't need the monorepo's workspace to resolve it
 ├── migrations/           ← versioned SQL, applied automatically on startup
 ├── public/
 │   ├── web/               ← built customer-facing web app (served at /)
