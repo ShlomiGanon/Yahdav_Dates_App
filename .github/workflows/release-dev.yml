@@ -1,4 +1,4 @@
-name: Release (Dev)
+name: CD Dev
 
 # Build-and-package only, same as release.yml — never deploys anywhere.
 # Manual only (workflow_dispatch), unlike release.yml's release-triggered
@@ -8,9 +8,9 @@ name: Release (Dev)
 # sense against an existing Tests run for an exact commit, and dev builds
 # are meant for fast, on-demand iteration.
 #
-# Server/web/admin are built via the same build-shared.yml reusable
-# workflow release.yml uses — identical to production. The only real
-# difference is the mobile app: EXPO_PUBLIC_RUNTIME_API_URL_ENABLED=true
+# Server/web/admin build steps mirror release.yml's exactly (this file is
+# fully self-contained — no dependency on any other workflow file). The
+# only real difference is the mobile app: EXPO_PUBLIC_RUNTIME_API_URL_ENABLED=true
 # switches on the runtime server-URL gate screen (see
 # APP/mobile/src/components/ServerUrlGate.tsx) and mobile/app.config.js's
 # dev bundle ID / display name, neither of which production ever sets.
@@ -29,7 +29,7 @@ env:
 
 jobs:
   # Creates the dev-latest pre-release once, if it doesn't exist yet.
-  # publish-server and build-android-dev both upload assets to this same
+  # build-server and build-android-dev both upload assets to this same
   # release and would otherwise race to create it independently on the
   # very first run (both finding it missing, both trying to create it,
   # one failing) — depending on this job instead makes that a non-issue.
@@ -52,25 +52,126 @@ jobs:
               --target "${{ github.sha }}"
           fi
 
-  build:
-    uses: ./.github/workflows/build-shared.yml
-    with:
-      ref:     ${{ github.sha }}
-      version: ${{ env.DEV_RELEASE_TAG }}
-
-  publish-server:
-    needs: [ensure-dev-release, build]
+  # Web build, on its own so it can run in parallel with build-admin.
+  # Uploads dist/ as an artifact for build-server to assemble later.
+  build-web:
     runs-on: ubuntu-latest
     steps:
-      - name: Download server package artifact
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # web imports from ../shared (via the @shared alias) at build time —
+      # only its node_modules are needed (axios, date-fns), not a compiled
+      # dist/: Vite transpiles shared's .ts source directly.
+      - name: Install shared's dependencies
+        working-directory: APP/shared
+        run: npm ci
+
+      - name: Install and build web
+        working-directory: APP/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload web build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: APP/web/dist
+
+  # Admin build, on its own so it can run in parallel with build-web. Admin
+  # doesn't import from shared at all, so no shared install step is needed.
+  build-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install and build admin
+        working-directory: APP/admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload admin build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-dist
+          path: APP/admin/dist
+
+  # Server package: compiled backend + build-web's/build-admin's already-
+  # built frontends (downloaded as artifacts) as static bundles under
+  # public/web and public/admin, plus the setup docs — zipped and attached
+  # to the dev-latest Release. Waits on ensure-dev-release too (not just
+  # build-web/build-admin) so it never races build-android-dev to create
+  # the release.
+  build-server:
+    needs: [build-web, build-admin, ensure-dev-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install shared and build it
+        working-directory: APP/shared
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install and build backend
+        working-directory: APP/backend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Download web build output
         uses: actions/download-artifact@v4
         with:
-          name: server-zip
+          name: web-dist
+          path: APP/web/dist
+
+      - name: Download admin build output
+        uses: actions/download-artifact@v4
+        with:
+          name: admin-dist
+          path: APP/admin/dist
+
+      - name: Assemble the server package
+        run: |
+          set -eu
+          PKG="yahdav-server-${{ env.DEV_RELEASE_TAG }}"
+          mkdir -p "$PKG/dist" "$PKG/migrations" "$PKG/docs" "$PKG/public/web" "$PKG/public/admin"
+
+          cp -r APP/backend/dist/.      "$PKG/dist/"
+          cp -r APP/backend/migrations/. "$PKG/migrations/"
+          cp    APP/backend/package.json APP/backend/package-lock.json "$PKG/"
+          cp    APP/backend/.env.example "$PKG/"
+          cp    APP/backend/docs/LOCAL_SETUP.md APP/backend/docs/REMOTE_SETUP.md "$PKG/docs/"
+          cp -r APP/web/dist/.   "$PKG/public/web/"
+          cp -r APP/admin/dist/. "$PKG/public/admin/"
+
+          zip -r "$PKG.zip" "$PKG"
+          echo "PACKAGE_PATH=$PKG.zip" >> "$GITHUB_ENV"
 
       - name: Upload to the dev-latest Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$DEV_RELEASE_TAG" "yahdav-server-$DEV_RELEASE_TAG.zip" --clobber
+        run: gh release upload "$DEV_RELEASE_TAG" "$PACKAGE_PATH" --clobber
 
   # Android: unsigned APK, built directly in this runner — same mechanism
   # as release.yml's build-android, but with the runtime-URL gate switched

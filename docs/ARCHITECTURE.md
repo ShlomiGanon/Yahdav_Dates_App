@@ -673,9 +673,10 @@ caught by a real `require()` at test-run time, not by `tsc`).
 
 ## 10. CI/CD pipeline
 
-Four workflow files, in `.github/workflows/`:
+Three workflow files, in `.github/workflows/`, each fully self-contained
+— none of them call into another workflow file.
 
-### 10.1 `test.yml` — Tests
+### 10.1 `test.yml` — "CI Tests"
 
 Triggers on push to `main` or `dev`, on any PR targeting `main`, and
 manually (`workflow_dispatch`). Four independent jobs — `backend`,
@@ -683,29 +684,26 @@ manually (`workflow_dispatch`). Four independent jobs — `backend`,
 `shared`'s, for the two that consume it as raw source) and runs its own
 test suite. No deployment happens here.
 
-### 10.2 `build-shared.yml` — reusable workflow
-
-Not triggered directly — called by `release.yml` and `release-dev.yml`
-via `workflow_call`, taking a `ref` (commit to build) and a `version`
-(label for the output ZIP's filename) as inputs. Builds web, admin, and
-the packaged backend server ZIP, uploading all three as workflow-run
-artifacts. Does **not** upload anything to any GitHub Release — that's
-each caller's own responsibility, since the two callers have genuinely
-different release targets (see below).
-
-### 10.3 `release.yml` — production release
+### 10.2 `release.yml` — "CD Production"
 
 Triggers on `release: published` (a real GitHub Release being
 published). Jobs:
 - **`verify-tests-passed`** — resolves the release's tag to an exact
   commit and refuses to proceed unless that exact commit has a passing
-  `Tests` workflow run. A release tag can point at any commit, including
-  one nobody ever ran CI against; this is the gate against that.
-  Skipped (not failed) for pre-releases, which propagates a skip through
-  the whole rest of the workflow.
-- **`build`** — calls `build-shared.yml`.
-- **`publish-server`** — downloads the server ZIP artifact and uploads it
-  to the Release that triggered the workflow.
+  **CI Tests** workflow run (matched by workflow *name*, so this filter
+  has to stay in sync if `test.yml`'s `name:` ever changes again). A
+  release tag can point at any commit, including one nobody ever ran CI
+  against; this is the gate against that. Skipped (not failed) for
+  pre-releases, which propagates a skip through the whole rest of the
+  workflow.
+- **`build-web`** / **`build-admin`** — build in parallel, each uploads
+  its `dist/` as a workflow artifact, and passes `commit_sha` through as
+  its own job output (`build-server` needs it but doesn't directly
+  `need` `verify-tests-passed`, so it can't read that job's output
+  without this relay).
+- **`build-server`** — needs both of the above; builds the backend,
+  downloads the web/admin artifacts, assembles
+  `yahdav-server-<tag>.zip`, and uploads it directly to the Release.
 - **`build-android`** — unsigned APK, built directly in the runner
   (`expo prebuild` + `./gradlew assembleRelease`; no EAS, no signing yet
   — see `BACKLOG.md`), uploaded to the same Release.
@@ -713,24 +711,29 @@ published). Jobs:
   wired into the dependency graph, with prerequisites documented inline.
   See `BACKLOG.md`.
 
-### 10.4 `release-dev.yml` — dev build
+### 10.3 `release-dev.yml` — "CD Dev"
 
 Triggers on `workflow_dispatch` only (manual). No `verify-tests-passed`
 gate — a dev build is meant for fast, on-demand iteration, not a
-CI-verified release commit. Jobs:
+CI-verified release commit, so every job here just uses `github.sha`
+directly instead of resolving a tag. Jobs:
 - **`ensure-dev-release`** — creates a rolling `dev-latest` pre-release if
-  it doesn't already exist. Both jobs below depend on this one, which
-  avoids a real race condition: without it, both could independently find
-  the release missing and both try to create it, one failing.
-- **`build`** — calls `build-shared.yml` with `version: dev-latest`.
-- **`publish-server`** — downloads the ZIP, uploads it to `dev-latest`
-  (`--clobber`, so it replaces the previous run's asset).
+  it doesn't already exist. `build-server` and `build-android-dev` both
+  depend on this, which avoids a real race condition: without it, both
+  could independently find the release missing and both try to create
+  it, one failing.
+- **`build-web`** / **`build-admin`** — same as `release.yml`'s, minus
+  the `commit_sha` relay (nothing to relay from here).
+- **`build-server`** — needs `build-web`, `build-admin`, *and*
+  `ensure-dev-release`; assembles `yahdav-server-dev-latest.zip` and
+  uploads it directly to the `dev-latest` Release (`--clobber`, so it
+  replaces the previous run's asset).
 - **`build-android-dev`** — same mechanism as production's
   `build-android`, but sets `EXPO_PUBLIC_RUNTIME_API_URL_ENABLED=true`
   before `expo prebuild`, producing the dev bundle ID/display name and
   runtime server-URL gate described in §7.2.
 
-### 10.5 What a release package actually contains
+### 10.4 What a release package actually contains
 
 ```
 yahdav-server-<version>/

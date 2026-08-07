@@ -64,8 +64,8 @@ them against a real off-server target.
 **What:** `test.yml`'s `backend` job runs a second `npm ci` at the
 workspace root (`working-directory: APP`) specifically to create the
 `@yahdav/shared` npm-workspace symlink that a plain `npm ci` inside
-`APP/backend` alone doesn't produce. `build-shared.yml`'s `build-server`
-job (used by both `release.yml` and `release-dev.yml`) never does this.
+`APP/backend` alone doesn't produce. Neither `release.yml`'s nor
+`release-dev.yml`'s `build-server` job does this.
 **Why:** It hasn't caused an observed failure yet, because `tsc`
 apparently doesn't need the real symlink to type-check against
 `shared`'s `.d.ts` output — only an actual `require()` at runtime would.
