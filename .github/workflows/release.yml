@@ -23,10 +23,13 @@ jobs:
   # CI against — this is the gate that stops that from silently shipping.
   verify-tests-passed:
     # Pre-releases don't build a package — this isn't a failure, so the job
-    # is skipped rather than made to fail. build-server/build-android
-    # `need` this job, and GitHub Actions skips a job whose dependency was
-    # skipped (not run at all) rather than treating that as a failure, so
-    # skipping here quietly skips the whole workflow for a pre-release.
+    # is skipped rather than made to fail. build-web, build-admin, and
+    # build-android all `need` this job directly; build-server `need`s
+    # build-web + build-admin instead (for their artifacts), not this job
+    # directly, but GitHub Actions skips a job whose dependency was skipped
+    # (not run at all) rather than treating that as a failure — so skipping
+    # here propagates through that chain too, quietly skipping the whole
+    # workflow for a pre-release.
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     outputs:
@@ -58,17 +61,81 @@ jobs:
             exit 1
           fi
 
-  # Server package: compiled backend + built web/admin frontends as static
-  # bundles under public/web and public/admin, plus the setup docs — zipped
-  # and attached to the Release. See APP/backend/docs/LOCAL_SETUP.md for
-  # what a consumer of this artifact actually does with it.
-  build-server:
+  # Web build, on its own so it can run in parallel with build-admin.
+  # Uploads dist/ as an artifact for build-server to assemble later.
+  build-web:
     needs: verify-tests-passed
     runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ needs.verify-tests-passed.outputs.commit_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.verify-tests-passed.outputs.commit_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # web imports from ../shared (via the @shared alias) at build time —
+      # only its node_modules are needed (axios, date-fns), not a compiled
+      # dist/: Vite transpiles shared's .ts source directly.
+      - name: Install shared's dependencies
+        working-directory: APP/shared
+        run: npm ci
+
+      - name: Install and build web
+        working-directory: APP/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload web build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: APP/web/dist
+
+  # Admin build, on its own so it can run in parallel with build-web. Admin
+  # doesn't import from shared at all, so no shared install step is needed.
+  build-admin:
+    needs: verify-tests-passed
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ needs.verify-tests-passed.outputs.commit_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-tests-passed.outputs.commit_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install and build admin
+        working-directory: APP/admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Upload admin build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-dist
+          path: APP/admin/dist
+
+  # Server package: compiled backend + build-web's/build-admin's already-
+  # built frontends (downloaded as artifacts) as static bundles under
+  # public/web and public/admin, plus the setup docs — zipped and attached
+  # to the Release. See APP/backend/docs/LOCAL_SETUP.md for what a
+  # consumer of this artifact actually does with it.
+  build-server:
+    needs: [build-web, build-admin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build-web.outputs.commit_sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -86,17 +153,17 @@ jobs:
           npm ci
           npm run build
 
-      - name: Install and build web
-        working-directory: APP/web
-        run: |
-          npm ci
-          npm run build
+      - name: Download web build output
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: APP/web/dist
 
-      - name: Install and build admin
-        working-directory: APP/admin
-        run: |
-          npm ci
-          npm run build
+      - name: Download admin build output
+        uses: actions/download-artifact@v4
+        with:
+          name: admin-dist
+          path: APP/admin/dist
 
       - name: Assemble the server package
         run: |
