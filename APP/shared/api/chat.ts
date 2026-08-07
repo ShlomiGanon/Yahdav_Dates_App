@@ -13,13 +13,13 @@ export function createChatApi(client: AxiosInstance)
     return {
         getConversations(): Promise<ApiEnvelope & { conversations: Conversation[] }>
         {
-            return client.get('/chat/conversations').then((r) => r.data);
+            return client.get('/api/chat/conversations').then((r) => r.data);
         },
 
         getMessages(peer_id: string, params?: GetMessagesParams): Promise<ApiEnvelope & { messages: Message[] }>
         {
             return client
-                .get(`/chat/${peer_id}`, { params })
+                .get(`/api/chat/${peer_id}`, { params })
                 .then((r) => r.data);
         },
 
@@ -30,14 +30,14 @@ export function createChatApi(client: AxiosInstance)
         ): Promise<ApiEnvelope & Message>
         {
             return client
-                .post(`/chat/${peer_id}`, { content, msg_type })
+                .post(`/api/chat/${peer_id}`, { content, msg_type })
                 .then((r) => r.data);
         },
 
         markRead(peer_id: string): Promise<ApiEnvelope>
         {
             return client
-                .put(`/chat/${peer_id}/read`)
+                .put(`/api/chat/${peer_id}/read`)
                 .then((r) => r.data);
         },
     };

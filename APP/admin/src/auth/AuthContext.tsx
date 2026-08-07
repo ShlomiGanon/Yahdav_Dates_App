@@ -27,6 +27,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser]       = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Clears every trace of a session — used both for an explicit logout and
+  // for a restored-but-not-admin session (see the effect below). Keeps
+  // user null in every case this app cares about: is_admin is checked here
+  // once, centrally, rather than at every place that reads `user`.
+  const clearSession = useCallback(async (refreshToken: string | null) => {
+    if (refreshToken) await authApi.logout(refreshToken).catch(() => {});
+    tokenStore.set(null);
+    localStorage.removeItem('refresh_token');
+    setUser(null);
+  }, []);
+
   // On mount: try to restore session from stored refresh token. Goes
   // through the shared performRefresh() dedup (see api/axios.ts) rather
   // than calling authApi.refresh() directly — see that function's comment
@@ -37,15 +48,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     performRefresh()
       .then((refreshedUser) => {
-        if (!refreshedUser) {
+        if (!refreshedUser)
+        {
           localStorage.removeItem('refresh_token');
+          return;
+        }
+
+        // is_admin comes back fresh from the DB on every refresh (see
+        // backend/src/routes/auth.routes.ts) — login() already refuses a
+        // non-admin at sign-in, but a *restored* session doesn't go
+        // through that gate on its own, so it's enforced here instead.
+        // performRefresh() already persisted the rotated tokens via
+        // applyRefreshedTokens before this runs, regardless of is_admin —
+        // clearSession reads the (now-rotated) stored refresh token back
+        // out to revoke it properly rather than leaving it live.
+        if (!refreshedUser.is_admin)
+        {
+          clearSession(localStorage.getItem('refresh_token'));
           return;
         }
 
         setUser(refreshedUser);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [clearSession]);
 
   const login = useCallback(async (identifier: string, password: string): Promise<AuthResult> => {
     const data = await authApi.login(identifier, password);
@@ -65,12 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    const storedRefresh = localStorage.getItem('refresh_token');
-    if (storedRefresh) await authApi.logout(storedRefresh).catch(() => {});
-    tokenStore.set(null);
-    localStorage.removeItem('refresh_token');
-    setUser(null);
-  }, []);
+    await clearSession(localStorage.getItem('refresh_token'));
+  }, [clearSession]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout }}>

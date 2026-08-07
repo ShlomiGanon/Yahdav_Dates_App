@@ -14,7 +14,7 @@ beforeAll(async () =>
   const admin = await signupUser(app, '_admin');
   adminId = admin.user_id;
   makeAdmin(adminId);
-  const login = await request(app).post('/auth/login').send({
+  const login = await request(app).post('/api/auth/login').send({
     identifier: 'user_admin@test.com',
     password: 'Password123!',
   });
@@ -35,7 +35,7 @@ describe('GET /admin/users', () =>
   it('TC-1401 returns a paginated user list with a total count', async () =>
   {
     const res = await request(app)
-      .get('/admin/users')
+      .get('/api/admin/users')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
@@ -49,7 +49,7 @@ describe('GET /admin/users', () =>
   {
     const { access_token } = await signupUser(app, '_nonadmin');
     const res = await request(app)
-      .get('/admin/users')
+      .get('/api/admin/users')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -59,7 +59,7 @@ describe('GET /admin/users', () =>
 
   it('TC-1403 fails with unauthorized with no token', async () =>
   {
-    const res = await request(app).get('/admin/users');
+    const res = await request(app).get('/api/admin/users');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -69,7 +69,7 @@ describe('GET /admin/users', () =>
   it('TC-1404 search matches a partial, case-insensitive substring of name/city/username/email', async () =>
   {
     const res = await request(app)
-      .get('/admin/users')
+      .get('/api/admin/users')
       .set('Authorization', `Bearer ${adminToken}`)
       .query({ search: '_TARGET' });
 
@@ -80,7 +80,7 @@ describe('GET /admin/users', () =>
   it('TC-1405 search with no matches returns an empty list and total 0', async () =>
   {
     const res = await request(app)
-      .get('/admin/users')
+      .get('/api/admin/users')
       .set('Authorization', `Bearer ${adminToken}`)
       .query({ search: 'no-such-user-anywhere-xyz' });
 
@@ -100,7 +100,7 @@ describe('GET /admin/users', () =>
     }
 
     const res = await request(app)
-      .get('/admin/users')
+      .get('/api/admin/users')
       .set('Authorization', `Bearer ${adminToken}`)
       .query({ search: suffix, limit: 2, offset: 0 });
 
@@ -113,7 +113,7 @@ describe('GET /admin/users', () =>
     async (limit, expectedSuccess) =>
     {
       const res = await request(app)
-        .get('/admin/users')
+        .get('/api/admin/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .query({ limit });
 
@@ -125,7 +125,7 @@ describe('GET /admin/users', () =>
   it('TC-1408b rejects a negative offset', async () =>
   {
     const res = await request(app)
-      .get('/admin/users')
+      .get('/api/admin/users')
       .set('Authorization', `Bearer ${adminToken}`)
       .query({ offset: -1 });
 
@@ -140,7 +140,7 @@ describe('GET /admin/users/:id', () =>
   it('TC-1409 returns full user detail including email/username, never a password hash', async () =>
   {
     const res = await request(app)
-      .get(`/admin/users/${targetId}`)
+      .get(`/api/admin/users/${targetId}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
@@ -154,7 +154,7 @@ describe('GET /admin/users/:id', () =>
   it('TC-1410 fails with not_found for an unknown id', async () =>
   {
     const res = await request(app)
-      .get(`/admin/users/${makeUuid()}`)
+      .get(`/api/admin/users/${makeUuid()}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
@@ -165,7 +165,7 @@ describe('GET /admin/users/:id', () =>
   it('TC-1411 fails for a non-UUID id', async () =>
   {
     const res = await request(app)
-      .get('/admin/users/not-a-uuid')
+      .get('/api/admin/users/not-a-uuid')
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
@@ -181,21 +181,21 @@ describe('PUT /admin/users/:id/status', () =>
   it('TC-1501/1502 transitions through suspended, banned, and back to active', async () =>
   {
     const suspend = await request(app)
-      .put(`/admin/users/${targetId}/status`)
+      .put(`/api/admin/users/${targetId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'suspended' });
     expect(suspend.body.success).toBe(true);
     expect(suspend.body.status).toBe('suspended');
 
     const ban = await request(app)
-      .put(`/admin/users/${targetId}/status`)
+      .put(`/api/admin/users/${targetId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'banned' });
     expect(ban.body.success).toBe(true);
     expect(ban.body.status).toBe('banned');
 
     const restore = await request(app)
-      .put(`/admin/users/${targetId}/status`)
+      .put(`/api/admin/users/${targetId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'active' });
     expect(restore.body.success).toBe(true);
@@ -205,7 +205,7 @@ describe('PUT /admin/users/:id/status', () =>
   it('TC-1503 rejects a status value outside the allowed set', async () =>
   {
     const res = await request(app)
-      .put(`/admin/users/${targetId}/status`)
+      .put(`/api/admin/users/${targetId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'deleted' });
 
@@ -216,7 +216,7 @@ describe('PUT /admin/users/:id/status', () =>
   it('TC-1504 an admin cannot change their own status', async () =>
   {
     const res = await request(app)
-      .put(`/admin/users/${adminId}/status`)
+      .put(`/api/admin/users/${adminId}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'suspended' });
 
@@ -228,7 +228,7 @@ describe('PUT /admin/users/:id/status', () =>
   it('TC-1505 fails with not_found for a status change on an unknown user', async () =>
   {
     const res = await request(app)
-      .put(`/admin/users/${makeUuid()}/status`)
+      .put(`/api/admin/users/${makeUuid()}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'active' });
 
@@ -243,12 +243,12 @@ describe('PUT /admin/users/:id/status', () =>
     const viewer = await signupUser(app, '_suspendviewer');
 
     await request(app)
-      .put(`/admin/users/${suspendMe.user_id}/status`)
+      .put(`/api/admin/users/${suspendMe.user_id}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'suspended' });
 
     const discover = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${viewer.access_token}`)
       .query({ limit: 100 });
 
@@ -256,7 +256,7 @@ describe('PUT /admin/users/:id/status', () =>
 
     // restore for hygiene, in case other tests in this file rely on total counts
     await request(app)
-      .put(`/admin/users/${suspendMe.user_id}/status`)
+      .put(`/api/admin/users/${suspendMe.user_id}/status`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ status: 'active' });
   });
@@ -270,14 +270,14 @@ describe('DELETE /admin/users/:id', () =>
   {
     const { user_id: deleteMe } = await signupUser(app, '_deleteme');
     const res = await request(app)
-      .delete(`/admin/users/${deleteMe}`)
+      .delete(`/api/admin/users/${deleteMe}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
 
     const check = await request(app)
-      .get(`/admin/users/${deleteMe}`)
+      .get(`/api/admin/users/${deleteMe}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(check.body.success).toBe(false);
     expect(check.body.error).toBe('not_found');
@@ -286,7 +286,7 @@ describe('DELETE /admin/users/:id', () =>
   it('TC-1507 an admin cannot delete themselves', async () =>
   {
     const res = await request(app)
-      .delete(`/admin/users/${adminId}`)
+      .delete(`/api/admin/users/${adminId}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
@@ -297,7 +297,7 @@ describe('DELETE /admin/users/:id', () =>
   it('TC-1508 fails with not_found for deleting an unknown user', async () =>
   {
     const res = await request(app)
-      .delete(`/admin/users/${makeUuid()}`)
+      .delete(`/api/admin/users/${makeUuid()}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(res.status).toBe(200);
@@ -311,16 +311,16 @@ describe('DELETE /admin/users/:id', () =>
     // confirm the profile row — and therefore its push token — is actually gone.
     const { user_id, access_token } = await signupUser(app, '_deletewithpush');
     await request(app)
-      .post('/users/me/push-token')
+      .post('/api/users/me/push-token')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ token: 'ExponentPushToken[xxxx]' });
 
     await request(app)
-      .delete(`/admin/users/${user_id}`)
+      .delete(`/api/admin/users/${user_id}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     const check = await request(app)
-      .get(`/admin/users/${user_id}`)
+      .get(`/api/admin/users/${user_id}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(check.body.success).toBe(false);
     expect(check.body.error).toBe('not_found');

@@ -58,7 +58,7 @@ describe('GET /chat/conversations', () =>
   {
     const { access_token } = await signupUser(app, '_convempty');
     const res = await request(app)
-      .get('/chat/conversations')
+      .get('/api/chat/conversations')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -68,7 +68,7 @@ describe('GET /chat/conversations', () =>
 
   it('TC-1217a fails without a token', async () =>
   {
-    const res = await request(app).get('/chat/conversations');
+    const res = await request(app).get('/api/chat/conversations');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -83,7 +83,7 @@ describe('POST /chat/:peer_id', () =>
   it('TC-1207 sends a message and returns the persisted message', async () =>
   {
     const res = await request(app)
-      .post(`/chat/${userB.user_id}`)
+      .post(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'שלום! 👋', msg_type: 'TEXT' });
 
@@ -98,7 +98,7 @@ describe('POST /chat/:peer_id', () =>
   it('TC-1207b defaults msg_type to TEXT when omitted', async () =>
   {
     const res = await request(app)
-      .post(`/chat/${userB.user_id}`)
+      .post(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'היי' });
 
@@ -110,25 +110,25 @@ describe('POST /chat/:peer_id', () =>
   {
     const auth = { Authorization: `Bearer ${userA.access_token}` };
 
-    const at4000 = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: 'a'.repeat(4000) });
+    const at4000 = await request(app).post(`/api/chat/${userB.user_id}`).set(auth).send({ content: 'a'.repeat(4000) });
     expect(at4000.body.success).toBe(true);
 
-    const at4001 = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: 'a'.repeat(4001) });
+    const at4001 = await request(app).post(`/api/chat/${userB.user_id}`).set(auth).send({ content: 'a'.repeat(4001) });
     expect(at4001.body.success).toBe(false);
     expect(at4001.body.message).toBe('ההודעה ארוכה מדי (מקסימום 4000 תווים)');
 
-    const empty = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: '' });
+    const empty = await request(app).post(`/api/chat/${userB.user_id}`).set(auth).send({ content: '' });
     expect(empty.body.success).toBe(false);
     expect(empty.body.message).toBe('יש להזין תוכן הודעה');
 
-    const whitespace = await request(app).post(`/chat/${userB.user_id}`).set(auth).send({ content: '   ' });
+    const whitespace = await request(app).post(`/api/chat/${userB.user_id}`).set(auth).send({ content: '   ' });
     expect(whitespace.body.success).toBe(false);
   });
 
   it('TC-1209 rejects an msg_type outside TEXT/AUDIO/IMAGE', async () =>
   {
     const res = await request(app)
-      .post(`/chat/${userB.user_id}`)
+      .post(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'hi', msg_type: 'VIDEO' });
 
@@ -142,11 +142,11 @@ describe('POST /chat/:peer_id', () =>
     const blocked = await signupUser(app, '_blkSend2');
 
     await request(app)
-      .post(`/users/${blocked.user_id}/block`)
+      .post(`/api/users/${blocked.user_id}/block`)
       .set('Authorization', `Bearer ${blocker.access_token}`);
 
     const res = await request(app)
-      .post(`/chat/${blocker.user_id}`)
+      .post(`/api/chat/${blocker.user_id}`)
       .set('Authorization', `Bearer ${blocked.access_token}`)
       .send({ content: 'היי' });
 
@@ -158,7 +158,7 @@ describe('POST /chat/:peer_id', () =>
   it('TC-1211 sending a message to yourself fails cleanly with a specific message', async () =>
   {
     const res = await request(app)
-      .post(`/chat/${userA.user_id}`)
+      .post(`/api/chat/${userA.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'talking to myself' });
 
@@ -170,7 +170,7 @@ describe('POST /chat/:peer_id', () =>
   it('TC-1212 sending to a well-formed but nonexistent peer id fails with not_found', async () =>
   {
     const res = await request(app)
-      .post(`/chat/${makeUuid()}`)
+      .post(`/api/chat/${makeUuid()}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'is anyone there' });
 
@@ -181,7 +181,7 @@ describe('POST /chat/:peer_id', () =>
 
   it('TC-1217b fails without a token', async () =>
   {
-    const res = await request(app).post(`/chat/${userB.user_id}`).send({ content: 'hi' });
+    const res = await request(app).post(`/api/chat/${userB.user_id}`).send({ content: 'hi' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -196,12 +196,12 @@ describe('GET /chat/:peer_id', () =>
   it('TC-1203 returns messages between the two users, newest first', async () =>
   {
     await request(app)
-      .post(`/chat/${userB.user_id}`)
+      .post(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .send({ content: 'הודעה לגלילה' });
 
     const res = await request(app)
-      .get(`/chat/${userB.user_id}`)
+      .get(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .query({ limit: 20 });
 
@@ -220,13 +220,13 @@ describe('GET /chat/:peer_id', () =>
     for (let i = 0; i < 5; i++)
     {
       await request(app)
-        .post(`/chat/${userB.user_id}`)
+        .post(`/api/chat/${userB.user_id}`)
         .set('Authorization', `Bearer ${userA.access_token}`)
         .send({ content: `הודעה ${i}` });
     }
 
     const first = await request(app)
-      .get(`/chat/${userB.user_id}`)
+      .get(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .query({ limit: 3 });
 
@@ -234,7 +234,7 @@ describe('GET /chat/:peer_id', () =>
     expect(oldestId).toBeTruthy();
 
     const older = await request(app)
-      .get(`/chat/${userB.user_id}`)
+      .get(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .query({ limit: 3, before: oldestId });
 
@@ -245,7 +245,7 @@ describe('GET /chat/:peer_id', () =>
   it('TC-1205 rejects a malformed before-cursor', async () =>
   {
     const res = await request(app)
-      .get(`/chat/${userB.user_id}`)
+      .get(`/api/chat/${userB.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`)
       .query({ before: 'not-a-uuid' });
 
@@ -256,7 +256,7 @@ describe('GET /chat/:peer_id', () =>
   {
     const stranger = await signupUser(app, '_neverchatted');
     const res = await request(app)
-      .get(`/chat/${stranger.user_id}`)
+      .get(`/api/chat/${stranger.user_id}`)
       .set('Authorization', `Bearer ${userA.access_token}`);
 
     expect(res.status).toBe(200);
@@ -272,7 +272,7 @@ describe('GET /chat/conversations (after messages)', () =>
   it('TC-1201 shows the conversation with unread count and last message', async () =>
   {
     const res = await request(app)
-      .get('/chat/conversations')
+      .get('/api/chat/conversations')
       .set('Authorization', `Bearer ${userB.access_token}`);
 
     expect(res.status).toBe(200);
@@ -291,11 +291,11 @@ describe('PUT /chat/:peer_id/read', () =>
   it('TC-1215 marks messages as read (unread_count drops to 0)', async () =>
   {
     await request(app)
-      .put(`/chat/${userA.user_id}/read`)
+      .put(`/api/chat/${userA.user_id}/read`)
       .set('Authorization', `Bearer ${userB.access_token}`);
 
     const res = await request(app)
-      .get('/chat/conversations')
+      .get('/api/chat/conversations')
       .set('Authorization', `Bearer ${userB.access_token}`);
     const conv = res.body.conversations.find((c: { peer_id: string }) => c.peer_id === userA.user_id);
 
@@ -305,7 +305,7 @@ describe('PUT /chat/:peer_id/read', () =>
   it('TC-1216 is a no-op when there is nothing unread', async () =>
   {
     const res = await request(app)
-      .put(`/chat/${userA.user_id}/read`)
+      .put(`/api/chat/${userA.user_id}/read`)
       .set('Authorization', `Bearer ${userB.access_token}`);
 
     expect(res.status).toBe(200);
@@ -381,7 +381,7 @@ describe('WebSocket /ws', () =>
     const blocked = await signupUser(app, '_wsblocked');
 
     await request(app)
-      .post(`/users/${blocked.user_id}/block`)
+      .post(`/api/users/${blocked.user_id}/block`)
       .set('Authorization', `Bearer ${blocker.access_token}`);
 
     const blockedWs = await openSocket(blocked.access_token);
@@ -451,7 +451,7 @@ describe('WebSocket /ws', () =>
     await ack;
 
     const history = await request(app)
-      .get(`/chat/${userA.user_id}`)
+      .get(`/api/chat/${userA.user_id}`)
       .set('Authorization', `Bearer ${offline.access_token}`);
 
     expect(history.body.messages.some((m: { content: string }) => m.content === 'you were offline')).toBe(true);

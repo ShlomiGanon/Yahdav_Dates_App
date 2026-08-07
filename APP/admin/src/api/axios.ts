@@ -40,7 +40,7 @@ export async function performRefresh(): Promise<AdminUser | null> {
       const storedRefresh = localStorage.getItem('refresh_token');
       if (!storedRefresh) return null;
 
-      const { data } = await api.post('/auth/refresh', { refresh_token: storedRefresh });
+      const { data } = await api.post('/api/auth/refresh', { refresh_token: storedRefresh });
       if (!data.success) return null;
 
       tokenStore.set(data.access_token);
@@ -75,7 +75,7 @@ api.interceptors.response.use(async (response) => {
   if (!refreshedUser) {
     tokenStore.set(null);
     localStorage.removeItem('refresh_token');
-    window.location.href = '/login';
+    window.location.href = '/admin/login';
     return response;
   }
 

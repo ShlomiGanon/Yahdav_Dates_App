@@ -35,7 +35,7 @@ describe('known-bug regressions (improve.md)', () =>
       // signature/expiry, never a `type` claim — so a refresh token
       // {sub, jti} currently passes `authenticate` on any non-admin route.
       const res = await request(app)
-        .get('/users/me')
+        .get('/api/users/me')
         .set('Authorization', `Bearer ${refresh_token}`);
 
       expect(res.body.success).toBe(false);
@@ -84,12 +84,12 @@ describe('known-bug regressions (improve.md)', () =>
 describe('every protected route fails with unauthorized on a missing/malformed token', () =>
 {
   const routes: Array<{ method: 'get' | 'post' | 'put' | 'delete'; path: string }> = [
-    { method: 'get', path: '/users/me' },
-    { method: 'put', path: '/users/me' },
-    { method: 'get', path: '/users/me/photos' },
-    { method: 'get', path: '/users/discover' },
-    { method: 'get', path: '/chat/conversations' },
-    { method: 'get', path: '/admin/users' },
+    { method: 'get', path: '/api/users/me' },
+    { method: 'put', path: '/api/users/me' },
+    { method: 'get', path: '/api/users/me/photos' },
+    { method: 'get', path: '/api/users/discover' },
+    { method: 'get', path: '/api/chat/conversations' },
+    { method: 'get', path: '/api/admin/users' },
   ];
 
   it.each(routes)('TC-1701 $method $path fails with no Authorization header', async ({ method, path: routePath }) =>
@@ -118,7 +118,7 @@ describe('requireAdmin is enforced independently of authenticate', () =>
     const { access_token } = await signupUser(app, '_notadmin');
 
     const res = await request(app)
-      .get('/admin/users')
+      .get('/api/admin/users')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -133,7 +133,7 @@ describe('JWT tampering', () =>
   {
     const forged = jwt.sign({ sub: 'fake-user-id', is_admin: true }, 'wrong-secret', { expiresIn: '15m' });
 
-    const res = await request(app).get('/users/me').set('Authorization', `Bearer ${forged}`);
+    const res = await request(app).get('/api/users/me').set('Authorization', `Bearer ${forged}`);
 
     expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('unauthorized');
@@ -146,7 +146,7 @@ describe('JWT tampering', () =>
     const forgedPayload = Buffer.from(JSON.stringify({ sub: 'someone-else', is_admin: true })).toString('base64url');
     const tampered = `${header}.${forgedPayload}.${signature}`;
 
-    const res = await request(app).get('/users/me').set('Authorization', `Bearer ${tampered}`);
+    const res = await request(app).get('/api/users/me').set('Authorization', `Bearer ${tampered}`);
 
     expect(res.body.success).toBe(false);
   });
@@ -155,7 +155,7 @@ describe('JWT tampering', () =>
   {
     const noneToken = jwt.sign({ sub: 'anyone', is_admin: true }, '', { algorithm: 'none' });
 
-    const res = await request(app).get('/users/me').set('Authorization', `Bearer ${noneToken}`);
+    const res = await request(app).get('/api/users/me').set('Authorization', `Bearer ${noneToken}`);
 
     expect(res.body.success).toBe(false);
   });
@@ -165,7 +165,7 @@ describe('JWT tampering', () =>
     const { user_id } = await signupUser(app, '_expiredtoken');
     const expired = jwt.sign({ sub: user_id, is_admin: false }, JWT_SECRET, { expiresIn: -10 });
 
-    const res = await request(app).get('/users/me').set('Authorization', `Bearer ${expired}`);
+    const res = await request(app).get('/api/users/me').set('Authorization', `Bearer ${expired}`);
 
     expect(res.body.success).toBe(false);
   });
@@ -178,18 +178,18 @@ describe('no response ever leaks a password hash', () =>
     const admin = await signupUser(app, '_nohashadmin');
     makeAdmin(admin.user_id);
     const login = await request(app)
-      .post('/auth/login')
+      .post('/api/auth/login')
       .send({ identifier: 'user_nohashadmin@test.com', password: 'Password123!' });
 
     expect(login.body.success).toBe(true);
     expect(login.body.password_hash).toBeUndefined();
 
-    const me = await request(app).get('/auth/me').set('Authorization', `Bearer ${login.body.access_token}`);
+    const me = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${login.body.access_token}`);
     expect(me.body.password_hash).toBeUndefined();
 
     const target = await signupUser(app, '_nohashtarget');
     const detail = await request(app)
-      .get(`/admin/users/${target.user_id}`)
+      .get(`/api/admin/users/${target.user_id}`)
       .set('Authorization', `Bearer ${login.body.access_token}`);
     expect(detail.body.password_hash).toBeUndefined();
   });
@@ -201,7 +201,7 @@ describe('static /uploads mount', () =>
   {
     // Unaffected by the always-200 API contract — this is a raw
     // express.static mount, not one of our JSON routes.
-    const res = await request(app).get('/uploads/');
+    const res = await request(app).get('/api/uploads/');
 
     expect(res.status).not.toBe(200);
   });
@@ -212,7 +212,7 @@ describe('malformed JSON body', () =>
   it('TC-2639-adjacent fails cleanly with success:false, not a crash, for unparseable JSON', async () =>
   {
     const res = await request(app)
-      .post('/auth/login')
+      .post('/api/auth/login')
       .set('Content-Type', 'application/json')
       .send('{not valid json');
 
@@ -228,7 +228,7 @@ describe('IDOR / not_found consistency', () =>
   {
     const { access_token } = await signupUser(app, '_notfoundcheck');
     const res = await request(app)
-      .get(`/users/${makeUuid()}`)
+      .get(`/api/users/${makeUuid()}`)
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.body.success).toBe(false);

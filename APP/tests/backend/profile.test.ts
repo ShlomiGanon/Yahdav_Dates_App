@@ -21,7 +21,7 @@ describe('GET /users/me', () =>
   {
     const { user_id, access_token } = await signupUser(app, '_getme');
     const res = await request(app)
-      .get('/users/me')
+      .get('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -33,7 +33,7 @@ describe('GET /users/me', () =>
 
   it('TC-613a fails with no token', async () =>
   {
-    const res = await request(app).get('/users/me');
+    const res = await request(app).get('/api/users/me');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -48,12 +48,12 @@ describe('PUT /users/me', () =>
     const { access_token } = await signupUser(app, '_putme');
 
     await request(app)
-      .put('/users/me')
+      .put('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ name: 'ישראל ישראלי', city: 'תל אביב', gender: 'male' });
 
     const res = await request(app)
-      .put('/users/me')
+      .put('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ bio: 'אוהב טיולים' });
 
@@ -68,7 +68,7 @@ describe('PUT /users/me', () =>
   {
     const { access_token } = await signupUser(app, '_emptyput');
     const res = await request(app)
-      .put('/users/me')
+      .put('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`)
       .send({});
 
@@ -81,14 +81,14 @@ describe('PUT /users/me', () =>
     const { access_token } = await signupUser(app, '_namebound');
     const auth = { Authorization: `Bearer ${access_token}` };
 
-    const empty = await request(app).put('/users/me').set(auth).send({ name: '' });
+    const empty = await request(app).put('/api/users/me').set(auth).send({ name: '' });
     expect(empty.body.success).toBe(false);
     expect(empty.body.message).toBe('השם חייב להכיל בין 1 ל-80 תווים');
 
-    const at80 = await request(app).put('/users/me').set(auth).send({ name: 'א'.repeat(80) });
+    const at80 = await request(app).put('/api/users/me').set(auth).send({ name: 'א'.repeat(80) });
     expect(at80.body.success).toBe(true);
 
-    const at81 = await request(app).put('/users/me').set(auth).send({ name: 'א'.repeat(81) });
+    const at81 = await request(app).put('/api/users/me').set(auth).send({ name: 'א'.repeat(81) });
     expect(at81.body.success).toBe(false);
   });
 
@@ -97,13 +97,13 @@ describe('PUT /users/me', () =>
     const { access_token } = await signupUser(app, '_biobound');
     const auth = { Authorization: `Bearer ${access_token}` };
 
-    const empty = await request(app).put('/users/me').set(auth).send({ bio: '' });
+    const empty = await request(app).put('/api/users/me').set(auth).send({ bio: '' });
     expect(empty.body.success).toBe(true);
 
-    const at500 = await request(app).put('/users/me').set(auth).send({ bio: 'x'.repeat(500) });
+    const at500 = await request(app).put('/api/users/me').set(auth).send({ bio: 'x'.repeat(500) });
     expect(at500.body.success).toBe(true);
 
-    const at501 = await request(app).put('/users/me').set(auth).send({ bio: 'x'.repeat(501) });
+    const at501 = await request(app).put('/api/users/me').set(auth).send({ bio: 'x'.repeat(501) });
     expect(at501.body.success).toBe(false);
   });
 
@@ -111,7 +111,7 @@ describe('PUT /users/me', () =>
   {
     const { access_token } = await signupUser(app, `_badgender${Math.random().toString(36).slice(2, 8)}`);
     const res = await request(app)
-      .put('/users/me')
+      .put('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ gender });
 
@@ -126,7 +126,7 @@ describe('PUT /users/me', () =>
     {
       const { access_token } = await signupUser(app, `_baddob${Math.random().toString(36).slice(2, 8)}`);
       const res = await request(app)
-        .put('/users/me')
+        .put('/api/users/me')
         .set('Authorization', `Bearer ${access_token}`)
         .send({ date_of_birth });
 
@@ -140,7 +140,7 @@ describe('PUT /users/me', () =>
   {
     const { access_token } = await signupUser(app, '_gooddob');
     const res = await request(app)
-      .put('/users/me')
+      .put('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ date_of_birth: '1995-06-15' });
 
@@ -154,10 +154,10 @@ describe('PUT /users/me', () =>
     const { access_token } = await signupUser(app, '_citybound');
     const auth = { Authorization: `Bearer ${access_token}` };
 
-    const emptyCity = await request(app).put('/users/me').set(auth).send({ city: '' });
+    const emptyCity = await request(app).put('/api/users/me').set(auth).send({ city: '' });
     expect(emptyCity.body.success).toBe(false);
 
-    const emptyRegion = await request(app).put('/users/me').set(auth).send({ region: '' });
+    const emptyRegion = await request(app).put('/api/users/me').set(auth).send({ region: '' });
     expect(emptyRegion.body.success).toBe(false);
   });
 
@@ -165,7 +165,7 @@ describe('PUT /users/me', () =>
   {
     const { access_token } = await signupUser(app, '_noselfstatus');
     const res = await request(app)
-      .put('/users/me')
+      .put('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ status: 'banned', name: 'Still Works' });
 
@@ -177,7 +177,7 @@ describe('PUT /users/me', () =>
 
   it('TC-613 fails with no token', async () =>
   {
-    const res = await request(app).put('/users/me').send({ name: 'Nobody' });
+    const res = await request(app).put('/api/users/me').send({ name: 'Nobody' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -194,15 +194,15 @@ describe('POST /users/me/photo', () =>
   {
     const { access_token } = await signupUser(app, '_mainphoto');
     const res = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .set('Authorization', `Bearer ${access_token}`)
       .attach('photo', tinyImageBuffer(), { filename: 'me.png', contentType: 'image/png' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
-    expect(res.body.photo_url).toMatch(/^\/uploads\//);
+    expect(res.body.photo_url).toMatch(/^\/api\/uploads\//);
 
-    const profile = await request(app).get('/users/me').set('Authorization', `Bearer ${access_token}`);
+    const profile = await request(app).get('/api/users/me').set('Authorization', `Bearer ${access_token}`);
     expect(profile.body.photo_url).toBe(res.body.photo_url);
   });
 
@@ -212,12 +212,12 @@ describe('POST /users/me/photo', () =>
     const auth = { Authorization: `Bearer ${access_token}` };
 
     const first = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'a.png', contentType: 'image/png' });
 
     const second = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'b.png', contentType: 'image/png' });
 
@@ -229,7 +229,7 @@ describe('POST /users/me/photo', () =>
   {
     const { access_token } = await signupUser(app, '_nofile');
     const res = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -241,7 +241,7 @@ describe('POST /users/me/photo', () =>
   {
     const { access_token } = await signupUser(app, '_badtype');
     const res = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .set('Authorization', `Bearer ${access_token}`)
       .attach('photo', Buffer.from('not an image'), { filename: 'note.txt', contentType: 'text/plain' });
 
@@ -256,7 +256,7 @@ describe('POST /users/me/photo', () =>
     const oversized = Buffer.alloc(8 * 1024 * 1024 + 1, 1);
 
     const res = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .set('Authorization', `Bearer ${access_token}`)
       .attach('photo', oversized, { filename: 'huge.jpg', contentType: 'image/jpeg' });
 
@@ -269,7 +269,7 @@ describe('POST /users/me/photo', () =>
   {
     const { access_token } = await signupUser(app, '_traversal');
     const res = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .set('Authorization', `Bearer ${access_token}`)
       .attach('photo', tinyImageBuffer(), {
         filename: '../../../../etc/passwd.png',
@@ -285,7 +285,7 @@ describe('POST /users/me/photo', () =>
   it('TC-708 fails with no token', async () =>
   {
     const res = await request(app)
-      .post('/users/me/photo')
+      .post('/api/users/me/photo')
       .attach('photo', tinyImageBuffer(), { filename: 'x.png', contentType: 'image/png' });
 
     expect(res.status).toBe(200);
@@ -302,7 +302,7 @@ describe('Additional photos', () =>
   it('TC-801 GET returns an empty array for a fresh user', async () =>
   {
     const { access_token } = await signupUser(app, '_nophotos');
-    const res = await request(app).get('/users/me/photos').set('Authorization', `Bearer ${access_token}`);
+    const res = await request(app).get('/api/users/me/photos').set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -317,7 +317,7 @@ describe('Additional photos', () =>
     for (let i = 0; i < 4; i++)
     {
       const res = await request(app)
-        .post('/users/me/photos')
+        .post('/api/users/me/photos')
         .set(auth)
         .attach('photo', tinyImageBuffer(), { filename: `p${i}.png`, contentType: 'image/png' });
 
@@ -326,14 +326,14 @@ describe('Additional photos', () =>
     }
 
     const fifth = await request(app)
-      .post('/users/me/photos')
+      .post('/api/users/me/photos')
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'p5.png', contentType: 'image/png' });
 
     expect(fifth.body.success).toBe(false);
     expect(fifth.body.error).toBe('photo_limit_reached');
 
-    const list = await request(app).get('/users/me/photos').set(auth);
+    const list = await request(app).get('/api/users/me/photos').set(auth);
     expect(list.body.photos.length).toBe(4);
   });
 
@@ -343,15 +343,15 @@ describe('Additional photos', () =>
     const auth = { Authorization: `Bearer ${access_token}` };
 
     const added = await request(app)
-      .post('/users/me/photos')
+      .post('/api/users/me/photos')
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'd.png', contentType: 'image/png' });
 
-    const res = await request(app).delete(`/users/me/photos/${added.body.photo_id}`).set(auth);
+    const res = await request(app).delete(`/api/users/me/photos/${added.body.photo_id}`).set(auth);
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
 
-    const list = await request(app).get('/users/me/photos').set(auth);
+    const list = await request(app).get('/api/users/me/photos').set(auth);
     expect(list.body.photos.find((p: { photo_id: string }) => p.photo_id === added.body.photo_id)).toBeUndefined();
   });
 
@@ -359,7 +359,7 @@ describe('Additional photos', () =>
   {
     const { access_token } = await signupUser(app, '_baduuid');
     const res = await request(app)
-      .delete('/users/me/photos/not-a-uuid')
+      .delete('/api/users/me/photos/not-a-uuid')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -370,7 +370,7 @@ describe('Additional photos', () =>
   {
     const { access_token } = await signupUser(app, '_nosuchphoto');
     const res = await request(app)
-      .delete(`/users/me/photos/${makeUuid()}`)
+      .delete(`/api/users/me/photos/${makeUuid()}`)
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -384,19 +384,19 @@ describe('Additional photos', () =>
     const attacker = await signupUser(app, '_idorattacker');
 
     const added = await request(app)
-      .post('/users/me/photos')
+      .post('/api/users/me/photos')
       .set('Authorization', `Bearer ${owner.access_token}`)
       .attach('photo', tinyImageBuffer(), { filename: 'mine.png', contentType: 'image/png' });
 
     const res = await request(app)
-      .delete(`/users/me/photos/${added.body.photo_id}`)
+      .delete(`/api/users/me/photos/${added.body.photo_id}`)
       .set('Authorization', `Bearer ${attacker.access_token}`);
 
     expect(res.body.success).toBe(false);
     expect(res.body.error).toBe('not_found');
 
     const ownerList = await request(app)
-      .get('/users/me/photos')
+      .get('/api/users/me/photos')
       .set('Authorization', `Bearer ${owner.access_token}`);
     expect(ownerList.body.photos.some((p: { photo_id: string }) => p.photo_id === added.body.photo_id)).toBe(true);
   });
@@ -410,16 +410,16 @@ describe('Additional photos', () =>
     for (let i = 0; i < 4; i++)
     {
       const res = await request(app)
-        .post('/users/me/photos')
+        .post('/api/users/me/photos')
         .set(auth)
         .attach('photo', tinyImageBuffer(), { filename: `s${i}.png`, contentType: 'image/png' });
       ids.push(res.body.photo_id);
     }
 
-    await request(app).delete(`/users/me/photos/${ids[0]}`).set(auth);
+    await request(app).delete(`/api/users/me/photos/${ids[0]}`).set(auth);
 
     const res = await request(app)
-      .post('/users/me/photos')
+      .post('/api/users/me/photos')
       .set(auth)
       .attach('photo', tinyImageBuffer(), { filename: 'refill.png', contentType: 'image/png' });
 
@@ -439,7 +439,7 @@ describe('GET /users/discover', () =>
     await signupUser(app, '_disc3');
 
     const res = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${access_token}`)
       .query({ page: 1, limit: 10 });
 
@@ -458,16 +458,16 @@ describe('GET /users/discover', () =>
     const { makeAdmin } = await import('./helpers');
     makeAdmin(admin.user_id);
     const login = await request(app)
-      .post('/auth/login')
+      .post('/api/auth/login')
       .send({ identifier: 'user_discadmin@test.com', password: 'Password123!' });
 
     await request(app)
-      .put(`/admin/users/${target.user_id}/status`)
+      .put(`/api/admin/users/${target.user_id}/status`)
       .set('Authorization', `Bearer ${login.body.access_token}`)
       .send({ status: 'suspended' });
 
     const res = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${viewer.access_token}`)
       .query({ limit: 100 });
 
@@ -483,8 +483,8 @@ describe('GET /users/discover', () =>
     }
 
     const auth = { Authorization: `Bearer ${viewer.access_token}` };
-    const page1 = await request(app).get('/users/discover').set(auth).query({ page: 1, limit: 2 });
-    const page2 = await request(app).get('/users/discover').set(auth).query({ page: 2, limit: 2 });
+    const page1 = await request(app).get('/api/users/discover').set(auth).query({ page: 1, limit: 2 });
+    const page2 = await request(app).get('/api/users/discover').set(auth).query({ page: 2, limit: 2 });
 
     const idsPage1 = page1.body.candidates.map((u: { user_id: string }) => u.user_id);
     const idsPage2 = page2.body.candidates.map((u: { user_id: string }) => u.user_id);
@@ -499,7 +499,7 @@ describe('GET /users/discover', () =>
     {
       const { access_token } = await signupUser(app, `_limitbound${limit}`);
       const res = await request(app)
-        .get('/users/discover')
+        .get('/api/users/discover')
         .set('Authorization', `Bearer ${access_token}`)
         .query({ limit });
 
@@ -512,7 +512,7 @@ describe('GET /users/discover', () =>
   {
     const { access_token } = await signupUser(app, '_page0');
     const res = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${access_token}`)
       .query({ page: 0 });
 
@@ -525,7 +525,7 @@ describe('GET /users/discover', () =>
     await signupUser(app, '_nosecret_target');
 
     const res = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${viewer.access_token}`)
       .query({ limit: 100 });
 
@@ -538,7 +538,7 @@ describe('GET /users/discover', () =>
 
   it('TC-911 fails with no token', async () =>
   {
-    const res = await request(app).get('/users/discover');
+    const res = await request(app).get('/api/users/discover');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -555,7 +555,7 @@ describe('GET /users/:id', () =>
     const { user_id: peerId } = await signupUser(app, '_peer_target');
     const { access_token } = await signupUser(app, '_peer_viewer');
     const res = await request(app)
-      .get(`/users/${peerId}`)
+      .get(`/api/users/${peerId}`)
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -568,7 +568,7 @@ describe('GET /users/:id', () =>
   {
     const { access_token } = await signupUser(app, '_notuuid');
     const res = await request(app)
-      .get('/users/not-a-uuid')
+      .get('/api/users/not-a-uuid')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -580,8 +580,8 @@ describe('GET /users/:id', () =>
     const { access_token } = await signupUser(app, '_routeorder');
     const auth = { Authorization: `Bearer ${access_token}` };
 
-    const discover = await request(app).get('/users/discover').set(auth);
-    const me = await request(app).get('/users/me').set(auth);
+    const discover = await request(app).get('/api/users/discover').set(auth);
+    const me = await request(app).get('/api/users/me').set(auth);
 
     expect(Array.isArray(discover.body.candidates)).toBe(true);
     expect(me.body).toHaveProperty('bio');
@@ -591,7 +591,7 @@ describe('GET /users/:id', () =>
   {
     const { access_token } = await signupUser(app, '_peer404');
     const res = await request(app)
-      .get(`/users/${makeUuid()}`)
+      .get(`/api/users/${makeUuid()}`)
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -605,7 +605,7 @@ describe('GET /users/:id', () =>
     const { access_token } = await signupUser(app, '_peerphotos_viewer');
 
     const res = await request(app)
-      .get(`/users/${peerId}/photos`)
+      .get(`/api/users/${peerId}/photos`)
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -626,28 +626,28 @@ describe('POST /users/:id/block', () =>
     const { access_token } = await signupUser(app, '_blk_viewer');
 
     const before = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${access_token}`)
       .query({ limit: 100 });
     expect(before.body.candidates.some((u: { user_id: string }) => u.user_id === blocked)).toBe(true);
 
     const blockRes = await request(app)
-      .post(`/users/${blocked}/block`)
+      .post(`/api/users/${blocked}/block`)
       .set('Authorization', `Bearer ${access_token}`);
     expect(blockRes.status).toBe(200);
     expect(blockRes.body.success).toBe(true);
 
     const after = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${access_token}`)
       .query({ limit: 100 });
     expect(after.body.candidates.some((u: { user_id: string }) => u.user_id === blocked)).toBe(false);
 
     const viewerId = (
-      await request(app).get('/auth/me').set('Authorization', `Bearer ${access_token}`)
+      await request(app).get('/api/auth/me').set('Authorization', `Bearer ${access_token}`)
     ).body.user_id;
     const afterReverse = await request(app)
-      .get('/users/discover')
+      .get('/api/users/discover')
       .set('Authorization', `Bearer ${blockedToken}`)
       .query({ limit: 100 });
     expect(afterReverse.body.candidates.some((u: { user_id: string }) => u.user_id === viewerId)).toBe(false);
@@ -657,7 +657,7 @@ describe('POST /users/:id/block', () =>
   {
     const { user_id, access_token } = await signupUser(app, '_selfblock');
     const res = await request(app)
-      .post(`/users/${user_id}/block`)
+      .post(`/api/users/${user_id}/block`)
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -671,8 +671,8 @@ describe('POST /users/:id/block', () =>
     const { access_token } = await signupUser(app, '_dblblock_viewer');
     const auth = { Authorization: `Bearer ${access_token}` };
 
-    const first = await request(app).post(`/users/${blocked}/block`).set(auth);
-    const second = await request(app).post(`/users/${blocked}/block`).set(auth);
+    const first = await request(app).post(`/api/users/${blocked}/block`).set(auth);
+    const second = await request(app).post(`/api/users/${blocked}/block`).set(auth);
 
     expect(first.body.success).toBe(true);
     expect(second.body.success).toBe(true);
@@ -682,7 +682,7 @@ describe('POST /users/:id/block', () =>
   {
     const { access_token } = await signupUser(app, '_blocknotuuid');
     const res = await request(app)
-      .post('/users/not-a-uuid/block')
+      .post('/api/users/not-a-uuid/block')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -691,7 +691,7 @@ describe('POST /users/:id/block', () =>
 
   it('TC-1108b fails with no token', async () =>
   {
-    const res = await request(app).post(`/users/${makeUuid()}/block`);
+    const res = await request(app).post(`/api/users/${makeUuid()}/block`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);

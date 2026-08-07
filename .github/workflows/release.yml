@@ -1,0 +1,223 @@
+name: Release
+
+# Build-and-package only — this workflow never deploys anywhere. It builds
+# the release artifacts described in APP/backend/docs/LOCAL_SETUP.md and
+# REMOTE_SETUP.md and attaches them to the GitHub Release that triggered
+# it. Fires on published (non-prerelease-excluding — see the guard in
+# verify-tests-passed) releases only, never on push/PR — see test.yml for
+# that.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  # Resolves the release's tag to an exact commit, and refuses to package
+  # anything unless that exact commit has a passing "Tests" workflow run.
+  # A release tag can point at any commit, including one nobody ever ran
+  # CI against — this is the gate that stops that from silently shipping.
+  verify-tests-passed:
+    # Pre-releases don't build a package — this isn't a failure, so the job
+    # is skipped rather than made to fail. build-server/build-android
+    # `need` this job, and GitHub Actions skips a job whose dependency was
+    # skipped (not run at all) rather than treating that as a failure, so
+    # skipping here quietly skips the whole workflow for a pre-release.
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve release tag to a commit SHA
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(gh api "repos/${{ github.repository }}/commits/${{ github.event.release.tag_name }}" --jq .sha)
+          if [ -z "$SHA" ] || [ "$SHA" = "null" ]; then
+            echo "::error::Could not resolve release tag '${{ github.event.release.tag_name }}' to a commit."
+            exit 1
+          fi
+          echo "Resolved tag ${{ github.event.release.tag_name }} -> $SHA"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Require a passing Tests workflow run for this exact commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA="${{ steps.resolve.outputs.sha }}"
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$SHA&status=completed&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name=="Tests")] | sort_by(.run_started_at) | last | .conclusion // "none"')
+          echo "Tests workflow conclusion for $SHA: $CONCLUSION"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "::error::No passing 'Tests' workflow run found for commit $SHA (release tag ${{ github.event.release.tag_name }}). Latest conclusion found: $CONCLUSION. Refusing to package a release built from a commit that hasn't passed CI — push to main (or open/merge a PR) and let the Tests workflow go green first."
+            exit 1
+          fi
+
+  # Server package: compiled backend + built web/admin frontends as static
+  # bundles under public/web and public/admin, plus the setup docs — zipped
+  # and attached to the Release. See APP/backend/docs/LOCAL_SETUP.md for
+  # what a consumer of this artifact actually does with it.
+  build-server:
+    needs: verify-tests-passed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-tests-passed.outputs.commit_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install shared and build it
+        working-directory: APP/shared
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install and build backend
+        working-directory: APP/backend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install and build web
+        working-directory: APP/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install and build admin
+        working-directory: APP/admin
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assemble the server package
+        run: |
+          set -eu
+          PKG="yahdav-server-${{ github.event.release.tag_name }}"
+          mkdir -p "$PKG/dist" "$PKG/migrations" "$PKG/docs" "$PKG/public/web" "$PKG/public/admin"
+
+          cp -r APP/backend/dist/.      "$PKG/dist/"
+          cp -r APP/backend/migrations/. "$PKG/migrations/"
+          cp    APP/backend/package.json APP/backend/package-lock.json "$PKG/"
+          cp    APP/backend/.env.example "$PKG/"
+          cp    APP/backend/docs/LOCAL_SETUP.md APP/backend/docs/REMOTE_SETUP.md "$PKG/docs/"
+          cp -r APP/web/dist/.   "$PKG/public/web/"
+          cp -r APP/admin/dist/. "$PKG/public/admin/"
+
+          zip -r "$PKG.zip" "$PKG"
+          echo "PACKAGE_PATH=$PKG.zip" >> "$GITHUB_ENV"
+
+      - name: Upload to the Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$PACKAGE_PATH" --clobber
+
+  # Android: unsigned APK, built directly in this runner (no EAS, no
+  # signing). See the TODO comments below for what's needed to turn this
+  # into a real, signed, store-ready build later.
+  build-android:
+    needs: verify-tests-passed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-tests-passed.outputs.commit_sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install shared
+        working-directory: APP/shared
+        run: npm ci
+
+      - name: Install mobile dependencies
+        working-directory: APP/mobile
+        run: npm ci
+
+      - name: Generate the native Android project
+        working-directory: APP/mobile
+        run: npx expo prebuild --platform android --non-interactive
+
+      # ── TODO — Android signing ──────────────────────────────────────────
+      # This currently produces app-release-unsigned.apk, which Android
+      # will refuse to install as-is. To make this a real, installable
+      # signed build:
+      #   1. Generate a release keystore (`keytool -genkeypair ...`) and
+      #      store it (base64-encoded) plus its passwords as GitHub Secrets
+      #      — e.g. ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+      #      ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD.
+      #   2. Decode the secret to a file before the Gradle build step:
+      #        echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+      #   3. Point android/app/build.gradle's signingConfigs.release at that
+      #      keystore (Expo's prebuild output has a signingConfigs block
+      #      already scaffolded, commented out, ready to fill in) using the
+      #      same secrets as env vars.
+      #   4. Gradle will then produce app-release.apk (signed) instead of
+      #      app-release-unsigned.apk — update the "Locate the APK" step
+      #      below to match.
+      - name: Build the unsigned APK
+        working-directory: APP/mobile/android
+        run: ./gradlew assembleRelease
+
+      - name: Locate and rename the APK
+        working-directory: APP/mobile/android
+        run: |
+          set -eu
+          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          OUT="yahdav-android-${{ github.event.release.tag_name }}-unsigned.apk"
+          cp "$APK" "$OUT"
+          echo "APK_PATH=APP/mobile/android/$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload to the Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "$APK_PATH" --clobber
+
+  # ── TODO — iOS build ────────────────────────────────────────────────────
+  # Not implemented — currently a disabled placeholder (`if: false`) so the
+  # job exists and is already wired into the dependency graph, but never
+  # actually runs. Prerequisites before this can go live:
+  #   - An enrolled Apple Developer Program account ($99/yr) with a
+  #     distribution certificate and provisioning profile.
+  #   - Either:
+  #       (a) EAS Build (`eas build --platform ios`) — needs an EXPO_TOKEN
+  #           secret, a real EAS project (mobile/app.json's projectId is
+  #           still the placeholder REPLACE_WITH_EAS_PROJECT_ID — run
+  #           `eas init` first), and the Apple credentials registered with
+  #           EAS (`eas credentials`). EAS build artifacts land on Expo's
+  #           servers, not in this runner — a follow-up step would need to
+  #           download the finished .ipa via `eas build:download` (or the
+  #           REST API) before it could be attached to the Release the same
+  #           way build-server/build-android do it above.
+  #       (b) A macOS runner (`runs-on: macos-latest` — meaningfully more
+  #           expensive than ubuntu-latest) running `expo prebuild
+  #           --platform ios` + `xcodebuild` directly, with the signing
+  #           certificate/provisioning profile supplied as base64-encoded
+  #           GitHub Secrets (same pattern as the Android keystore TODO
+  #           above).
+  #   Once either path is chosen, remove `if: false` and fill in the real
+  #   steps; `needs`/`permissions`/checkout are already correct.
+  build-ios:
+    needs: verify-tests-passed
+    runs-on: macos-latest
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.verify-tests-passed.outputs.commit_sha }}
+
+      - run: echo "Not implemented — see the TODO comment above this job."

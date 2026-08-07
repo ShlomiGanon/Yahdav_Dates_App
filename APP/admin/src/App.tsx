@@ -12,7 +12,10 @@ function AppRoutes() {
     {
       element: <RedirectIfAuthed />,
       children: [
-        { path: '/login', element: <LoginPage /> },
+        // /admin/login, not bare /login — the whole app is served under
+        // /admin (see backend/src/utils/mountSpa.ts), and web's own
+        // frontend already owns bare /login same-origin.
+        { path: '/admin/login', element: <LoginPage /> },
       ],
     },
     {

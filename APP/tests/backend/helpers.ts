@@ -61,7 +61,7 @@ export async function signupUser(app: Application, suffix = ''): Promise<AuthTok
   const password = 'Password123!';
 
   const signupRes = await request(app)
-    .post('/auth/signup')
+    .post('/api/auth/signup')
     .send({
       email: `user${suffix}@test.com`,
       username,
@@ -69,7 +69,7 @@ export async function signupUser(app: Application, suffix = ''): Promise<AuthTok
     });
 
   const loginRes = await request(app)
-    .post('/auth/login')
+    .post('/api/auth/login')
     .send({ identifier: username, password });
 
   return {

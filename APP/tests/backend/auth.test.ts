@@ -19,7 +19,7 @@ describe('POST /auth/signup', () =>
 {
   it('TC-101 creates a user and returns identity fields, but no session', async () =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: 'signup@test.com',
       username: 'signupuser',
       password: 'Password123!',
@@ -41,13 +41,13 @@ describe('POST /auth/signup', () =>
 
   it('TC-101c a fresh signup can immediately log in with the same credentials', async () =>
   {
-    await request(app).post('/auth/signup').send({
+    await request(app).post('/api/auth/signup').send({
       email: 'signuplogin@test.com',
       username: 'signuploginuser',
       password: 'Password123!',
     });
 
-    const res = await request(app).post('/auth/login').send({
+    const res = await request(app).post('/api/auth/login').send({
       identifier: 'signuploginuser',
       password: 'Password123!',
     });
@@ -62,7 +62,7 @@ describe('POST /auth/signup', () =>
   {
     const { access_token } = await signupUser(app, '_freshprofile');
     const res = await request(app)
-      .get('/users/me')
+      .get('/api/users/me')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -75,11 +75,11 @@ describe('POST /auth/signup', () =>
 
   it('TC-102 rejects duplicate username (case-insensitive)', async () =>
   {
-    await request(app).post('/auth/signup').send({
+    await request(app).post('/api/auth/signup').send({
       email: 'caseuser1@test.com', username: 'CaseUser', password: 'Password1!',
     });
 
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: 'caseuser2@test.com', username: 'caseuser', password: 'Password1!',
     });
 
@@ -91,11 +91,11 @@ describe('POST /auth/signup', () =>
 
   it('TC-103 rejects duplicate email (case-insensitive)', async () =>
   {
-    await request(app).post('/auth/signup').send({
+    await request(app).post('/api/auth/signup').send({
       email: 'Dup@Test.com', username: 'dupuser1', password: 'Password1!',
     });
 
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: 'dup@test.com', username: 'dupuser2', password: 'Password1!',
     });
 
@@ -113,7 +113,7 @@ describe('POST /auth/signup', () =>
     ['משתמש', 'non-latin characters'],
   ])('TC-104 rejects username %j (%s) with a specific message', async (username) =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: `u${Date.now()}${Math.random()}@test.com`,
       username,
       password: 'Password123!',
@@ -129,7 +129,7 @@ describe('POST /auth/signup', () =>
 
   it('TC-105 rejects an invalid email format with a specific message', async () =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: 'not-an-email',
       username: 'validusername1',
       password: 'Password123!',
@@ -145,7 +145,7 @@ describe('POST /auth/signup', () =>
     ['', 'empty string'],
   ])('TC-107 rejects a password that is too short (%j — %s)', async (password) =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: `pw${Date.now()}${Math.random()}@test.com`,
       username: `pwuser${Date.now()}`,
       password,
@@ -158,7 +158,7 @@ describe('POST /auth/signup', () =>
 
   it('TC-108 accepts a password exactly at the 8-character minimum', async () =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: `pwmin${Date.now()}@test.com`,
       username: `pwminuser${Date.now()}`,
       password: '12345678',
@@ -177,7 +177,7 @@ describe('POST /auth/signup', () =>
     };
     delete body[field];
 
-    const res = await request(app).post('/auth/signup').send(body);
+    const res = await request(app).post('/api/auth/signup').send(body);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -185,7 +185,7 @@ describe('POST /auth/signup', () =>
 
   it('TC-110 ignores a client-supplied is_admin field (cannot self-elevate)', async () =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: `noselfadmin${Date.now()}@test.com`,
       username: `noselfadmin${Date.now()}`,
       password: 'Password123!',
@@ -199,7 +199,7 @@ describe('POST /auth/signup', () =>
 
   it('TC-111 treats SQL-injection-shaped input as an ordinary (safely parameterized) string', async () =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: `sqltest${Date.now()}@test.com`,
       username: `sqluser${Date.now()}`,
       password: "' OR '1'='1",
@@ -218,10 +218,10 @@ describe('POST /auth/signup', () =>
     // signup handler's DB write in try/catch.
     const username = `racer${Date.now()}`;
     const [a, b] = await Promise.all([
-      request(app).post('/auth/signup').send({
+      request(app).post('/api/auth/signup').send({
         email: `racer1_${Date.now()}@test.com`, username, password: 'Password123!',
       }),
-      request(app).post('/auth/signup').send({
+      request(app).post('/api/auth/signup').send({
         email: `racer2_${Date.now()}@test.com`, username, password: 'Password123!',
       }),
     ]);
@@ -238,7 +238,7 @@ describe('POST /auth/signup', () =>
   {
     const { access_token } = await signupUser(app, '_immediate');
     const res = await request(app)
-      .get('/auth/me')
+      .get('/api/auth/me')
       .set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
@@ -247,7 +247,7 @@ describe('POST /auth/signup', () =>
 
   it('TC-115 the response never echoes back a password hash', async () =>
   {
-    const res = await request(app).post('/auth/signup').send({
+    const res = await request(app).post('/api/auth/signup').send({
       email: `hashcheck${Date.now()}@test.com`,
       username: `hashcheck${Date.now()}`,
       password: 'Password123!',
@@ -269,12 +269,12 @@ describe('POST /auth/login', () =>
 
   beforeAll(async () =>
   {
-    await request(app).post('/auth/signup').send({ email, username, password });
+    await request(app).post('/api/auth/signup').send({ email, username, password });
   });
 
   it('TC-201 logs in by username and returns tokens', async () =>
   {
-    const res = await request(app).post('/auth/login').send({ identifier: username, password });
+    const res = await request(app).post('/api/auth/login').send({ identifier: username, password });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -285,7 +285,7 @@ describe('POST /auth/login', () =>
 
   it('TC-202 logs in by email', async () =>
   {
-    const res = await request(app).post('/auth/login').send({ identifier: email, password });
+    const res = await request(app).post('/api/auth/login').send({ identifier: email, password });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -294,7 +294,7 @@ describe('POST /auth/login', () =>
 
   it('TC-204 rejects a wrong password with invalid_credentials', async () =>
   {
-    const res = await request(app).post('/auth/login').send({ identifier: username, password: 'wrongpassword' });
+    const res = await request(app).post('/api/auth/login').send({ identifier: username, password: 'wrongpassword' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -304,7 +304,7 @@ describe('POST /auth/login', () =>
 
   it('TC-205 rejects an unknown identifier with the same error as a wrong password', async () =>
   {
-    const res = await request(app).post('/auth/login').send({ identifier: 'nobody-here', password: 'anything123' });
+    const res = await request(app).post('/api/auth/login').send({ identifier: 'nobody-here', password: 'anything123' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -313,7 +313,7 @@ describe('POST /auth/login', () =>
 
   it('TC-206 identifier match is case-insensitive', async () =>
   {
-    const res = await request(app).post('/auth/login').send({ identifier: username.toUpperCase(), password });
+    const res = await request(app).post('/api/auth/login').send({ identifier: username.toUpperCase(), password });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -324,7 +324,7 @@ describe('POST /auth/login', () =>
     [{ identifier: username, password: '' }, 'empty password'],
   ])('TC-207 rejects login with %j (%s)', async (body) =>
   {
-    const res = await request(app).post('/auth/login').send(body);
+    const res = await request(app).post('/api/auth/login').send(body);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -332,14 +332,14 @@ describe('POST /auth/login', () =>
 
   it('TC-212 issuing a second login does not invalidate the first session', async () =>
   {
-    const first = await request(app).post('/auth/login').send({ identifier: username, password });
-    const second = await request(app).post('/auth/login').send({ identifier: username, password });
+    const first = await request(app).post('/api/auth/login').send({ identifier: username, password });
+    const second = await request(app).post('/api/auth/login').send({ identifier: username, password });
 
     expect(first.body.success).toBe(true);
     expect(second.body.success).toBe(true);
 
-    const meFirst = await request(app).get('/auth/me').set('Authorization', `Bearer ${first.body.access_token}`);
-    const meSecond = await request(app).get('/auth/me').set('Authorization', `Bearer ${second.body.access_token}`);
+    const meFirst = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${first.body.access_token}`);
+    const meSecond = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${second.body.access_token}`);
 
     expect(meFirst.body.success).toBe(true);
     expect(meSecond.body.success).toBe(true);
@@ -354,7 +354,7 @@ describe('POST /auth/refresh', () =>
   it('TC-301 rotates the refresh token and issues a new access token', async () =>
   {
     const { refresh_token: rt1 } = await signupUser(app, '_refresh');
-    const res = await request(app).post('/auth/refresh').send({ refresh_token: rt1 });
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token: rt1 });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -365,8 +365,8 @@ describe('POST /auth/refresh', () =>
   it('TC-302 rejects reuse of an already-rotated refresh token', async () =>
   {
     const { refresh_token: rt } = await signupUser(app, '_reuse');
-    await request(app).post('/auth/refresh').send({ refresh_token: rt });
-    const res2 = await request(app).post('/auth/refresh').send({ refresh_token: rt });
+    await request(app).post('/api/auth/refresh').send({ refresh_token: rt });
+    const res2 = await request(app).post('/api/auth/refresh').send({ refresh_token: rt });
 
     expect(res2.status).toBe(200);
     expect(res2.body.success).toBe(false);
@@ -374,7 +374,7 @@ describe('POST /auth/refresh', () =>
 
   it('TC-303 rejects a missing refresh_token', async () =>
   {
-    const res = await request(app).post('/auth/refresh').send({});
+    const res = await request(app).post('/api/auth/refresh').send({});
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -383,7 +383,7 @@ describe('POST /auth/refresh', () =>
 
   it('TC-304 rejects a malformed token string', async () =>
   {
-    const res = await request(app).post('/auth/refresh').send({ refresh_token: 'not-a-real-jwt' });
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token: 'not-a-real-jwt' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -393,9 +393,9 @@ describe('POST /auth/refresh', () =>
   it('TC-306 rejects a refresh token for a session that was already logged out', async () =>
   {
     const { refresh_token } = await signupUser(app, '_revoked');
-    await request(app).post('/auth/logout').send({ refresh_token });
+    await request(app).post('/api/auth/logout').send({ refresh_token });
 
-    const res = await request(app).post('/auth/refresh').send({ refresh_token });
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -407,8 +407,8 @@ describe('POST /auth/refresh', () =>
     const { refresh_token } = await signupUser(app, '_racerefresh');
 
     const [a, b] = await Promise.all([
-      request(app).post('/auth/refresh').send({ refresh_token }),
-      request(app).post('/auth/refresh').send({ refresh_token }),
+      request(app).post('/api/auth/refresh').send({ refresh_token }),
+      request(app).post('/api/auth/refresh').send({ refresh_token }),
     ]);
 
     const successes = [a.body.success, b.body.success].sort();
@@ -418,7 +418,7 @@ describe('POST /auth/refresh', () =>
   it('TC-309 the refreshed response reflects the current is_admin value', async () =>
   {
     const { refresh_token } = await signupUser(app, '_refreshadmin');
-    const res = await request(app).post('/auth/refresh').send({ refresh_token });
+    const res = await request(app).post('/api/auth/refresh').send({ refresh_token });
 
     expect(res.body.is_admin).toBe(false);
   });
@@ -432,18 +432,18 @@ describe('POST /auth/logout', () =>
   it('TC-401 succeeds and revokes the session', async () =>
   {
     const { refresh_token } = await signupUser(app, '_logout');
-    const logoutRes = await request(app).post('/auth/logout').send({ refresh_token });
+    const logoutRes = await request(app).post('/api/auth/logout').send({ refresh_token });
 
     expect(logoutRes.status).toBe(200);
     expect(logoutRes.body.success).toBe(true);
 
-    const refreshRes = await request(app).post('/auth/refresh').send({ refresh_token });
+    const refreshRes = await request(app).post('/api/auth/refresh').send({ refresh_token });
     expect(refreshRes.body.success).toBe(false);
   });
 
   it('TC-402 is a no-op (still success) when no refresh_token is supplied', async () =>
   {
-    const res = await request(app).post('/auth/logout').send({});
+    const res = await request(app).post('/api/auth/logout').send({});
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -453,8 +453,8 @@ describe('POST /auth/logout', () =>
   {
     const { refresh_token } = await signupUser(app, '_doublelogout');
 
-    const first = await request(app).post('/auth/logout').send({ refresh_token });
-    const second = await request(app).post('/auth/logout').send({ refresh_token });
+    const first = await request(app).post('/api/auth/logout').send({ refresh_token });
+    const second = await request(app).post('/api/auth/logout').send({ refresh_token });
 
     expect(first.body.success).toBe(true);
     expect(second.body.success).toBe(true);
@@ -469,7 +469,7 @@ describe('GET /auth/me', () =>
   it('TC-501 returns the current user identity for a valid token', async () =>
   {
     const { access_token } = await signupUser(app, '_me');
-    const res = await request(app).get('/auth/me').set('Authorization', `Bearer ${access_token}`);
+    const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${access_token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -481,7 +481,7 @@ describe('GET /auth/me', () =>
 
   it('TC-502 fails with no Authorization header', async () =>
   {
-    const res = await request(app).get('/auth/me');
+    const res = await request(app).get('/api/auth/me');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -490,7 +490,7 @@ describe('GET /auth/me', () =>
 
   it('TC-503 fails for a malformed bearer token', async () =>
   {
-    const res = await request(app).get('/auth/me').set('Authorization', 'Bearer garbage.not.a.jwt');
+    const res = await request(app).get('/api/auth/me').set('Authorization', 'Bearer garbage.not.a.jwt');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -500,7 +500,7 @@ describe('GET /auth/me', () =>
   it('TC-503b fails for an Authorization header with the wrong scheme', async () =>
   {
     const { access_token } = await signupUser(app, '_wrongscheme');
-    const res = await request(app).get('/auth/me').set('Authorization', `Basic ${access_token}`);
+    const res = await request(app).get('/api/auth/me').set('Authorization', `Basic ${access_token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -513,14 +513,14 @@ describe('GET /auth/me', () =>
 
     makeAdmin(admin.user_id);
     const login = await request(app)
-      .post('/auth/login')
+      .post('/api/auth/login')
       .send({ identifier: 'user_deleter@test.com', password: 'Password123!' });
 
     await request(app)
-      .delete(`/admin/users/${target.user_id}`)
+      .delete(`/api/admin/users/${target.user_id}`)
       .set('Authorization', `Bearer ${login.body.access_token}`);
 
-    const res = await request(app).get('/auth/me').set('Authorization', `Bearer ${target.access_token}`);
+    const res = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${target.access_token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);

@@ -46,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [setUser]);
 
   const login = async (identifier: string, password: string): Promise<AuthResult> => {
-    const { data } = await api.post<AuthTokensUser>('/auth/login', { identifier, password });
+    const { data } = await api.post<AuthTokensUser>('/api/auth/login', { identifier, password });
 
     if (!data.success) {
       return { success: false, message: data.message };
@@ -59,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signup = async (email: string, username: string, password: string): Promise<AuthResult> => {
-    const { data } = await api.post<ApiEnvelope & User>('/auth/signup', { email, username, password });
+    const { data } = await api.post<ApiEnvelope & User>('/api/auth/signup', { email, username, password });
 
     return { success: data.success, message: data.message };
   };
@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const refresh_token = await getRefreshToken();
       await Promise.all([
-        api.post('/auth/logout', { refresh_token }),
+        api.post('/api/auth/logout', { refresh_token }),
         usersApi.unregisterPushToken().catch(() => {}),
       ]);
     } finally {

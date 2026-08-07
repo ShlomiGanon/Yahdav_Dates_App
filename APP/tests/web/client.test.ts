@@ -34,7 +34,7 @@ const { webTokenStorage } = await import('../../web/src/auth/storage');
 // APP/review.md finding 2.1), so it needs its own mock adapter mounted on
 // the global axios module; axiosClient's adapter can't see it. Matched by
 // RegExp since the raw call uses a full absolute URL
-// (`${baseURL}/auth/refresh`), not the relative path axiosClient's
+// (`${baseURL}/api/auth/refresh`), not the relative path axiosClient's
 // baseURL-relative requests use.
 const clientMock  = new MockAdapter(axiosClient);
 const refreshMock = new MockAdapter(axios);
@@ -113,7 +113,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setRefreshToken('valid-refresh');
 
         let refreshCalls = 0;
-        refreshMock.onPost(/\/auth\/refresh$/).reply(() =>
+        refreshMock.onPost(/\/api\/auth\/refresh$/).reply(() =>
         {
             refreshCalls += 1;
             return [200, { success: true, message: 'ok', access_token: 'fresh-token', refresh_token: 'new-refresh' }];
@@ -145,7 +145,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setRefreshToken('valid-refresh');
 
         let refreshCalls = 0;
-        refreshMock.onPost(/\/auth\/refresh$/).reply(async () =>
+        refreshMock.onPost(/\/api\/auth\/refresh$/).reply(async () =>
         {
             refreshCalls += 1;
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -178,7 +178,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('also-invalid');
 
-        refreshMock.onPost(/\/auth\/refresh$/).reply(200, {
+        refreshMock.onPost(/\/api\/auth\/refresh$/).reply(200, {
             success: false, message: 'ההתחברות פגה, יש להתחבר מחדש', error: 'session_not_found',
         });
         clientMock.onGet('/protected').reply(200, {
@@ -200,7 +200,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('also-invalid');
 
-        refreshMock.onPost(/\/auth\/refresh$/).networkError();
+        refreshMock.onPost(/\/api\/auth\/refresh$/).networkError();
         clientMock.onGet('/protected').reply(200, {
             success: false, message: 'יש להתחבר מחדש', error: 'unauthorized',
         });
@@ -217,7 +217,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         webTokenStorage.setRefreshToken('valid-refresh');
 
         let refreshCalls = 0;
-        refreshMock.onPost(/\/auth\/refresh$/).reply(() =>
+        refreshMock.onPost(/\/api\/auth\/refresh$/).reply(() =>
         {
             refreshCalls += 1;
             return [200, { success: true, message: 'ok', access_token: 'still-bad-token', refresh_token: 'new-refresh' }];
@@ -233,21 +233,21 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
     });
 
     // Regression coverage for a real bug found while testing the OLD
-    // status-code-based interceptor: making /auth/refresh itself respond
+    // status-code-based interceptor: making /api/auth/refresh itself respond
     // with an auth failure recursed back through the same interceptor and
     // deadlocked, because nothing special-cased "this request IS the
     // refresh call." The new error-CODE-based design (`error ===
-    // 'unauthorized'`) is structurally immune to that: /auth/refresh's own
+    // 'unauthorized'`) is structurally immune to that: /api/auth/refresh's own
     // failure responses use codes like `session_not_found` /
     // `invalid_token`, never `unauthorized` (that code only ever comes
-    // from the `authenticate` middleware, which /auth/refresh doesn't go
+    // from the `authenticate` middleware, which /api/auth/refresh doesn't go
     // through), so this can no longer recurse.
-    it('does not deadlock when /auth/refresh responds with a non-"unauthorized" failure', async () =>
+    it('does not deadlock when /api/auth/refresh responds with a non-"unauthorized" failure', async () =>
     {
         webTokenStorage.setAccessToken('expired-token');
         webTokenStorage.setRefreshToken('expired-refresh-too');
 
-        refreshMock.onPost(/\/auth\/refresh$/).reply(200, {
+        refreshMock.onPost(/\/api\/auth\/refresh$/).reply(200, {
             success: false, message: 'ההתחברות פגה, יש להתחבר מחדש', error: 'session_expired',
         });
         clientMock.onGet('/protected').reply(200, {

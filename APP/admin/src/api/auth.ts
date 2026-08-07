@@ -12,14 +12,14 @@ interface LoginResponse extends ApiEnvelope {
 
 export const authApi = {
   login: (identifier: string, password: string) =>
-    api.post<LoginResponse>('/auth/login', { identifier, password }).then((r) => r.data),
+    api.post<LoginResponse>('/api/auth/login', { identifier, password }).then((r) => r.data),
 
   refresh: (refreshToken: string) =>
-    api.post<LoginResponse>('/auth/refresh', { refresh_token: refreshToken }).then((r) => r.data),
+    api.post<LoginResponse>('/api/auth/refresh', { refresh_token: refreshToken }).then((r) => r.data),
 
   me: () =>
-    api.get<ApiEnvelope & AdminUser>('/auth/me').then((r) => r.data),
+    api.get<ApiEnvelope & AdminUser>('/api/auth/me').then((r) => r.data),
 
   logout: (refreshToken: string) =>
-    api.post<ApiEnvelope>('/auth/logout', { refresh_token: refreshToken }).then((r) => r.data),
+    api.post<ApiEnvelope>('/api/auth/logout', { refresh_token: refreshToken }).then((r) => r.data),
 };

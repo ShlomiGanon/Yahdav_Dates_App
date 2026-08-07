@@ -13,7 +13,7 @@ beforeAll(async () =>
   const admin = await signupUser(app, '_dataintegrity_admin');
   makeAdmin(admin.user_id);
   const login = await request(app)
-    .post('/auth/login')
+    .post('/api/auth/login')
     .send({ identifier: 'user_dataintegrity_admin@test.com', password: 'Password123!' });
   adminToken = login.body.access_token;
 });
@@ -39,16 +39,16 @@ describe('ON DELETE CASCADE when a user is deleted', () =>
     // Give the victim a session, an additional photo, and both a block they
     // made and a block someone else made against them.
     await request(app)
-      .post('/users/me/photos')
+      .post('/api/users/me/photos')
       .set('Authorization', `Bearer ${victim.access_token}`)
       .attach('photo', Buffer.from('fake'), { filename: 'p.png', contentType: 'image/png' });
     await request(app)
-      .post(`/users/${peer.user_id}/block`)
+      .post(`/api/users/${peer.user_id}/block`)
       .set('Authorization', `Bearer ${victim.access_token}`);
 
     const blocker = await signupUser(app, '_cascadeblocker');
     await request(app)
-      .post(`/users/${victim.user_id}/block`)
+      .post(`/api/users/${victim.user_id}/block`)
       .set('Authorization', `Bearer ${blocker.access_token}`);
 
     expect(countWhere('auth_credentials', 'user_id', victim.user_id)).toBe(1);
@@ -58,7 +58,7 @@ describe('ON DELETE CASCADE when a user is deleted', () =>
     expect(countWhere('user_blocks', 'blocked_id', victim.user_id)).toBeGreaterThan(0);
 
     const del = await request(app)
-      .delete(`/admin/users/${victim.user_id}`)
+      .delete(`/api/admin/users/${victim.user_id}`)
       .set('Authorization', `Bearer ${adminToken}`);
     expect(del.status).toBe(200);
     expect(del.body.success).toBe(true);
@@ -77,11 +77,11 @@ describe('ON DELETE CASCADE when a user is deleted', () =>
     const peerB = await signupUser(app, '_msgpeerB');
 
     await request(app)
-      .post(`/chat/${peerA.user_id}`)
+      .post(`/api/chat/${peerA.user_id}`)
       .set('Authorization', `Bearer ${victim.access_token}`)
       .send({ content: 'victim as sender' });
     await request(app)
-      .post(`/chat/${victim.user_id}`)
+      .post(`/api/chat/${victim.user_id}`)
       .set('Authorization', `Bearer ${peerB.access_token}`)
       .send({ content: 'victim as recipient' });
 
@@ -89,7 +89,7 @@ describe('ON DELETE CASCADE when a user is deleted', () =>
     expect(countWhere('direct_messages', 'recipient_id', victim.user_id)).toBeGreaterThan(0);
 
     await request(app)
-      .delete(`/admin/users/${victim.user_id}`)
+      .delete(`/api/admin/users/${victim.user_id}`)
       .set('Authorization', `Bearer ${adminToken}`);
 
     expect(countWhere('direct_messages', 'sender_id', victim.user_id)).toBe(0);

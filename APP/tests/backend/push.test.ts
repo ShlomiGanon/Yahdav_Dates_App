@@ -21,7 +21,7 @@ describe('POST /users/me/push-token', () =>
   {
     const { access_token } = await signupUser(app, '_pushreg');
     const res = await request(app)
-      .post('/users/me/push-token')
+      .post('/api/users/me/push-token')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ token: 'ExponentPushToken[abc123]', platform: 'ios' });
 
@@ -33,7 +33,7 @@ describe('POST /users/me/push-token', () =>
   {
     const { access_token } = await signupUser(app, '_pushempty');
     const res = await request(app)
-      .post('/users/me/push-token')
+      .post('/api/users/me/push-token')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ token: '' });
 
@@ -46,7 +46,7 @@ describe('POST /users/me/push-token', () =>
   {
     const { access_token } = await signupUser(app, `_pushplat${Math.random().toString(36).slice(2, 8)}`);
     const res = await request(app)
-      .post('/users/me/push-token')
+      .post('/api/users/me/push-token')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ token: 'ExponentPushToken[xyz]', platform });
 
@@ -59,7 +59,7 @@ describe('POST /users/me/push-token', () =>
   {
     const { access_token } = await signupUser(app, '_pushnoplatform');
     const res = await request(app)
-      .post('/users/me/push-token')
+      .post('/api/users/me/push-token')
       .set('Authorization', `Bearer ${access_token}`)
       .send({ token: 'ExponentPushToken[noplat]' });
 
@@ -72,8 +72,8 @@ describe('POST /users/me/push-token', () =>
     const { user_id, access_token } = await signupUser(app, '_pushoverwrite');
     const auth = { Authorization: `Bearer ${access_token}` };
 
-    await request(app).post('/users/me/push-token').set(auth).send({ token: 'ExponentPushToken[old]' });
-    await request(app).post('/users/me/push-token').set(auth).send({ token: 'ExponentPushToken[new]' });
+    await request(app).post('/api/users/me/push-token').set(auth).send({ token: 'ExponentPushToken[old]' });
+    await request(app).post('/api/users/me/push-token').set(auth).send({ token: 'ExponentPushToken[new]' });
 
     // No direct read endpoint for the caller's own token; verified indirectly via
     // the admin detail payload not exposing it (see TC-1607) and via absence of errors.
@@ -82,7 +82,7 @@ describe('POST /users/me/push-token', () =>
 
   it('fails with unauthorized with no token', async () =>
   {
-    const res = await request(app).post('/users/me/push-token').send({ token: 'x' });
+    const res = await request(app).post('/api/users/me/push-token').send({ token: 'x' });
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -97,10 +97,10 @@ describe('DELETE /users/me/push-token', () =>
     const { access_token } = await signupUser(app, '_pushclear');
     const auth = { Authorization: `Bearer ${access_token}` };
 
-    await request(app).post('/users/me/push-token').set(auth).send({ token: 'ExponentPushToken[clear]' });
+    await request(app).post('/api/users/me/push-token').set(auth).send({ token: 'ExponentPushToken[clear]' });
 
-    const first = await request(app).delete('/users/me/push-token').set(auth);
-    const second = await request(app).delete('/users/me/push-token').set(auth);
+    const first = await request(app).delete('/api/users/me/push-token').set(auth);
+    const second = await request(app).delete('/api/users/me/push-token').set(auth);
 
     expect(first.body.success).toBe(true);
     expect(second.body.success).toBe(true);
@@ -108,7 +108,7 @@ describe('DELETE /users/me/push-token', () =>
 
   it('fails with unauthorized with no token', async () =>
   {
-    const res = await request(app).delete('/users/me/push-token');
+    const res = await request(app).delete('/api/users/me/push-token');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(false);
@@ -124,12 +124,12 @@ describe('push delivery does not block message sending', () =>
     const recipient = await signupUser(app, '_pushrecipient');
 
     await request(app)
-      .post('/users/me/push-token')
+      .post('/api/users/me/push-token')
       .set('Authorization', `Bearer ${recipient.access_token}`)
       .send({ token: 'ExponentPushToken[definitely-invalid-and-unreachable]' });
 
     const res = await request(app)
-      .post(`/chat/${recipient.user_id}`)
+      .post(`/api/chat/${recipient.user_id}`)
       .set('Authorization', `Bearer ${sender.access_token}`)
       .send({ content: 'this should still succeed even if the push fails' });
 

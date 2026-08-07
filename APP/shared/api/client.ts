@@ -87,7 +87,7 @@ export function createApiClient(
                     return null;
                 }
 
-                const { data } = await axios.post(`${baseURL}/auth/refresh`, { refresh_token: stored });
+                const { data } = await axios.post(`${baseURL}/api/auth/refresh`, { refresh_token: stored });
 
                 if (!data.success)
                 {

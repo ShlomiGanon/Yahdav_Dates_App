@@ -29,7 +29,7 @@ export function useAutoLogin() {
       try {
         const { access, refresh } = await loadTokens();
         if (access && refresh) {
-          const { data } = await api.get<ApiEnvelope & User>('/auth/me');
+          const { data } = await api.get<ApiEnvelope & User>('/api/auth/me');
           if (data.success) {
             setUser({ user_id: data.user_id, email: data.email, username: data.username, is_admin: data.is_admin });
           } else {

@@ -8,7 +8,7 @@ export function Topbar() {
 
   async function handleLogout() {
     await logout();
-    navigate('/login', { replace: true });
+    navigate('/admin/login', { replace: true });
   }
 
   return (

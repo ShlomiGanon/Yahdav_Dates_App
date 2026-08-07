@@ -12,5 +12,9 @@ export function RedirectIfAuthed() {
     );
   }
 
-  return user ? <Navigate to="/admin/users" replace /> : <Outlet />;
+  // Same is_admin check as RequireAuth — without it, a demoted admin whose
+  // session still restores via /api/auth/refresh (user truthy, is_admin
+  // false) would bounce forever: redirected away from /admin/login here,
+  // then straight back to it by RequireAuth.
+  return user?.is_admin ? <Navigate to="/admin/users" replace /> : <Outlet />;
 }

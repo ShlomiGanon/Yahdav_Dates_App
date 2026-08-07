@@ -29,10 +29,10 @@ logic package that isn't a runtime service of its own:
            │               │                   │
            ▼               ▼                   ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│           Backend — Node.js 20 + Express 4 + TypeScript               │
+│           Backend — Node.js 22 + Express 4 + TypeScript               │
 │                                                                        │
-│  /auth/*       /users/*      /chat/*      /admin/*                    │
-│  /uploads/:f   ws:/ws?token= (WebSocket endpoint)                     │
+│  /api/auth/*   /api/users/*  /api/chat/*  /api/admin/*                │
+│  /api/uploads/:f  ws:/ws?token= (WebSocket endpoint)                  │
 │                                                                        │
 │  ┌──────────────┐    ┌───────────────────────────────────┐           │
 │  │  SQLite WAL  │    │  data/uploads/  (photo files)      │           │
@@ -96,7 +96,7 @@ SECTION_REGISTRY → Sidebar nav items + React Router routes
 
 Adding a new admin section = create one folder under `src/sections/`, add one entry to `_registry.ts`. No other files change.
 
-**Auth:** Access token in React state; refresh token in `localStorage`. On page reload the interceptor silently calls `/auth/refresh` to restore the session. On 401 it retries once, then forces logout.
+**Auth:** Access token in React state; refresh token in `localStorage`. On page reload the interceptor silently calls `/api/auth/refresh` to restore the session. On 401 it retries once, then forces logout.
 
 **RTL:** `<html dir="rtl">` in `index.html` — Tailwind CSS flips layout automatically.
 
@@ -176,18 +176,18 @@ No screen calls `axios` directly — all network calls go through `api/users.ts`
 All three client apps share the same token pair shape. The backend issues both; mobile, web, and admin each consume them independently, storing them wherever fits their own platform (Expo SecureStore, `sessionStorage`/`localStorage`, and React state/`localStorage` respectively).
 
 ```
-POST /auth/login { identifier, password }
+POST /api/auth/login { identifier, password }
   ← { access_token (15 min JWT), refresh_token (30 day JWT) }
 
-POST /auth/refresh { refresh_token }
+POST /api/auth/refresh { refresh_token }
   ← { access_token, refresh_token }   ← token is rotated (old one revoked)
 
-POST /auth/logout { refresh_token }
+POST /api/auth/logout { refresh_token }
   ← 204
 ```
 
 Every protected request sends `Authorization: Bearer <access_token>`.  
-When the access token expires, each client's axios interceptor (mobile, web, and admin all have one) automatically calls `/auth/refresh`, then retries the original request — transparent to the screen/page. The backend never uses HTTP 401 for this; it always answers 200 with `{success:false, error:'unauthorized'}` in the body, which is what each interceptor actually checks for.
+When the access token expires, each client's axios interceptor (mobile, web, and admin all have one) automatically calls `/api/auth/refresh`, then retries the original request — transparent to the screen/page. The backend never uses HTTP 401 for this; it always answers 200 with `{success:false, error:'unauthorized'}` in the body, which is what each interceptor actually checks for.
 
 Admin-only routes additionally check `is_admin = 1` in the JWT payload. Non-admin users get `403`.
 
@@ -197,23 +197,35 @@ Admin-only routes additionally check `is_admin = 1` in the JWT payload. Non-admi
 
 | Prefix | Who uses it | What it does |
 |--------|-------------|--------------|
-| `POST /auth/*` | Mobile + Web + Admin | Signup, login, refresh, logout |
-| `GET/PUT /users/me` | Mobile + Web | Read/update own profile |
-| `POST /users/me/photo` | Mobile + Web | Upload/replace the main profile photo |
-| `POST /users/me/photos` | Mobile + Web | Upload extra photos |
-| `GET /users/discover` | Mobile + Web | Paginated candidate feed |
-| `GET /users/:id` | Mobile + Web | Read peer profile |
-| `POST /users/:id/block` | Mobile + Web | Block a user |
-| `POST /users/me/push-token` | Mobile | Register Expo push token after login (mobile-only feature — no web push) |
-| `GET /chat/conversations` | Mobile + Web | Conversation thread list |
-| `GET /chat/:peer_id` | Mobile + Web | Message history (cursor-paginated) |
-| `POST /chat/:peer_id` | Mobile + Web | Send message (REST fallback if the WebSocket send fails) |
-| `PUT /chat/:peer_id/read` | Mobile + Web | Mark thread as read |
-| `GET /admin/users` | Admin | Paginated user list with search |
-| `GET /admin/users/:id` | Admin | Full user detail |
-| `PUT /admin/users/:id/status` | Admin | Change user status |
-| `DELETE /admin/users/:id` | Admin | Delete user |
-| `GET /uploads/:filename` | Mobile + Web + Admin | Serve uploaded photo files |
+| `POST /api/auth/*` | Mobile + Web + Admin | Signup, login, refresh, logout |
+| `GET/PUT /api/users/me` | Mobile + Web | Read/update own profile |
+| `POST /api/users/me/photo` | Mobile + Web | Upload/replace the main profile photo |
+| `POST /api/users/me/photos` | Mobile + Web | Upload extra photos |
+| `GET /api/users/discover` | Mobile + Web | Paginated candidate feed |
+| `GET /api/users/:id` | Mobile + Web | Read peer profile |
+| `POST /api/users/:id/block` | Mobile + Web | Block a user |
+| `POST /api/users/me/push-token` | Mobile | Register Expo push token after login (mobile-only feature — no web push) |
+| `GET /api/chat/conversations` | Mobile + Web | Conversation thread list |
+| `GET /api/chat/:peer_id` | Mobile + Web | Message history (cursor-paginated) |
+| `POST /api/chat/:peer_id` | Mobile + Web | Send message (REST fallback if the WebSocket send fails) |
+| `PUT /api/chat/:peer_id/read` | Mobile + Web | Mark thread as read |
+| `GET /api/admin/users` | Admin | Paginated user list with search |
+| `GET /api/admin/users/:id` | Admin | Full user detail |
+| `PUT /api/admin/users/:id/status` | Admin | Change user status |
+| `DELETE /api/admin/users/:id` | Admin | Delete user |
+| `GET /api/uploads/:filename` | Mobile + Web + Admin | Serve uploaded photo files |
+| `GET /api/health` | — | Uptime check, `{ ok: true }` |
+
+Every backend endpoint lives under `/api/*` — composed in one router,
+`backend/src/routes/api.routes.ts`, mounted at `/api` in `app.ts`. This
+became necessary once the backend started also serving the web and admin
+frontends as static files from this same origin (see the CD pipeline in
+`.github/workflows/release.yml`): the admin dashboard's own page routes
+(`/admin/users`, `/admin/users/:id`) and web's own chat page route
+(`/chat/:peer_id`) were string-identical to API paths that used to live
+at root, which broke SPA-refresh behavior on those exact pages.
+Namespacing the whole API under `/api` avoided that class of collision
+permanently rather than resolving it prefix-by-prefix.
 
 ---
 
@@ -250,7 +262,7 @@ Server → Mobile:
 After login (mobile):
   requestPermissionsAsync()
   → getExpoPushTokenAsync()
-  → POST /users/me/push-token { token, platform }
+  → POST /api/users/me/push-token { token, platform }
 
 When a message is sent and recipient is offline (server):
   POST https://exp.host/--/api/v2/push/send
@@ -262,7 +274,7 @@ On notification tap (mobile):
   Works for: foreground tap, background tap, cold-start tap
 
 On logout (mobile):
-  DELETE /users/me/push-token  (parallel with POST /auth/logout)
+  DELETE /api/users/me/push-token  (parallel with POST /api/auth/logout)
 ```
 
 ---
@@ -274,7 +286,7 @@ On logout (mobile):
 ```
 Mobile                          Backend                        SQLite
   │                                │                              │
-  ├─ POST /auth/signup ────────────►                              │
+  ├─ POST /api/auth/signup ────────►                              │
   │                                ├─ bcrypt hash password ──────►│ insert auth_credentials
   │                                ├─ create user_profiles row ──►│
   │                                ├─ issue JWT pair ─────────────►│ insert user_sessions
@@ -290,7 +302,7 @@ Mobile                          Backend                        SQLite
 ```
 Mobile                          Backend
   │                                │
-  ├─ GET /users/discover?page=1 ───►
+  ├─ GET /api/users/discover?page=1►
   │   Bearer: access_token         │
   │                                ├─ query user_profiles
   │                                │  WHERE user_id NOT IN blocked list
@@ -302,7 +314,7 @@ Mobile                          Backend
   │                                │
   ├─ user taps row → bottom sheet  │
   ├─ user taps "פרופיל מלא"        │
-  ├─ GET /users/:peer_id ──────────►
+  ├─ GET /api/users/:peer_id ──────►
   │◄─ { name, bio, photos, ... } ──┤
 ```
 
@@ -436,7 +448,7 @@ cp .env.example .env     # fill in JWT_SECRET at minimum
 npm run dev              # tsx watch — restarts on file change
 ```
 
-Runs on `http://localhost:3000`. Health check: `GET /health` → `{ ok: true }`.
+Runs on `http://localhost:3000`. Health check: `GET /api/health` → `{ ok: true }`.
 
 ### 2 — Start the admin dashboard
 
@@ -544,7 +556,7 @@ stores:
 | Mobile brace style (code quality) | Standardize Allman brace style across the entire mobile codebase — currently inconsistent (most of `mobile/src` is K&R-brace) despite `architecture.md` listing "Allman brace style throughout" as a project-wide leading principle. |
 | Server | Provision server, domain (`yahdav.app`), SSL, nginx |
 | Backend deploy | Install Node.js + PM2 on server, deploy backend |
-| Backend hardening | No rate limiting (e.g. on `/auth/*`) and no security-headers middleware (e.g. `helmet`) are wired into `app.ts` yet |
+| Backend hardening | No rate limiting (e.g. on `/api/auth/*`) and no security-headers middleware (e.g. `helmet`) are wired into `app.ts` yet |
 | Admin deploy | Build admin `dist/`, configure nginx on server |
 | Web deploy | Build web `dist/`, configure nginx/static hosting on server |
 | Admin account | No seed/bootstrap script exists yet — create the first `is_admin = 1` account by hand in the production DB |
@@ -553,4 +565,4 @@ stores:
 | Android | Create Google Play account, build + submit Android app |
 | Device testing | RTL, push, WebSocket, deep links |
 | Backups | Set up daily SQLite backup to off-server storage |
-| Monitoring | Set up uptime monitoring + alerts for `/health` |
+| Monitoring | Set up uptime monitoring + alerts for `/api/health` |

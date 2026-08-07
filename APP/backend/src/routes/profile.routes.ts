@@ -90,7 +90,7 @@ router.post('/me/photo', handleUpload, (req: Request, res: Response): void => {
   const existing = ProfileModel.getMyProfile(sub);
   if (existing?.photo_url) deleteFileByUrl(existing.photo_url);
 
-  const url = `/uploads/${req.file.filename}`;
+  const url = `/api/uploads/${req.file.filename}`;
   ProfileModel.setMainPhoto(sub, url);
   ok(res, { photo_url: url }, 'התמונה הועלתה בהצלחה');
 });
@@ -107,12 +107,12 @@ router.post('/me/photos', handleUpload, (req: Request, res: Response): void => {
   const { sub } = (req as AuthRequest).user;
 
   if (ProfileModel.countPhotos(sub) >= 4) {
-    deleteFileByUrl(`/uploads/${req.file.filename}`);
+    deleteFileByUrl(`/api/uploads/${req.file.filename}`);
     fail(res, 'photo_limit_reached');
     return;
   }
 
-  const url = `/uploads/${req.file.filename}`;
+  const url = `/api/uploads/${req.file.filename}`;
   const photo = ProfileModel.addPhoto(sub, url);
   ok(res, { ...photo }, 'התמונה נוספה בהצלחה');
 });

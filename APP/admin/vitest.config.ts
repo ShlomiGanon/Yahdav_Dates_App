@@ -9,6 +9,7 @@ export default defineConfig({
       // the matching note in APP/web/vitest.config.ts for why.
       'axios-mock-adapter': `${import.meta.dirname}/node_modules/axios-mock-adapter`,
       '@testing-library/react': `${import.meta.dirname}/node_modules/@testing-library/react`,
+      react: `${import.meta.dirname}/node_modules/react`,
     },
   },
   // Test files live outside this package — Vite's dev server otherwise

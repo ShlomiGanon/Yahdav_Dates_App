@@ -67,6 +67,11 @@ APP/mobile/.expo/
 APP/backend/uploads/
 uploads/
 
+# Built web/admin bundles the backend serves same-origin (see
+# backend/src/utils/mountSpa.ts) — populated by the release package or a
+# manual local build, same category as dist/ above, never source.
+APP/backend/public/
+
 
 # -----------------------------------------------------------------------------
 # 6. Secrets & environment configuration

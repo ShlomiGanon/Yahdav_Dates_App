@@ -90,7 +90,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         localStorage.setItem('refresh_token', 'valid-refresh');
 
         let refreshCalls = 0;
-        mock.onPost('/auth/refresh').reply(() =>
+        mock.onPost('/api/auth/refresh').reply(() =>
         {
             refreshCalls += 1;
             return [200, { success: true, message: 'ok', access_token: 'fresh-token', refresh_token: 'new-refresh' }];
@@ -121,7 +121,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         localStorage.setItem('refresh_token', 'valid-refresh');
 
         let refreshCalls = 0;
-        mock.onPost('/auth/refresh').reply(async () =>
+        mock.onPost('/api/auth/refresh').reply(async () =>
         {
             refreshCalls += 1;
             await new Promise((resolve) => setTimeout(resolve, 20));
@@ -159,7 +159,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
 
         expect(res.data.success).toBe(false);
         expect(tokenStore.get()).toBeNull();
-        expect(window.location.href).toBe('/login');
+        expect(window.location.href).toBe('/admin/login');
     });
 
     it('clears tokens when the refresh call fails at the network level', async () =>
@@ -167,7 +167,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         tokenStore.set('expired-token');
         localStorage.setItem('refresh_token', 'also-invalid');
 
-        mock.onPost('/auth/refresh').networkError();
+        mock.onPost('/api/auth/refresh').networkError();
         mock.onGet('/protected').reply(200, { success: false, message: 'יש להתחבר מחדש', error: 'unauthorized' });
 
         const res = await api.get('/protected');
@@ -191,7 +191,7 @@ describe('response interceptor — auto-refresh on {success:false, error:"unauth
         tokenStore.set('expired-token');
         localStorage.setItem('refresh_token', 'expired-refresh-too');
 
-        mock.onPost('/auth/refresh').reply(200, {
+        mock.onPost('/api/auth/refresh').reply(200, {
             success: false, message: 'ההתחברות פגה, יש להתחבר מחדש', error: 'session_expired',
         });
         mock.onGet('/protected').reply(200, { success: false, message: 'יש להתחבר מחדש', error: 'unauthorized' });
