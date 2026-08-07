@@ -18,9 +18,10 @@ internet instead of `localhost`.
 
 - A VM/server running Ubuntu LTS (or your distribution of choice) with a
   public IP address.
-- **Node.js 22** installed (matches `APP/project.md`'s Technology Stack
-  table — install via [NodeSource](https://github.com/nodesource/distributions)
-  or your distro's preferred method, not covered here since it varies).
+- **Node.js 22** installed (matches `docs/ARCHITECTURE.md`'s Technology
+  Stack table at the project root — install via
+  [NodeSource](https://github.com/nodesource/distributions) or your
+  distro's preferred method, not covered here since it varies).
 - A registered domain, e.g. `your-domain.example.com`, with its DNS **A
   record pointed at the server's public IP**. Propagation can take a
   while — confirm with `dig your-domain.example.com` before continuing.

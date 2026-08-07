@@ -3,7 +3,7 @@
 This guide covers running a packaged release (`yahdav-server-<version>.zip`,
 built by `.github/workflows/release.yml`) on your own machine. It does not
 cover running the backend from source for development — see the root
-`APP/project.md` "Running Locally" section for that.
+`README.md` "Running locally" section for that.
 
 For deploying this same package to a real remote server instead, see
 `REMOTE_SETUP.md` in this folder.
@@ -34,7 +34,7 @@ always starting from a clean slate.
 ## 1 — Prerequisites
 
 - **Node.js 22** (matches what CI builds and tests against — see
-  `APP/project.md`'s Technology Stack table).
+  `docs/ARCHITECTURE.md`'s Technology Stack table at the project root).
 
 ## 2 — Extract and install dependencies
 
@@ -95,8 +95,8 @@ Then, in a browser:
 
 ## 6 — Create the first admin account
 
-There's no bootstrap script for this yet (tracked in `APP/project.md`'s
-"What Is Left To Do"). Sign up a normal account first — through the web
+There's no bootstrap script for this yet (tracked in `docs/BACKLOG.md`
+at the project root). Sign up a normal account first — through the web
 app, or directly:
 
 ```
@@ -118,7 +118,7 @@ Restart the server and log into `/admin` with that account.
 
 You shouldn't normally need to — `release.yml` does this on every GitHub
 Release. If you want to reproduce the package locally from source instead
-of downloading a release asset, see `APP/project.md`'s "Running Locally"
-section for how to build each of `backend`, `web`, and `admin`
+of downloading a release asset, see the root `README.md`'s "Running
+locally" section for how to build each of `backend`, `web`, and `admin`
 individually, then copy `web/dist/` → `public/web/` and `admin/dist/` →
 `public/admin/` under the backend's own folder before starting it.
