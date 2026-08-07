@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { AUTH_FLOW_EVENTS } from '@shared/flow/authFlow';
 import { clientMessage } from '@shared/copy/client';
 import { validateLoginForm } from '@shared/validation/credentials';
+import { APP_NAME } from '@shared/config';
 import { useAuth } from '../auth/AuthContext';
 import { WEB_DESTINATIONS } from '../auth/destinations';
 import { Button } from '../components/Button';
@@ -57,7 +58,7 @@ export function LoginPage()
             <div className="w-full max-w-sm bg-surface rounded-card p-8 shadow-lg">
 
                 <h1 className="text-3xl font-bold text-center text-secondary mb-8">
-                    יחדיו
+                    {APP_NAME}
                 </h1>
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>

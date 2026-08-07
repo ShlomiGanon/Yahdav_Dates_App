@@ -4,6 +4,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': `${import.meta.dirname}/src`,
+      '@shared': `${import.meta.dirname}/../shared`,
       // Test files live outside this package (APP/tests/admin), so a bare
       // import of a test-only devDependency needs an explicit alias — see
       // the matching note in APP/web/vitest.config.ts for why.

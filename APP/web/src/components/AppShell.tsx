@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import { PAGE_ROUTES } from '../pages/routes';
 import { useAuth } from '../auth/AuthContext';
 import { WEB_DESTINATIONS } from '../auth/destinations';
+import { APP_NAME } from '@shared/config';
 
 interface Props
 {
@@ -44,7 +45,7 @@ export function AppShell({ children }: Props)
     return (
         <div className="min-h-screen bg-background flex">
             <aside className="w-64 shrink-0 flex flex-col gap-1 p-6 border-e border-black/20">
-                <h1 className="text-white text-xl font-bold mb-6 px-2">יחדיו</h1>
+                <h1 className="text-white text-xl font-bold mb-6 px-2">{APP_NAME}</h1>
 
                 <nav className="flex flex-col gap-1">
                     {NAV_ITEMS.map((item) => (

@@ -3,6 +3,7 @@ import { Button } from '../components/Button';
 import { PAGE_ROUTES } from './routes';
 import heroImage from '../assets/hero.png';
 import { clientMessage } from '@shared/copy/client';
+import { APP_NAME } from '@shared/config';
 
 export function WelcomePage()
 {
@@ -18,7 +19,7 @@ export function WelcomePage()
                 />
 
                 <div className="bg-surface rounded-card p-8 shadow-lg text-center">
-                    <h1 className="text-3xl font-bold text-secondary mb-2">יחדיו</h1>
+                    <h1 className="text-3xl font-bold text-secondary mb-2">{APP_NAME}</h1>
                     <p className="text-secondary opacity-70 mb-8">
                         המקום להכיר אנשים חדשים ולבנות קשר אמיתי.
                     </p>

@@ -144,3 +144,74 @@ describe('createApiClient — concurrent-refresh race', () =>
         expect(storage.applyRefreshedTokens).toHaveBeenCalledWith('new-access', 'new-refresh');
     });
 });
+
+// Pins setBaseURL — added for mobile's dev-build runtime server-URL gate
+// (see mobile/src/components/ServerUrlGate.tsx). Only mobile ever calls
+// this; web and admin's baseURL never changes after construction.
+describe('createApiClient — setBaseURL', () =>
+{
+    function fakeTokenStorage(refreshToken: string | null = 'stored-refresh-token'): ApiTokenStorage
+    {
+        return {
+            getAccessToken:  () => null,
+            getRefreshToken: () => refreshToken,
+            applyRefreshedTokens: jest.fn(),
+            clear: jest.fn(),
+        };
+    }
+
+    afterEach(() =>
+    {
+        jest.restoreAllMocks();
+    });
+
+    it('updates client.defaults.baseURL', () =>
+    {
+        const { client, setBaseURL } = createApiClient('http://old.test', fakeTokenStorage(), jest.fn());
+
+        expect(client.defaults.baseURL).toBe('http://old.test');
+
+        setBaseURL('http://new.test');
+
+        expect(client.defaults.baseURL).toBe('http://new.test');
+    });
+
+    // The bug setBaseURL exists to fix: performRefresh's raw axios.post
+    // call closes over the baseURL *parameter*, entirely separate from
+    // client.defaults.baseURL. A setBaseURL that only touched the client's
+    // defaults would leave this call silently posting to the old server
+    // forever.
+    it('performRefresh posts to the new URL after setBaseURL is called, not the old one', async () =>
+    {
+        const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({
+            data: { success: true, access_token: 'a', refresh_token: 'r', user_id: 'u1', email: 'a@b.com', username: 'a', is_admin: false },
+        });
+
+        const { performRefresh, setBaseURL } = createApiClient('http://old.test', fakeTokenStorage(), jest.fn());
+
+        setBaseURL('http://new.test');
+        await performRefresh();
+
+        expect(postSpy).toHaveBeenCalledWith('http://new.test/api/auth/refresh', expect.anything());
+        expect(postSpy).not.toHaveBeenCalledWith('http://old.test/api/auth/refresh', expect.anything());
+    });
+
+    it('a refresh already in flight when setBaseURL is called still resolves normally (no crash, no lost update)', async () =>
+    {
+        let resolveCall: (value: unknown) => void;
+        const pending = new Promise((resolve) => { resolveCall = resolve; });
+        jest.spyOn(axios, 'post').mockReturnValue(pending as Promise<unknown>);
+
+        const { performRefresh, setBaseURL } = createApiClient('http://old.test', fakeTokenStorage(), jest.fn());
+
+        const inFlight = performRefresh();
+        await Promise.resolve();
+        setBaseURL('http://new.test');
+
+        resolveCall!({
+            data: { success: true, access_token: 'a', refresh_token: 'r', user_id: 'u1', email: 'a@b.com', username: 'a', is_admin: false },
+        });
+
+        await expect(inFlight).resolves.toEqual({ user_id: 'u1', email: 'a@b.com', username: 'a', is_admin: false });
+    });
+});

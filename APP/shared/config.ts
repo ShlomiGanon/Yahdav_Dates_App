@@ -1,3 +1,9 @@
+// The product's display name — was hand-copied as a raw string literal in
+// web (index.html, AppShell.tsx, LoginPage.tsx, WelcomePage.tsx) and admin
+// (index.html, LoginPage.tsx, Sidebar.tsx). Admin's own "ניהול" suffix
+// stays local to admin — only the app name itself lives here.
+export const APP_NAME = 'יחדיו';
+
 // The default backend URL, used whenever a platform doesn't set its own
 // override (VITE_API_BASE_URL on web, EXPO_PUBLIC_API_BASE_URL on mobile).
 // Before this existed, both axios clients hand-copied the same

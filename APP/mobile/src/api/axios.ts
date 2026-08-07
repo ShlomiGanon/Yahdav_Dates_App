@@ -11,7 +11,7 @@ export function setOnAuthFailure(cb: () => void): void {
   authFailureCallback = cb;
 }
 
-const { client, performRefresh } = createApiClient(
+const { client, performRefresh, setBaseURL } = createApiClient(
   BASE_URL,
   {
     getAccessToken,
@@ -23,4 +23,4 @@ const { client, performRefresh } = createApiClient(
 );
 
 export const api = client;
-export { performRefresh };
+export { performRefresh, setBaseURL };

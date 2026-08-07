@@ -23,13 +23,13 @@ jobs:
   # CI against — this is the gate that stops that from silently shipping.
   verify-tests-passed:
     # Pre-releases don't build a package — this isn't a failure, so the job
-    # is skipped rather than made to fail. build-web, build-admin, and
-    # build-android all `need` this job directly; build-server `need`s
-    # build-web + build-admin instead (for their artifacts), not this job
-    # directly, but GitHub Actions skips a job whose dependency was skipped
-    # (not run at all) rather than treating that as a failure — so skipping
-    # here propagates through that chain too, quietly skipping the whole
-    # workflow for a pre-release.
+    # is skipped rather than made to fail. build (the build-shared.yml
+    # call) and build-android both `need` this job directly; publish-server
+    # `need`s build instead, not this job directly. GitHub Actions skips a
+    # job whose dependency was skipped (not run at all) rather than
+    # treating that as a failure — so skipping here propagates through
+    # that whole chain, quietly skipping the entire workflow for a
+    # pre-release.
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-latest
     outputs:
@@ -61,131 +61,29 @@ jobs:
             exit 1
           fi
 
-  # Web build, on its own so it can run in parallel with build-admin.
-  # Uploads dist/ as an artifact for build-server to assemble later.
-  build-web:
+  # Web, admin, and the server ZIP — built by the reusable workflow shared
+  # with release-dev.yml. Produces artifacts only; publishing to this
+  # specific Release happens in publish-server below.
+  build:
     needs: verify-tests-passed
-    runs-on: ubuntu-latest
-    outputs:
-      commit_sha: ${{ needs.verify-tests-passed.outputs.commit_sha }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.verify-tests-passed.outputs.commit_sha }}
+    uses: ./.github/workflows/build-shared.yml
+    with:
+      ref:     ${{ needs.verify-tests-passed.outputs.commit_sha }}
+      version: ${{ github.event.release.tag_name }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      # web imports from ../shared (via the @shared alias) at build time —
-      # only its node_modules are needed (axios, date-fns), not a compiled
-      # dist/: Vite transpiles shared's .ts source directly.
-      - name: Install shared's dependencies
-        working-directory: APP/shared
-        run: npm ci
-
-      - name: Install and build web
-        working-directory: APP/web
-        run: |
-          npm ci
-          npm run build
-
-      - name: Upload web build output
-        uses: actions/upload-artifact@v4
-        with:
-          name: web-dist
-          path: APP/web/dist
-
-  # Admin build, on its own so it can run in parallel with build-web. Admin
-  # doesn't import from shared at all, so no shared install step is needed.
-  build-admin:
-    needs: verify-tests-passed
-    runs-on: ubuntu-latest
-    outputs:
-      commit_sha: ${{ needs.verify-tests-passed.outputs.commit_sha }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.verify-tests-passed.outputs.commit_sha }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install and build admin
-        working-directory: APP/admin
-        run: |
-          npm ci
-          npm run build
-
-      - name: Upload admin build output
-        uses: actions/upload-artifact@v4
-        with:
-          name: admin-dist
-          path: APP/admin/dist
-
-  # Server package: compiled backend + build-web's/build-admin's already-
-  # built frontends (downloaded as artifacts) as static bundles under
-  # public/web and public/admin, plus the setup docs — zipped and attached
-  # to the Release. See APP/backend/docs/LOCAL_SETUP.md for what a
-  # consumer of this artifact actually does with it.
-  build-server:
-    needs: [build-web, build-admin]
+  publish-server:
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.build-web.outputs.commit_sha }}
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install shared and build it
-        working-directory: APP/shared
-        run: |
-          npm ci
-          npm run build
-
-      - name: Install and build backend
-        working-directory: APP/backend
-        run: |
-          npm ci
-          npm run build
-
-      - name: Download web build output
+      - name: Download server package artifact
         uses: actions/download-artifact@v4
         with:
-          name: web-dist
-          path: APP/web/dist
-
-      - name: Download admin build output
-        uses: actions/download-artifact@v4
-        with:
-          name: admin-dist
-          path: APP/admin/dist
-
-      - name: Assemble the server package
-        run: |
-          set -eu
-          PKG="yahdav-server-${{ github.event.release.tag_name }}"
-          mkdir -p "$PKG/dist" "$PKG/migrations" "$PKG/docs" "$PKG/public/web" "$PKG/public/admin"
-
-          cp -r APP/backend/dist/.      "$PKG/dist/"
-          cp -r APP/backend/migrations/. "$PKG/migrations/"
-          cp    APP/backend/package.json APP/backend/package-lock.json "$PKG/"
-          cp    APP/backend/.env.example "$PKG/"
-          cp    APP/backend/docs/LOCAL_SETUP.md APP/backend/docs/REMOTE_SETUP.md "$PKG/docs/"
-          cp -r APP/web/dist/.   "$PKG/public/web/"
-          cp -r APP/admin/dist/. "$PKG/public/admin/"
-
-          zip -r "$PKG.zip" "$PKG"
-          echo "PACKAGE_PATH=$PKG.zip" >> "$GITHUB_ENV"
+          name: server-zip
 
       - name: Upload to the Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "$PACKAGE_PATH" --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" "yahdav-server-${{ github.event.release.tag_name }}.zip" --clobber
 
   # Android: unsigned APK, built directly in this runner (no EAS, no
   # signing). See the TODO comments below for what's needed to turn this
@@ -273,7 +171,7 @@ jobs:
   #     distribution certificate and provisioning profile.
   #   - Either:
   #       (a) EAS Build (`eas build --platform ios`) — needs an EXPO_TOKEN
-  #           secret, a real EAS project (mobile/app.json's projectId is
+  #           secret, a real EAS project (mobile/app.config.js's projectId is
   #           still the placeholder REPLACE_WITH_EAS_PROJECT_ID — run
   #           `eas init` first), and the Apple credentials registered with
   #           EAS (`eas credentials`). EAS build artifacts land on Expo's

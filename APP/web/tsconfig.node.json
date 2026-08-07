@@ -9,7 +9,13 @@
     /* Bundler mode */
     "module": "nodenext",
     "allowImportingTsExtensions": true,
-    "verbatimModuleSyntax": true,
+    // Off (was true): vite.config.ts now imports @shared/config.ts (for
+    // APP_NAME) directly, pulling it into this file's own compilation
+    // graph — shared/package.json has no "type": "module", so nodenext
+    // treats shared's .ts files as CommonJS, which verbatimModuleSyntax
+    // then rejects on shared's normal `export const`. This only affects
+    // how vite.config.ts itself is type-checked, not app bundling.
+    "verbatimModuleSyntax": false,
     "moduleDetection": "force",
     "noEmit": true,
 

@@ -1,0 +1,136 @@
+name: Release (Dev)
+
+# Build-and-package only, same as release.yml — never deploys anywhere.
+# Manual only (workflow_dispatch), unlike release.yml's release-triggered
+# flow: there's no GitHub Release object to resolve a commit from here, so
+# this always builds whatever commit the dispatch itself targets
+# (github.sha), with no "Tests already passed" gate — that gate only makes
+# sense against an existing Tests run for an exact commit, and dev builds
+# are meant for fast, on-demand iteration.
+#
+# Server/web/admin are built via the same build-shared.yml reusable
+# workflow release.yml uses — identical to production. The only real
+# difference is the mobile app: EXPO_PUBLIC_RUNTIME_API_URL_ENABLED=true
+# switches on the runtime server-URL gate screen (see
+# APP/mobile/src/components/ServerUrlGate.tsx) and mobile/app.config.js's
+# dev bundle ID / display name, neither of which production ever sets.
+#
+# All artifacts publish to one rolling `dev-latest` pre-release, replacing
+# its assets on every run — see ensure-dev-release below.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+  DEV_RELEASE_TAG: dev-latest
+
+jobs:
+  # Creates the dev-latest pre-release once, if it doesn't exist yet.
+  # publish-server and build-android-dev both upload assets to this same
+  # release and would otherwise race to create it independently on the
+  # very first run (both finding it missing, both trying to create it,
+  # one failing) — depending on this job instead makes that a non-issue.
+  ensure-dev-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create dev-latest pre-release if it doesn't already exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          if gh release view "$DEV_RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "dev-latest already exists — leaving it as-is, assets get replaced by the jobs below."
+          else
+            gh release create "$DEV_RELEASE_TAG" \
+              --repo "${{ github.repository }}" \
+              --title "Dev (rolling)" \
+              --notes "Automatically built and updated by release-dev.yml on every manual run. Not for production use — the API server URL is entered at runtime by whoever installs this build." \
+              --prerelease \
+              --target "${{ github.sha }}"
+          fi
+
+  build:
+    uses: ./.github/workflows/build-shared.yml
+    with:
+      ref:     ${{ github.sha }}
+      version: ${{ env.DEV_RELEASE_TAG }}
+
+  publish-server:
+    needs: [ensure-dev-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download server package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: server-zip
+
+      - name: Upload to the dev-latest Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$DEV_RELEASE_TAG" "yahdav-server-$DEV_RELEASE_TAG.zip" --clobber
+
+  # Android: unsigned APK, built directly in this runner — same mechanism
+  # as release.yml's build-android, but with the runtime-URL gate switched
+  # on and the dev bundle ID/display name (via mobile/app.config.js).
+  build-android-dev:
+    needs: ensure-dev-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install shared
+        working-directory: APP/shared
+        run: npm ci
+
+      - name: Install mobile dependencies
+        working-directory: APP/mobile
+        run: npm ci
+
+      # This is the one flag that distinguishes a dev build from a
+      # production build at the JS level — read by mobile/app.config.js
+      # (bundle ID / display name) and by the app itself at runtime (the
+      # ServerUrlGate). release.yml's build-android never sets this.
+      - name: Generate the native Android project (dev configuration)
+        working-directory: APP/mobile
+        env:
+          EXPO_PUBLIC_RUNTIME_API_URL_ENABLED: 'true'
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Build the unsigned APK
+        working-directory: APP/mobile/android
+        run: ./gradlew assembleRelease
+
+      # Same dynamic lookup as release.yml's build-android — see that
+      # file's comment for why this doesn't hardcode the output path.
+      - name: Locate and rename the APK
+        working-directory: APP/mobile/android
+        run: |
+          set -eu
+          APK=$(find app/build/outputs/apk -type f -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::No .apk file found under app/build/outputs/apk — Gradle reported success but produced nothing there. Check the 'Build the unsigned APK' step's output above for the actual output path."
+            exit 1
+          fi
+          echo "Found APK at: $APK"
+          OUT="yahdav-android-$DEV_RELEASE_TAG-unsigned.apk"
+          cp "$APK" "$OUT"
+          echo "APK_PATH=APP/mobile/android/$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload to the dev-latest Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$DEV_RELEASE_TAG" "$APK_PATH" --clobber

@@ -51,7 +51,7 @@ export function createApiClient(
     baseURL:       string,
     tokenStorage:  ApiTokenStorage,
     onAuthFailure: () => void,
-): { client: AxiosInstance; performRefresh: () => Promise<AuthUser | null> }
+): { client: AxiosInstance; performRefresh: () => Promise<AuthUser | null>; setBaseURL: (url: string) => void }
 {
     const client = axios.create({ baseURL });
 
@@ -139,5 +139,19 @@ export function createApiClient(
         return client(original);
     });
 
-    return { client, performRefresh };
+    // Reassigns the baseURL *parameter* itself (never made const above),
+    // not just client.defaults.baseURL — performRefresh's raw axios.post
+    // call closes over that same parameter for its own URL, deliberately
+    // bypassing the interceptor-wired client (see the comment above this
+    // function). Updating only client.defaults.baseURL here would leave
+    // performRefresh silently posting to the old server after a caller
+    // switches servers. Only mobile's dev builds call this — web and
+    // admin's baseURL never changes after construction.
+    function setBaseURL(url: string): void
+    {
+        baseURL = url;
+        client.defaults.baseURL = url;
+    }
+
+    return { client, performRefresh, setBaseURL };
 }
