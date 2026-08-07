@@ -175,6 +175,42 @@ a policy decision on limits, not a design problem.
 
 ---
 
+## Real-time / WebSocket
+
+### Bug: Logout does not close open WebSocket connections, leaving other tabs in an inconsistent state
+**Context:** Multiple tabs open with the same logged-in user is
+intentional, supported behavior. When the user logs out from one tab, the
+server should close ALL open WebSocket connections for that user; each tab
+that had an open socket then detects the closure and reacts accordingly.
+
+**Expected behavior after logout:**
+1. Client sends a logout request to the server (`/api/auth/logout`).
+2. Server revokes the refresh token AND closes all open WebSocket
+   connections for that user.
+3. Each client tab detects the socket closure.
+4. Each tab calls `/api/auth/me` (or equivalent) to check whether it's
+   still authenticated.
+5. If still authenticated (e.g. a different user logged in on the same
+   device) → show a notification that the session was closed from another
+   tab.
+6. If not authenticated → redirect to login.
+
+**Current behavior:** Logout only revokes the refresh token — it does not
+close open sockets. Other tabs remain active with an open, authenticated
+WebSocket connection indefinitely.
+
+**Why:** A logged-out session shouldn't leave a live, authenticated
+WebSocket connection behind in other tabs — that's a real inconsistent-state
+bug, not just a cosmetic gap, since those tabs keep acting as if the session
+were still valid until something else (a page reload, an unrelated API
+call) happens to notice otherwise.
+
+**Scope:** Medium.
+**Priority:** High — a logged-out user's WebSocket connections remain open
+and authenticated across tabs.
+
+---
+
 ## Code Quality & Technical Debt
 
 ### `shared/config.ts` triggers a Vite deprecation warning
@@ -218,6 +254,30 @@ citation), but touches ~28 files.
 ### Standardize Allman brace style across the mobile codebase
 See the Mobile & App Store section above — listed there since it's
 mobile-specific, but it's a code-quality item, not a product feature.
+
+---
+
+## UI / UX
+
+### Feature: Show unread message count badge on chat button
+**Description:** On the chat/messages button in both the web app and the
+mobile app, display the number of unread messages in parentheses next to
+the button label — but only when there are unread messages.
+
+**Examples:**
+- No unread messages → show: "הודעות" (no badge)
+- 3 unread messages → show: "הודעות (3)"
+
+**Notes:**
+- The unread count per conversation already exists in the backend
+  (`unread_count` field returned by `GET /api/chat/conversations`).
+- The total unread count should be the sum of `unread_count` across all
+  conversations.
+- Should update in real time when a new message arrives via WebSocket.
+- Should clear (disappear) when the user opens the chat.
+
+**Scope:** Small.
+**Priority:** Low — UI improvement.
 
 ---
 

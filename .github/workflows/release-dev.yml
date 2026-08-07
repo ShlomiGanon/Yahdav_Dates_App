@@ -273,6 +273,17 @@ jobs:
   build-android-dev:
     needs: ensure-dev-release
     runs-on: ubuntu-latest
+    # Job-level (not step-level) on purpose: this must still be set when
+    # Gradle's release build runs later in this job (`./gradlew
+    # assembleRelease`, in the "Build the unsigned APK" step below) — that
+    # step is what actually invokes Metro to bundle the JS, which is where
+    # ServerUrlGate.tsx's process.env.EXPO_PUBLIC_RUNTIME_API_URL_ENABLED
+    # check gets inlined. A step-level env: here would only cover the
+    # "Generate the native Android project" step's own `expo prebuild` call
+    # (native scaffolding only, not JS bundling), leaving the Gradle step
+    # without it and silently baking `undefined` into the bundle instead.
+    env:
+      EXPO_PUBLIC_RUNTIME_API_URL_ENABLED: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -295,14 +306,14 @@ jobs:
         working-directory: APP/mobile
         run: npm ci
 
-      # This is the one flag that distinguishes a dev build from a
-      # production build at the JS level — read by mobile/app.config.js
-      # (bundle ID / display name) and by the app itself at runtime (the
-      # ServerUrlGate). release.yml's build-android never sets this.
+      # EXPO_PUBLIC_RUNTIME_API_URL_ENABLED (set at job level above) is the
+      # one flag that distinguishes a dev build from a production build at
+      # the JS level — read by mobile/app.config.js (bundle ID / display
+      # name) here, and by the app itself at runtime (the ServerUrlGate)
+      # during the Gradle build step below. release.yml's build-android
+      # never sets this.
       - name: Generate the native Android project (dev configuration)
         working-directory: APP/mobile
-        env:
-          EXPO_PUBLIC_RUNTIME_API_URL_ENABLED: 'true'
         run: npx expo prebuild --platform android --non-interactive
 
       - name: Build the unsigned APK
