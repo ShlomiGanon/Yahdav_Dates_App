@@ -234,17 +234,28 @@ jobs:
       #      already scaffolded, commented out, ready to fill in) using the
       #      same secrets as env vars.
       #   4. Gradle will then produce app-release.apk (signed) instead of
-      #      app-release-unsigned.apk — update the "Locate the APK" step
-      #      below to match.
+      #      app-release-unsigned.apk — the "Locate the APK" step below
+      #      finds whatever .apk Gradle actually output, so it shouldn't
+      #      need changing for this; just double-check its OUT filename
+      #      below no longer says "-unsigned".
       - name: Build the unsigned APK
         working-directory: APP/mobile/android
         run: ./gradlew assembleRelease
 
+      # The exact output filename/path under app/build/outputs/apk can shift
+      # (build-type suffixes, product flavors, Expo/AGP version changes) —
+      # search for whatever Gradle actually produced instead of hardcoding
+      # a single guessed path that broke once already.
       - name: Locate and rename the APK
         working-directory: APP/mobile/android
         run: |
           set -eu
-          APK="app/build/outputs/apk/release/app-release-unsigned.apk"
+          APK=$(find app/build/outputs/apk -type f -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "::error::No .apk file found under app/build/outputs/apk — Gradle reported success but produced nothing there. Check the 'Build the unsigned APK' step's output above for the actual output path."
+            exit 1
+          fi
+          echo "Found APK at: $APK"
           OUT="yahdav-android-${{ github.event.release.tag_name }}-unsigned.apk"
           cp "$APK" "$OUT"
           echo "APK_PATH=APP/mobile/android/$OUT" >> "$GITHUB_ENV"
