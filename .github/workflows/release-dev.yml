@@ -59,24 +59,11 @@ env:
   DEV_RELEASE_TAG: dev-latest
 
 jobs:
-<<<<<<< Updated upstream
-  # Creates the dev-latest pre-release once, if it doesn't exist yet, then
-  # always refreshes its notes — build-server and build-android-dev both
-  # upload assets to this same release and would otherwise race to create
-  # it independently on the very first run (both finding it missing, both
-  # trying to create it, one failing) — depending on this job instead makes
-  # that a non-issue.
   # No path filtering here on purpose — every successful CI Tests run on dev
   # always triggers a full build, regardless of which files changed.
   # shared/ changes affect every client (mobile, web, admin, server) and
   # aren't reliably distinguishable from "safe to skip" changes by path
   # alone, so this deliberately never tries to guess.
-=======
-  # Gate: only proceed if the CI Tests run that triggered this workflow
-  # actually passed, and if the commit touched something other than
-  # docs/**, *.md, or .gitignore. Path filtering can't use `on.push.paths`
-  # here since workflow_run doesn't support it — done by hand instead, by
-  # diffing the triggering commit against its parent.
   #
   # Deletes dev-latest (release + tag) if it already exists, then always
   # recreates it fresh from this run's commit. Ensures the release and its
@@ -88,48 +75,6 @@ jobs:
   ensure-dev-release:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.filter.outputs.should_build }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2
-
-      - name: Check whether this commit touches anything beyond docs/**, *.md, .gitignore
-        id: filter
-        run: |
-          set -eu
-          CHANGED=$(git diff --name-only HEAD^ HEAD)
-          echo "Changed files in ${{ github.event.workflow_run.head_sha }}:"
-          echo "$CHANGED"
-
-          SHOULD_BUILD=false
-          while IFS= read -r FILE; do
-            [ -z "$FILE" ] && continue
-            case "$FILE" in
-              docs/*|*.md|.gitignore)
-                ;;
-              *)
-                SHOULD_BUILD=true
-                ;;
-            esac
-          done <<< "$CHANGED"
-
-          echo "should_build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
-          echo "Relevant changes found: $SHOULD_BUILD"
-
-  # Deletes dev-latest (release + tag) if it already exists, then always
-  # recreates it fresh from this run's commit. Ensures the release and its
-  # tag always point cleanly at the latest commit, with no leftover assets
-  # from a previous build lingering on it — build-server and
-  # build-android-dev only ever upload to a release this job already
-  # created, never create one themselves, so there's no race between them
-  # over creation.
->>>>>>> Stashed changes
-  ensure-dev-release:
-    if: github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
     env:
       DEV_RELEASE_NOTES: >-
         Automatically built by release-dev.yml whenever CI Tests passes on
@@ -137,7 +82,6 @@ jobs:
         the API server URL is entered at runtime by whoever installs this
         build.
     steps:
-      - name: Delete existing dev-latest release and tag, if present
       - name: Delete existing dev-latest release and tag, if present
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -151,24 +95,12 @@ jobs:
           fi
 
       - name: Recreate dev-latest pre-release from scratch
-            echo "dev-latest exists — deleting release and tag before recreating."
-            gh release delete "$DEV_RELEASE_TAG" --repo "${{ github.repository }}" --yes --cleanup-tag
-          else
-            echo "dev-latest does not exist yet — nothing to delete."
-          fi
-
-      - name: Recreate dev-latest pre-release from scratch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
           gh release create "$DEV_RELEASE_TAG" \
-          gh release create "$DEV_RELEASE_TAG" \
             --repo "${{ github.repository }}" \
-            --title "Dev (rolling)" \
-            --notes "$DEV_RELEASE_NOTES" \
-            --prerelease \
-            --target "${{ github.event.workflow_run.head_sha }}"
             --title "Dev (rolling)" \
             --notes "$DEV_RELEASE_NOTES" \
             --prerelease \
@@ -177,7 +109,6 @@ jobs:
   # Web build, on its own so it can run in parallel with build-admin.
   # Uploads dist/ as an artifact for build-server to assemble later.
   build-web:
-    if: github.event.workflow_run.conclusion == 'success'
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -212,7 +143,6 @@ jobs:
   # doesn't import from shared at all, so no shared install step is needed.
   build-admin:
     if: github.event.workflow_run.conclusion == 'success'
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -240,7 +170,6 @@ jobs:
   # public/web and public/admin, plus the setup docs — zipped and attached
   # to the dev-latest Release. Waits on ensure-dev-release too (not just
   # build-web/build-admin) so it never races build-android-dev to create
-  # the release. If any of the three is skipped (CI Tests didn't pass),
   # the release. If any of the three is skipped (CI Tests didn't pass),
   # this is skipped automatically too — no explicit if: needed here.
   build-server:
@@ -398,8 +327,6 @@ jobs:
   # Android: unsigned APK, built directly in this runner — same mechanism
   # as release.yml's build-android, but with the runtime-URL gate switched
   # on and the dev bundle ID/display name (via mobile/app.config.js). If
-  # ensure-dev-release is skipped (CI Tests didn't pass), this is skipped
-  # automatically too — no explicit if: needed here.
   # ensure-dev-release is skipped (CI Tests didn't pass), this is skipped
   # automatically too — no explicit if: needed here.
   build-android-dev:
