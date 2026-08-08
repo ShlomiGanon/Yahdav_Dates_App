@@ -1,4 +1,4 @@
-# יחדיו (Yahdav) 
+# יחדיו (Yahdav)
 
 A Hebrew-language, RTL-first Jewish dating app: a Node.js/Express
 backend, a React web app, a React Native (Expo) mobile app, a React
