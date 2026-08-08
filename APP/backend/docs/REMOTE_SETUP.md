@@ -40,17 +40,16 @@ npm install --omit=dev
 
 ## 3 — Configure environment variables
 
-```
-cp .env.example .env
-```
-
-Same variables as `LOCAL_SETUP.md`, with these differences for a remote
-deployment:
+The package already includes a ready-to-run `.env`, pre-filled with
+production-appropriate defaults (`.env.example` alongside it is just the
+blank-slate reference — you don't need to `cp` it over). Open the
+included `.env` before starting the server:
 
 | Variable | What to set |
 |----------|-------------|
-| `JWT_SECRET` | **Yes, required, and must be a real secret** — generate with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`. Never reuse a value that was ever used locally or committed anywhere. |
-| `DOMAIN` | `your-domain.example.com` — informational (see `.env.example`'s comment); used below when writing the nginx config and requesting the SSL certificate. Not read by the app itself. |
+| `JWT_SECRET` | **Yes, required, and must be a real secret.** Ships with an obvious placeholder — generate a real one with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`. Never reuse a value that was ever used locally or committed anywhere. |
+| `DOMAIN` | Ships as `your-domain.example.com` — replace with the real one. Informational only (see the comment above it in `.env`); used below when writing the nginx config and requesting the SSL certificate. Not read by the app itself. |
+| `NODE_ENV` | Ships as `production`. Not read by the app itself. |
 | `ADMIN_CORS_ORIGIN` | Leave as default. This server serves web and admin same-origin (same as local), so cross-origin isn't in play unless you deliberately host one of them elsewhere instead. |
 | `PORT` | Leave at `3000` (default) — nginx proxies the public-facing `443` to this internal port; there's no reason for Node to bind a privileged port directly. |
 
@@ -171,6 +170,11 @@ doesn't go unnoticed.
 pm2 stop yahdav-server
 # extract the new release zip over the old one, but do NOT overwrite:
 #   .env, data/, node_modules/
+# Every release package now ships its own real, pre-filled .env (see step
+# 3) — extracting carelessly over a live deployment would replace your
+# actual configured secrets with the new package's defaults. Extract to a
+# fresh directory instead of on top of the running one if you're not sure
+# your unzip won't clobber existing files.
 cd yahdav-server-<new-version>
 npm install --omit=dev
 pm2 restart yahdav-server

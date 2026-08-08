@@ -495,6 +495,15 @@ entered by the person running the app, at runtime, on every launch:
   version of this method had: updating only the client's defaults left
   refresh calls silently going to the old server after a switch). Web and
   admin never call this method; their base URL is static, as before.
+- The address entered is typically a plain `http://` local-network
+  address, which Android blocks by default (API 28+). `app.config.js`
+  adds the `expo-build-properties` plugin with
+  `android.usesCleartextTraffic: true`, but only inside the same
+  `IS_DEV_BUILD` conditional as everything else on this list — the plugin
+  entry is omitted entirely (not just set to `false`) for a production
+  build, so `expo prebuild` never touches that manifest attribute there.
+  There's no simpler top-level `app.config.js` field for this in SDK 57;
+  `expo-build-properties` is the only supported path.
 
 ### 7.3 Admin Dashboard (`APP/admin/`)
 
@@ -604,10 +613,15 @@ APP/shared/
 **Consumers, and why they differ:** web and mobile import this package's
 `.ts` source directly — their bundlers (Vite, Metro) transpile it
 themselves. The backend is different: it's a `tsc`-compiled Node
-service, so it consumes the real compiled `dist/` output via an npm
-workspace dependency (`APP/package.json` declares `backend` + `shared` as
-workspace members). Run `npm run build` in `shared/` after any source
-change before the backend picks it up.
+service, so it consumes the real compiled `dist/` output as an explicit
+`"@yahdav/shared": "file:../shared"` dependency in `backend/package.json`
+(in addition to `APP/package.json` listing `backend` + `shared` as npm
+workspace members, which is what actually creates the symlink on
+install). Run `npm run build` in `shared/` after any source change before
+the backend picks it up. The release package doesn't rely on that
+workspace symlink at all, since it doesn't survive being unzipped outside
+the monorepo — see §10.4 for how `shared` is vendored into the package
+instead.
 
 **One exception to "consumers import source directly":** web's colors
 don't live in a `.ts` file at all — they're Tailwind `@theme` CSS custom
@@ -729,15 +743,27 @@ directly instead of resolving a tag. Jobs:
   uploads it directly to the `dev-latest` Release (`--clobber`, so it
   replaces the previous run's asset).
 - **`build-android-dev`** — same mechanism as production's
-  `build-android`, but sets `EXPO_PUBLIC_RUNTIME_API_URL_ENABLED=true`
-  before `expo prebuild`, producing the dev bundle ID/display name and
-  runtime server-URL gate described in §7.2.
+  `build-android`, but sets `EXPO_PUBLIC_RUNTIME_API_URL_ENABLED=true`,
+  producing the dev bundle ID/display name and runtime server-URL gate
+  described in §7.2. Set at **job level**, not on the `expo prebuild`
+  step alone — it has to still be set later in the same job when Gradle's
+  release build actually invokes Metro to bundle the JS (`./gradlew
+  assembleRelease`, a separate step), which is where
+  `ServerUrlGate.tsx`'s `process.env.EXPO_PUBLIC_RUNTIME_API_URL_ENABLED`
+  check gets inlined. A step-level `env:` here previously left that later
+  step without the variable, silently baking `undefined` into the bundle
+  and making the gate never appear in the built APK, despite `expo
+  prebuild` itself (and thus the app's name/bundle ID) seeing it
+  correctly.
 
 ### 10.4 What a release package actually contains
 
 ```
 yahdav-server-<version>/
 ├── dist/                 ← compiled backend
+├── shared/                ← compiled @yahdav/shared (dist/ + package.json),
+│                             vendored so the backend can resolve it
+│                             standalone — see the note below
 ├── migrations/           ← versioned SQL, applied automatically on startup
 ├── public/
 │   ├── web/               ← built web app (served at /)
@@ -747,15 +773,40 @@ yahdav-server-<version>/
 │   └── REMOTE_SETUP.md     ← how to deploy it to a real server
 ├── package.json
 ├── package-lock.json
-└── .env.example
+├── .env.example           ← blank-slate reference, untouched
+└── .env                   ← ready to run: every field pre-filled with a
+                              sensible default for this build's context
+                              (production for release.yml, dev/local for
+                              release-dev.yml) — still requires replacing
+                              JWT_SECRET before real use; see LOCAL_SETUP.md
+                              / REMOTE_SETUP.md
 ```
 
 Deliberately **not** included: `node_modules/` (installed by the person
-running it), any real `.env`, any database file, any uploaded photos.
+running it), any database file, any uploaded photos. A real, working
+`.env` *is* included (see above) — this package is meant to run
+immediately after `npm install`, not require hand-authoring config first.
 Full instructions for both scenarios live in
 `APP/backend/docs/LOCAL_SETUP.md` and `REMOTE_SETUP.md` — those two files
 ship inside every release package, which is why they live next to the
 backend rather than in this `docs/` folder.
+
+**Why `shared/` is vendored as a plain folder, not left to the npm
+workspace:** inside the monorepo, the backend resolves `@yahdav/shared`
+through `backend/package.json`'s own `"@yahdav/shared": "file:../shared"`
+dependency (an explicit declaration — earlier versions of this package
+relied on implicit npm-workspace linking with no declared dependency at
+all, which broke the moment the ZIP was extracted outside the monorepo:
+`npm install` prunes anything on disk that isn't declared). That
+`file:../shared` path is correct for the repo, but doesn't exist once
+this package is unzipped standalone. The "Assemble the server package"
+step in both `release.yml` and `release-dev.yml` copies `shared`'s
+compiled output to `shared/` inside the package and rewrites the shipped
+`package.json`/`package-lock.json`'s path from `../shared` to `./shared`
+to match. `npm install --omit=dev` then symlinks
+`node_modules/@yahdav/shared → ./shared`, same mechanism as the
+monorepo's workspace link, just pointed at a folder that actually ships
+with the package.
 
 ---
 
@@ -765,6 +816,7 @@ backend rather than in this `docs/` folder.
 
 | Variable | Required | Default | Purpose |
 |----------|----------|---------|---------|
+| `NODE_ENV` | No | — | Not read by the app anywhere; set by convention (`production` / `development`) for tooling/process managers that check it |
 | `PORT` | No | `3000` | HTTP listen port |
 | `DB_PATH` | No | `data/yahdav.sqlite3` | SQLite file path |
 | `UPLOADS_DIR` | No | `data/uploads` | Photo upload directory |

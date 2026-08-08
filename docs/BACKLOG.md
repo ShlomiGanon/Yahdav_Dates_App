@@ -60,23 +60,6 @@ them against a real off-server target.
 **Why:** Nothing currently notices if the server goes down.
 **Scope:** Small.
 
-### Fix the backend's missing workspace-symlink install step in CI
-**What:** `test.yml`'s `backend` job runs a second `npm ci` at the
-workspace root (`working-directory: APP`) specifically to create the
-`@yahdav/shared` npm-workspace symlink that a plain `npm ci` inside
-`APP/backend` alone doesn't produce. Neither `release.yml`'s nor
-`release-dev.yml`'s `build-server` job does this.
-**Why:** It hasn't caused an observed failure yet, because `tsc`
-apparently doesn't need the real symlink to type-check against
-`shared`'s `.d.ts` output — only an actual `require()` at runtime would.
-Since CI only builds and packages the backend (never runs it), this gap
-is latent, not active. It's still a real, first-hand-confirmed
-inconsistency between two CI paths that both need to resolve
-`@yahdav/shared`, and worth closing before it causes a confusing failure
-somewhere less obvious.
-**Scope:** Small — add one more `npm ci` step, matching `test.yml`'s
-existing pattern.
-
 ---
 
 ## Mobile & App Store

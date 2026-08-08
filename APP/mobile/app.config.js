@@ -71,6 +71,17 @@ module.exports = {
           sounds: [],
         },
       ],
+      // Dev build only — lets the ServerUrlGate screen (see
+      // src/components/ServerUrlGate.tsx) hit a plain http:// address on
+      // the local network. Android blocks cleartext traffic by default
+      // (API 28+), and there is no top-level app.config.js field for this
+      // in SDK 57 — usesCleartextTraffic must go through
+      // expo-build-properties. Omitted entirely for production, so its
+      // build keeps the platform default (cleartext blocked) exactly as
+      // before this plugin existed.
+      ...(IS_DEV_BUILD
+        ? [['expo-build-properties', { android: { usesCleartextTraffic: true } }]]
+        : []),
     ],
 
     extra: {
