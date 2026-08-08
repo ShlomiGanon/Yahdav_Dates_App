@@ -59,6 +59,7 @@ env:
   DEV_RELEASE_TAG: dev-latest
 
 jobs:
+<<<<<<< Updated upstream
   # Creates the dev-latest pre-release once, if it doesn't exist yet, then
   # always refreshes its notes — build-server and build-android-dev both
   # upload assets to this same release and would otherwise race to create
@@ -70,6 +71,62 @@ jobs:
   # shared/ changes affect every client (mobile, web, admin, server) and
   # aren't reliably distinguishable from "safe to skip" changes by path
   # alone, so this deliberately never tries to guess.
+=======
+  # Gate: only proceed if the CI Tests run that triggered this workflow
+  # actually passed, and if the commit touched something other than
+  # docs/**, *.md, or .gitignore. Path filtering can't use `on.push.paths`
+  # here since workflow_run doesn't support it — done by hand instead, by
+  # diffing the triggering commit against its parent.
+  #
+  # Known limitation: this diffs head_sha against head_sha^ (the commit's
+  # own parent), so for a push that lands multiple commits at once, only
+  # the last commit's changed files are inspected — an earlier commit in
+  # the same push that touched real code would be missed if the tip commit
+  # only touches docs. Accepted as a reasonable trade-off; a fully correct
+  # multi-commit check would need the original push's `before` SHA, which
+  # isn't available on the workflow_run event without an extra API call.
+  check-should-build:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.filter.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Check whether this commit touches anything beyond docs/**, *.md, .gitignore
+        id: filter
+        run: |
+          set -eu
+          CHANGED=$(git diff --name-only HEAD^ HEAD)
+          echo "Changed files in ${{ github.event.workflow_run.head_sha }}:"
+          echo "$CHANGED"
+
+          SHOULD_BUILD=false
+          while IFS= read -r FILE; do
+            [ -z "$FILE" ] && continue
+            case "$FILE" in
+              docs/*|*.md|.gitignore)
+                ;;
+              *)
+                SHOULD_BUILD=true
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          echo "should_build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
+          echo "Relevant changes found: $SHOULD_BUILD"
+
+  # Deletes dev-latest (release + tag) if it already exists, then always
+  # recreates it fresh from this run's commit. Ensures the release and its
+  # tag always point cleanly at the latest commit, with no leftover assets
+  # from a previous build lingering on it — build-server and
+  # build-android-dev only ever upload to a release this job already
+  # created, never create one themselves, so there's no race between them
+  # over creation.
+>>>>>>> Stashed changes
   ensure-dev-release:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
@@ -80,34 +137,29 @@ jobs:
         the API server URL is entered at runtime by whoever installs this
         build.
     steps:
-      - name: Create dev-latest pre-release if it doesn't already exist
+      - name: Delete existing dev-latest release and tag, if present
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
           if gh release view "$DEV_RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "dev-latest already exists — leaving creation alone, assets and notes get refreshed by the steps below."
+            echo "dev-latest exists — deleting release and tag before recreating."
+            gh release delete "$DEV_RELEASE_TAG" --repo "${{ github.repository }}" --yes --cleanup-tag
           else
-            gh release create "$DEV_RELEASE_TAG" \
-              --repo "${{ github.repository }}" \
-              --title "Dev (rolling)" \
-              --notes "$DEV_RELEASE_NOTES" \
-              --prerelease \
-              --target "${{ github.event.workflow_run.head_sha }}"
+            echo "dev-latest does not exist yet — nothing to delete."
           fi
 
-      # Runs every time, whether the release above was just created or
-      # already existed — keeps the notes text current even if it was
-      # edited by hand in between, or if this description is changed here
-      # in a later commit.
-      - name: Refresh dev-latest release notes
+      - name: Recreate dev-latest pre-release from scratch
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          gh release edit "$DEV_RELEASE_TAG" \
+          gh release create "$DEV_RELEASE_TAG" \
             --repo "${{ github.repository }}" \
-            --notes "$DEV_RELEASE_NOTES"
+            --title "Dev (rolling)" \
+            --notes "$DEV_RELEASE_NOTES" \
+            --prerelease \
+            --target "${{ github.event.workflow_run.head_sha }}"
 
   # Web build, on its own so it can run in parallel with build-admin.
   # Uploads dist/ as an artifact for build-server to assemble later.
