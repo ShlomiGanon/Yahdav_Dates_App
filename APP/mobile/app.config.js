@@ -10,7 +10,7 @@ const IS_DEV_BUILD = process.env.EXPO_PUBLIC_RUNTIME_API_URL_ENABLED === 'true';
 module.exports = {
   expo: {
     name: IS_DEV_BUILD ? 'יחדיו (Dev)' : 'יחדיו',
-    slug: 'yahdav',
+    slug: 'shlomi-ganon',
     scheme: 'yahdav',
     version: '1.0.0',
     orientation: 'portrait',
@@ -34,6 +34,7 @@ module.exports = {
 
     android: {
       package: IS_DEV_BUILD ? 'com.yahdav.app.dev' : 'com.yahdav.app',
+      googleServicesFile: './google-services.json',
       adaptiveIcon: {
         backgroundColor: '#1A1A2E',
         foregroundImage: './assets/android-icon-foreground.png',
@@ -90,6 +91,6 @@ module.exports = {
       },
     },
 
-    owner: 'REPLACE_WITH_EXPO_ACCOUNT_USERNAME',
+    owner: 'shlomiganons-team',
   },
 };
