@@ -59,62 +59,19 @@ env:
   DEV_RELEASE_TAG: dev-latest
 
 jobs:
-  # Gate: only proceed if the CI Tests run that triggered this workflow
-  # actually passed, and if the commit touched something other than
-  # docs/**, *.md, or .gitignore. Path filtering can't use `on.push.paths`
-  # here since workflow_run doesn't support it — done by hand instead, by
-  # diffing the triggering commit against its parent.
-  #
-  # Known limitation: this diffs head_sha against head_sha^ (the commit's
-  # own parent), so for a push that lands multiple commits at once, only
-  # the last commit's changed files are inspected — an earlier commit in
-  # the same push that touched real code would be missed if the tip commit
-  # only touches docs. Accepted as a reasonable trade-off; a fully correct
-  # multi-commit check would need the original push's `before` SHA, which
-  # isn't available on the workflow_run event without an extra API call.
-  check-should-build:
-    if: github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    outputs:
-      should_build: ${{ steps.filter.outputs.should_build }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-          fetch-depth: 2
-
-      - name: Check whether this commit touches anything beyond docs/**, *.md, .gitignore
-        id: filter
-        run: |
-          set -eu
-          CHANGED=$(git diff --name-only HEAD^ HEAD)
-          echo "Changed files in ${{ github.event.workflow_run.head_sha }}:"
-          echo "$CHANGED"
-
-          SHOULD_BUILD=false
-          while IFS= read -r FILE; do
-            [ -z "$FILE" ] && continue
-            case "$FILE" in
-              docs/*|*.md|.gitignore)
-                ;;
-              *)
-                SHOULD_BUILD=true
-                ;;
-            esac
-          done <<< "$CHANGED"
-
-          echo "should_build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
-          echo "Relevant changes found: $SHOULD_BUILD"
-
   # Creates the dev-latest pre-release once, if it doesn't exist yet, then
   # always refreshes its notes — build-server and build-android-dev both
   # upload assets to this same release and would otherwise race to create
   # it independently on the very first run (both finding it missing, both
   # trying to create it, one failing) — depending on this job instead makes
   # that a non-issue.
+  # No path filtering here on purpose — every successful CI Tests run on dev
+  # always triggers a full build, regardless of which files changed.
+  # shared/ changes affect every client (mobile, web, admin, server) and
+  # aren't reliably distinguishable from "safe to skip" changes by path
+  # alone, so this deliberately never tries to guess.
   ensure-dev-release:
-    needs: check-should-build
-    if: needs.check-should-build.outputs.should_build == 'true'
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       DEV_RELEASE_NOTES: >-
@@ -155,8 +112,7 @@ jobs:
   # Web build, on its own so it can run in parallel with build-admin.
   # Uploads dist/ as an artifact for build-server to assemble later.
   build-web:
-    needs: check-should-build
-    if: needs.check-should-build.outputs.should_build == 'true'
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -189,8 +145,7 @@ jobs:
   # Admin build, on its own so it can run in parallel with build-web. Admin
   # doesn't import from shared at all, so no shared install step is needed.
   build-admin:
-    needs: check-should-build
-    if: needs.check-should-build.outputs.should_build == 'true'
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -218,7 +173,7 @@ jobs:
   # public/web and public/admin, plus the setup docs — zipped and attached
   # to the dev-latest Release. Waits on ensure-dev-release too (not just
   # build-web/build-admin) so it never races build-android-dev to create
-  # the release. If any of the three is skipped (should_build == 'false'),
+  # the release. If any of the three is skipped (CI Tests didn't pass),
   # this is skipped automatically too — no explicit if: needed here.
   build-server:
     needs: [build-web, build-admin, ensure-dev-release]
@@ -375,8 +330,8 @@ jobs:
   # Android: unsigned APK, built directly in this runner — same mechanism
   # as release.yml's build-android, but with the runtime-URL gate switched
   # on and the dev bundle ID/display name (via mobile/app.config.js). If
-  # ensure-dev-release is skipped (should_build == 'false'), this is
-  # skipped automatically too — no explicit if: needed here.
+  # ensure-dev-release is skipped (CI Tests didn't pass), this is skipped
+  # automatically too — no explicit if: needed here.
   build-android-dev:
     needs: ensure-dev-release
     runs-on: ubuntu-latest
