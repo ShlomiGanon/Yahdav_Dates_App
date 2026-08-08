@@ -262,6 +262,36 @@ the button label — but only when there are unread messages.
 **Scope:** Small.
 **Priority:** Low — UI improvement.
 
+### Bug: Chat window on web expands downward and pushes the text input out of view
+**Description:** The chat window should be a fixed-height container with
+internal scrolling, so the text input always stays visible at the bottom
+regardless of the number of messages.
+
+**Scope:** Small.
+**Priority:** Medium.
+
+---
+
+## Architecture / Shared
+
+### Feature: Move chat business logic to shared package
+**What:** Move the following chat logic to `shared/` (pure TypeScript, no
+dependencies):
+- Message ordering (who sends left/right)
+- Date/time formatting for messages
+- Grouping messages by date
+- Pagination logic
+- "Last message" calculation for conversation list
+- Conversation title (name of the person you are chatting with)
+
+Each platform (web, mobile) keeps its own visual implementation but uses
+the shared logic.
+**Why:** This logic is currently duplicated (or will be duplicated)
+per-platform; centralizing it in `shared/` avoids drift between web and
+mobile chat behavior.
+**Scope:** Large.
+**Priority:** Medium.
+
 ---
 
 ## Product Decisions
