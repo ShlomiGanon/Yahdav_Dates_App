@@ -15,6 +15,8 @@ For deploying this same package to a real remote server instead, see
 ```
 yahdav-server-<version>/
 ├── dist/                 ← compiled backend (run this, not src/)
+├── shared/                ← compiled @yahdav/shared, vendored so the backend
+│                             doesn't need the monorepo's workspace to resolve it
 ├── migrations/           ← versioned SQL, applied automatically on startup
 ├── public/
 │   ├── web/               ← built customer-facing web app (served at /)
@@ -24,12 +26,16 @@ yahdav-server-<version>/
 │   └── REMOTE_SETUP.md
 ├── package.json
 ├── package-lock.json
-└── .env.example
+├── .env.example           ← blank-slate reference, not meant to be run as-is
+└── .env                   ← ready to run: every field pre-filled with a
+                              local-dev default — still needs JWT_SECRET
+                              replaced before real use, see step 3 below
 ```
 
 Deliberately **not** included: `node_modules/` (install it yourself — see
-below), any real `.env`, and any database file or uploaded photos. You're
-always starting from a clean slate.
+below), and any database file or uploaded photos. A real, working `.env`
+*is* included — you shouldn't need to hand-author one just to get the
+server running.
 
 ## 1 — Prerequisites
 
@@ -49,21 +55,21 @@ in `dist/` needs them to run.
 
 ## 3 — Configure environment variables
 
-```
-cp .env.example .env
-```
-
-Then edit `.env`:
+The package already includes a ready-to-run `.env`, pre-filled with
+local-dev defaults — you don't need to `cp .env.example .env` yourself
+(that file is just the blank-slate reference). Open the included `.env`
+and review it:
 
 | Variable | Required? | What to do |
 |----------|-----------|------------|
-| `JWT_SECRET` | **Yes** | Generate one: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` and paste the output in. Never reuse the placeholder value. |
+| `JWT_SECRET` | **Yes** | Ships with an obvious placeholder value. Generate a real one: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` and paste the output in. Never reuse the placeholder value. |
+| `NODE_ENV` | No | Ships as `development`. Not read by the app itself. |
 | `PORT` | No | Defaults to `3000`. |
 | `DB_PATH` | No | Defaults to `data/yahdav.sqlite3`, created automatically on first start. |
 | `UPLOADS_DIR` | No | Defaults to `data/uploads`, created automatically. |
 | `WEB_PUBLIC_DIR` / `ADMIN_PUBLIC_DIR` | No | Already correct for this package's layout (`public/web`, `public/admin`) — only change these if you moved the `public/` folder. |
 | `ADMIN_CORS_ORIGIN` | No | Not needed for this setup — web and admin are served by this same server, same origin. Only relevant if you host either frontend somewhere else instead. |
-| `DOMAIN` | No | Not used locally at all — see `REMOTE_SETUP.md`. |
+| `DOMAIN` | No | Ships commented out — not used locally at all, see `REMOTE_SETUP.md`. |
 | `EXPO_PUSH_URL` | No | Leave as the default unless you have a reason to change it. |
 
 ## 4 — Start the server

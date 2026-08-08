@@ -60,23 +60,6 @@ them against a real off-server target.
 **Why:** Nothing currently notices if the server goes down.
 **Scope:** Small.
 
-### Fix the backend's missing workspace-symlink install step in CI
-**What:** `test.yml`'s `backend` job runs a second `npm ci` at the
-workspace root (`working-directory: APP`) specifically to create the
-`@yahdav/shared` npm-workspace symlink that a plain `npm ci` inside
-`APP/backend` alone doesn't produce. Neither `release.yml`'s nor
-`release-dev.yml`'s `build-server` job does this.
-**Why:** It hasn't caused an observed failure yet, because `tsc`
-apparently doesn't need the real symlink to type-check against
-`shared`'s `.d.ts` output — only an actual `require()` at runtime would.
-Since CI only builds and packages the backend (never runs it), this gap
-is latent, not active. It's still a real, first-hand-confirmed
-inconsistency between two CI paths that both need to resolve
-`@yahdav/shared`, and worth closing before it causes a confusing failure
-somewhere less obvious.
-**Scope:** Small — add one more `npm ci` step, matching `test.yml`'s
-existing pattern.
-
 ---
 
 ## Mobile & App Store
@@ -175,6 +158,42 @@ a policy decision on limits, not a design problem.
 
 ---
 
+## Real-time / WebSocket
+
+### Bug: Logout does not close open WebSocket connections, leaving other tabs in an inconsistent state
+**Context:** Multiple tabs open with the same logged-in user is
+intentional, supported behavior. When the user logs out from one tab, the
+server should close ALL open WebSocket connections for that user; each tab
+that had an open socket then detects the closure and reacts accordingly.
+
+**Expected behavior after logout:**
+1. Client sends a logout request to the server (`/api/auth/logout`).
+2. Server revokes the refresh token AND closes all open WebSocket
+   connections for that user.
+3. Each client tab detects the socket closure.
+4. Each tab calls `/api/auth/me` (or equivalent) to check whether it's
+   still authenticated.
+5. If still authenticated (e.g. a different user logged in on the same
+   device) → show a notification that the session was closed from another
+   tab.
+6. If not authenticated → redirect to login.
+
+**Current behavior:** Logout only revokes the refresh token — it does not
+close open sockets. Other tabs remain active with an open, authenticated
+WebSocket connection indefinitely.
+
+**Why:** A logged-out session shouldn't leave a live, authenticated
+WebSocket connection behind in other tabs — that's a real inconsistent-state
+bug, not just a cosmetic gap, since those tabs keep acting as if the session
+were still valid until something else (a page reload, an unrelated API
+call) happens to notice otherwise.
+
+**Scope:** Medium.
+**Priority:** High — a logged-out user's WebSocket connections remain open
+and authenticated across tabs.
+
+---
+
 ## Code Quality & Technical Debt
 
 ### `shared/config.ts` triggers a Vite deprecation warning
@@ -218,6 +237,60 @@ citation), but touches ~28 files.
 ### Standardize Allman brace style across the mobile codebase
 See the Mobile & App Store section above — listed there since it's
 mobile-specific, but it's a code-quality item, not a product feature.
+
+---
+
+## UI / UX
+
+### Feature: Show unread message count badge on chat button
+**Description:** On the chat/messages button in both the web app and the
+mobile app, display the number of unread messages in parentheses next to
+the button label — but only when there are unread messages.
+
+**Examples:**
+- No unread messages → show: "הודעות" (no badge)
+- 3 unread messages → show: "הודעות (3)"
+
+**Notes:**
+- The unread count per conversation already exists in the backend
+  (`unread_count` field returned by `GET /api/chat/conversations`).
+- The total unread count should be the sum of `unread_count` across all
+  conversations.
+- Should update in real time when a new message arrives via WebSocket.
+- Should clear (disappear) when the user opens the chat.
+
+**Scope:** Small.
+**Priority:** Low — UI improvement.
+
+### Bug: Chat window on web expands downward and pushes the text input out of view
+**Description:** The chat window should be a fixed-height container with
+internal scrolling, so the text input always stays visible at the bottom
+regardless of the number of messages.
+
+**Scope:** Small.
+**Priority:** Medium.
+
+---
+
+## Architecture / Shared
+
+### Feature: Move chat business logic to shared package
+**What:** Move the following chat logic to `shared/` (pure TypeScript, no
+dependencies):
+- Message ordering (who sends left/right)
+- Date/time formatting for messages
+- Grouping messages by date
+- Pagination logic
+- "Last message" calculation for conversation list
+- Conversation title (name of the person you are chatting with)
+
+Each platform (web, mobile) keeps its own visual implementation but uses
+the shared logic.
+**Why:** This logic is currently duplicated (or will be duplicated)
+per-platform; centralizing it in `shared/` avoids drift between web and
+mobile chat behavior.
+**Scope:** Large.
+**Priority:** Medium.
 
 ---
 

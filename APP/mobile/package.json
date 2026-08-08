@@ -12,6 +12,7 @@
     "axios": "^1.19.0",
     "date-fns": "^4.4.0",
     "expo": "~57.0.9",
+    "expo-build-properties": "~57.0.9",
     "expo-font": "~57.0.1",
     "expo-image": "~57.0.1",
     "expo-image-manipulator": "~57.0.7",
@@ -38,8 +39,8 @@
   },
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "test": "jest"
   },
   "private": true

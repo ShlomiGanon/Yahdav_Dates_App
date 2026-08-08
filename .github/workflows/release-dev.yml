@@ -1,12 +1,30 @@
 name: CD Dev
 
 # Build-and-package only, same as release.yml — never deploys anywhere.
-# Manual only (workflow_dispatch), unlike release.yml's release-triggered
-# flow: there's no GitHub Release object to resolve a commit from here, so
-# this always builds whatever commit the dispatch itself targets
-# (github.sha), with no "Tests already passed" gate — that gate only makes
-# sense against an existing Tests run for an exact commit, and dev builds
-# are meant for fast, on-demand iteration.
+# Triggered automatically once CI Tests finishes running against the dev
+# branch — not directly on push — and only proceeds if that CI Tests run
+# passed. No manual trigger.
+#
+# Why workflow_run instead of push: CI Tests (test.yml) already triggers on
+# the exact same `push: branches: [dev]` event this workflow cares about. A
+# workflow triggered directly by that push would start racing CI Tests
+# itself, with no guarantee CI Tests had even started — let alone passed —
+# by the time this workflow's own gate checked it. Triggering on CI Tests'
+# own completion instead sidesteps that: this workflow doesn't run until CI
+# Tests is already done, and its conclusion is read straight off the
+# triggering event (github.event.workflow_run.conclusion) — no polling, no
+# follow-up API query needed (contrast release.yml's verify-tests-passed,
+# which does need one, because it's triggered by an unrelated `release`
+# event that has no built-in link to any CI Tests run).
+#
+# The commit actually being built is github.event.workflow_run.head_sha —
+# NOT github.sha, which on a workflow_run-triggered run refers to this
+# workflow file's own ref, not the commit CI Tests ran against.
+#
+# GitHub Actions quirk worth knowing: workflow_run always runs the copy of
+# this file that's on the repository's default branch (main), regardless of
+# what dev's copy looks like — an edit here only takes effect for future
+# runs once merged to main.
 #
 # Server/web/admin build steps mirror release.yml's exactly (this file is
 # fully self-contained — no dependency on any other workflow file). The
@@ -18,7 +36,20 @@ name: CD Dev
 # All artifacts publish to one rolling `dev-latest` pre-release, replacing
 # its assets on every run — see ensure-dev-release below.
 on:
-  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI Tests"]
+    types: [completed]
+    branches: [dev]
+
+# Cancel any older in-flight run the moment a newer one starts. Without
+# this, two runs triggered close together could finish out of order and
+# leave dev-latest holding an artifact built from an older commit than its
+# sibling artifact — see build-server / build-android-dev below, which
+# upload independently. Only one branch ever triggers this workflow, so a
+# single fixed group name is enough.
+concurrency:
+  group: release-dev
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -28,13 +59,69 @@ env:
   DEV_RELEASE_TAG: dev-latest
 
 jobs:
-  # Creates the dev-latest pre-release once, if it doesn't exist yet.
-  # build-server and build-android-dev both upload assets to this same
-  # release and would otherwise race to create it independently on the
-  # very first run (both finding it missing, both trying to create it,
-  # one failing) — depending on this job instead makes that a non-issue.
-  ensure-dev-release:
+  # Gate: only proceed if the CI Tests run that triggered this workflow
+  # actually passed, and if the commit touched something other than
+  # docs/**, *.md, or .gitignore. Path filtering can't use `on.push.paths`
+  # here since workflow_run doesn't support it — done by hand instead, by
+  # diffing the triggering commit against its parent.
+  #
+  # Known limitation: this diffs head_sha against head_sha^ (the commit's
+  # own parent), so for a push that lands multiple commits at once, only
+  # the last commit's changed files are inspected — an earlier commit in
+  # the same push that touched real code would be missed if the tip commit
+  # only touches docs. Accepted as a reasonable trade-off; a fully correct
+  # multi-commit check would need the original push's `before` SHA, which
+  # isn't available on the workflow_run event without an extra API call.
+  check-should-build:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.filter.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Check whether this commit touches anything beyond docs/**, *.md, .gitignore
+        id: filter
+        run: |
+          set -eu
+          CHANGED=$(git diff --name-only HEAD^ HEAD)
+          echo "Changed files in ${{ github.event.workflow_run.head_sha }}:"
+          echo "$CHANGED"
+
+          SHOULD_BUILD=false
+          while IFS= read -r FILE; do
+            [ -z "$FILE" ] && continue
+            case "$FILE" in
+              docs/*|*.md|.gitignore)
+                ;;
+              *)
+                SHOULD_BUILD=true
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          echo "should_build=$SHOULD_BUILD" >> "$GITHUB_OUTPUT"
+          echo "Relevant changes found: $SHOULD_BUILD"
+
+  # Creates the dev-latest pre-release once, if it doesn't exist yet, then
+  # always refreshes its notes — build-server and build-android-dev both
+  # upload assets to this same release and would otherwise race to create
+  # it independently on the very first run (both finding it missing, both
+  # trying to create it, one failing) — depending on this job instead makes
+  # that a non-issue.
+  ensure-dev-release:
+    needs: check-should-build
+    if: needs.check-should-build.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    env:
+      DEV_RELEASE_NOTES: >-
+        Automatically built by release-dev.yml whenever CI Tests passes on
+        the dev branch — this is not a manual run. Not for production use —
+        the API server URL is entered at runtime by whoever installs this
+        build.
     steps:
       - name: Create dev-latest pre-release if it doesn't already exist
         env:
@@ -42,24 +129,39 @@ jobs:
         run: |
           set -eu
           if gh release view "$DEV_RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "dev-latest already exists — leaving it as-is, assets get replaced by the jobs below."
+            echo "dev-latest already exists — leaving creation alone, assets and notes get refreshed by the steps below."
           else
             gh release create "$DEV_RELEASE_TAG" \
               --repo "${{ github.repository }}" \
               --title "Dev (rolling)" \
-              --notes "Automatically built and updated by release-dev.yml on every manual run. Not for production use — the API server URL is entered at runtime by whoever installs this build." \
+              --notes "$DEV_RELEASE_NOTES" \
               --prerelease \
-              --target "${{ github.sha }}"
+              --target "${{ github.event.workflow_run.head_sha }}"
           fi
+
+      # Runs every time, whether the release above was just created or
+      # already existed — keeps the notes text current even if it was
+      # edited by hand in between, or if this description is changed here
+      # in a later commit.
+      - name: Refresh dev-latest release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          gh release edit "$DEV_RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --notes "$DEV_RELEASE_NOTES"
 
   # Web build, on its own so it can run in parallel with build-admin.
   # Uploads dist/ as an artifact for build-server to assemble later.
   build-web:
+    needs: check-should-build
+    if: needs.check-should-build.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -87,11 +189,13 @@ jobs:
   # Admin build, on its own so it can run in parallel with build-web. Admin
   # doesn't import from shared at all, so no shared install step is needed.
   build-admin:
+    needs: check-should-build
+    if: needs.check-should-build.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -114,14 +218,15 @@ jobs:
   # public/web and public/admin, plus the setup docs — zipped and attached
   # to the dev-latest Release. Waits on ensure-dev-release too (not just
   # build-web/build-admin) so it never races build-android-dev to create
-  # the release.
+  # the release. If any of the three is skipped (should_build == 'false'),
+  # this is skipped automatically too — no explicit if: needed here.
   build-server:
     needs: [build-web, build-admin, ensure-dev-release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -155,15 +260,109 @@ jobs:
         run: |
           set -eu
           PKG="yahdav-server-${{ env.DEV_RELEASE_TAG }}"
-          mkdir -p "$PKG/dist" "$PKG/migrations" "$PKG/docs" "$PKG/public/web" "$PKG/public/admin"
+          mkdir -p "$PKG/dist" "$PKG/migrations" "$PKG/docs" "$PKG/public/web" "$PKG/public/admin" "$PKG/shared/dist"
 
           cp -r APP/backend/dist/.      "$PKG/dist/"
           cp -r APP/backend/migrations/. "$PKG/migrations/"
           cp    APP/backend/package.json APP/backend/package-lock.json "$PKG/"
           cp    APP/backend/.env.example "$PKG/"
+
+          # Dev-ready .env, pre-filled with sensible defaults so the server
+          # starts immediately after `npm install` — see
+          # docs/LOCAL_SETUP.md. .env.example (copied above) is left
+          # untouched as the blank-slate reference; this is a second,
+          # ready-to-run file alongside it. Built as an array (not a
+          # heredoc) so this step's own indentation cannot leak into the
+          # generated file's content.
+          ENV_LINES=(
+            '# ── Runtime environment ────────────────────────────────────────'
+            '# Standard Node.js convention read by Express and other libraries'
+            '# to enable development mode. Not read directly by application'
+            '# code in this project, but left set for compatibility with'
+            '# tooling that checks it.'
+            'NODE_ENV=development'
+            ''
+            '# ── Server ──────────────────────────────────────────────────────'
+            '# Port the backend listens on. Change only if 3000 is already in'
+            '# use on this machine.'
+            'PORT=3000'
+            ''
+            '# ── Database ────────────────────────────────────────────────────'
+            '# Path to the SQLite file, created automatically on first start.'
+            '# A relative path is fine for a local or dev run — it resolves'
+            '# against wherever the server is started from.'
+            'DB_PATH=data/yahdav.sqlite3'
+            ''
+            '# ── File uploads ────────────────────────────────────────────────'
+            '# Directory where uploaded profile photos are stored, created'
+            '# automatically on first start.'
+            'UPLOADS_DIR=data/uploads'
+            ''
+            '# ── Frontend bundles served same-origin ────────────────────────'
+            '# The built web app, served at / (see'
+            '# backend/src/utils/mountSpa.ts). Already correct for this'
+            '# package layout — only change if the public/web folder is moved.'
+            'WEB_PUBLIC_DIR=public/web'
+            ''
+            '# The built admin dashboard, served at /admin. Already correct'
+            '# for this package layout — only change if the public/admin'
+            '# folder is moved.'
+            'ADMIN_PUBLIC_DIR=public/admin'
+            ''
+            '# ── Domain (remote deployment only — see docs/REMOTE_SETUP.md) ──'
+            '# Not used for a local or dev run — this build is meant for'
+            '# testing on this machine or network, not a real deployment.'
+            '# Leave commented out.'
+            '# DOMAIN=your-domain.example.com'
+            ''
+            '# ── Auth ────────────────────────────────────────────────────────'
+            '# REQUIRED. Signs and verifies JWT access/refresh tokens — the'
+            '# server will not start without this set. Any random string'
+            '# works for local testing; for a real value, generate one with:'
+            "#   node -e \"console.log(require('crypto').randomBytes(48).toString('hex'))\""
+            'JWT_SECRET=change-me-dev-secret-any-random-string-works-for-local-testing'
+            ''
+            '# How long an access token stays valid before the client must'
+            '# refresh it.'
+            'JWT_ACCESS_TTL=15m'
+            ''
+            '# How long a refresh token stays valid, in days, before the user'
+            '# must log in again from scratch.'
+            'JWT_REFRESH_TTL_DAYS=30'
+            ''
+            '# ── CORS ────────────────────────────────────────────────────────'
+            '# Comma-separated list of allowed browser origins. Not needed'
+            '# for this package default setup — web and admin are served by'
+            '# this same server, same origin. These localhost ports only'
+            '# matter if web or admin run their own separate Vite dev'
+            '# servers instead of this package bundled build.'
+            'ADMIN_CORS_ORIGIN=http://localhost:5173,http://localhost:5174'
+            ''
+            '# ── Push notifications ──────────────────────────────────────────'
+            '# Expo push notification gateway. Leave as the default unless'
+            '# there is a specific reason to change it.'
+            'EXPO_PUSH_URL=https://exp.host/--/api/v2/push/send'
+          )
+          printf '%s\n' "${ENV_LINES[@]}" > "$PKG/.env"
+
           cp    APP/backend/docs/LOCAL_SETUP.md APP/backend/docs/REMOTE_SETUP.md "$PKG/docs/"
           cp -r APP/web/dist/.   "$PKG/public/web/"
           cp -r APP/admin/dist/. "$PKG/public/admin/"
+
+          # Vendor @yahdav/shared's compiled output as a sibling folder (not under
+          # node_modules/ — a bare node_modules/@yahdav/shared with no matching
+          # package.json entry gets deleted the moment LOCAL_SETUP.md's documented
+          # `npm install --omit=dev` step runs, since npm prunes anything on disk
+          # that isn't declared). backend/package.json declares "file:../shared",
+          # correct for the monorepo; rewritten below to "file:./shared" to match
+          # this package's own layout, where shared/ sits next to package.json
+          # instead of one level up. npm then symlinks node_modules/@yahdav/shared
+          # -> ./shared on install, same mechanism as the monorepo's workspace link.
+          cp -r APP/shared/dist/. "$PKG/shared/dist/"
+          cp    APP/shared/package.json "$PKG/shared/"
+          sed -i 's#"file:\.\./shared"#"file:./shared"#' "$PKG/package.json"
+          sed -i 's#"resolved": "\.\./shared"#"resolved": "./shared"#' "$PKG/package-lock.json"
+          sed -i 's#^    "\.\./shared": {#    "shared": {#' "$PKG/package-lock.json"
 
           zip -r "$PKG.zip" "$PKG"
           echo "PACKAGE_PATH=$PKG.zip" >> "$GITHUB_ENV"
@@ -175,14 +374,27 @@ jobs:
 
   # Android: unsigned APK, built directly in this runner — same mechanism
   # as release.yml's build-android, but with the runtime-URL gate switched
-  # on and the dev bundle ID/display name (via mobile/app.config.js).
+  # on and the dev bundle ID/display name (via mobile/app.config.js). If
+  # ensure-dev-release is skipped (should_build == 'false'), this is
+  # skipped automatically too — no explicit if: needed here.
   build-android-dev:
     needs: ensure-dev-release
     runs-on: ubuntu-latest
+    # Job-level (not step-level) on purpose: this must still be set when
+    # Gradle's release build runs later in this job (`./gradlew
+    # assembleRelease`, in the "Build the unsigned APK" step below) — that
+    # step is what actually invokes Metro to bundle the JS, which is where
+    # ServerUrlGate.tsx's process.env.EXPO_PUBLIC_RUNTIME_API_URL_ENABLED
+    # check gets inlined. A step-level env: here would only cover the
+    # "Generate the native Android project" step's own `expo prebuild` call
+    # (native scaffolding only, not JS bundling), leaving the Gradle step
+    # without it and silently baking `undefined` into the bundle instead.
+    env:
+      EXPO_PUBLIC_RUNTIME_API_URL_ENABLED: 'true'
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -193,6 +405,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Official Gradle action — caches ~/.gradle/caches, the wrapper
+      # distribution, and (where safe) task outputs, keyed off the wrapper
+      # version and dependency lockfiles. Every ./gradlew invocation later
+      # in this job is automatically covered once this step has run; no
+      # wrapper syntax change needed. This is what takes this job from a
+      # cold ~15-20 min build down to ~3-5 min on a warm cache — the
+      # dominant cost of running this workflow on every push.
+      - name: Set up Gradle caching
+        uses: gradle/actions/setup-gradle@v4
+
       - name: Install shared
         working-directory: APP/shared
         run: npm ci
@@ -201,14 +423,14 @@ jobs:
         working-directory: APP/mobile
         run: npm ci
 
-      # This is the one flag that distinguishes a dev build from a
-      # production build at the JS level — read by mobile/app.config.js
-      # (bundle ID / display name) and by the app itself at runtime (the
-      # ServerUrlGate). release.yml's build-android never sets this.
+      # EXPO_PUBLIC_RUNTIME_API_URL_ENABLED (set at job level above) is the
+      # one flag that distinguishes a dev build from a production build at
+      # the JS level — read by mobile/app.config.js (bundle ID / display
+      # name) here, and by the app itself at runtime (the ServerUrlGate)
+      # during the Gradle build step below. release.yml's build-android
+      # never sets this.
       - name: Generate the native Android project (dev configuration)
         working-directory: APP/mobile
-        env:
-          EXPO_PUBLIC_RUNTIME_API_URL_ENABLED: 'true'
         run: npx expo prebuild --platform android --non-interactive
 
       - name: Build the unsigned APK

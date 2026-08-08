@@ -81,7 +81,15 @@ APP/backend/public/
 !.env.example
 .envrc
 
+# Firebase / Google service-account private keys and Android signing
+# keystores — actual secrets, unlike google-services.json /
+# GoogleService-Info.plist (client-side config, not credentials — see
+# APP/mobile/google-services.json, tracked intentionally).
 serviceAccountKey.json
+*serviceAccount*.json
+*firebase-adminsdk*.json
+google-play-service-account.json
+*.keystore
 *.secret
 *.pem
 *.key
@@ -95,7 +103,13 @@ logs/
 
 
 # -----------------------------------------------------------------------------
-# 8. IDE & editor
+# 8. Claude Code — per-developer local settings, not shared
+# -----------------------------------------------------------------------------
+**/.claude/settings.local.json
+
+
+# -----------------------------------------------------------------------------
+# 9. IDE & editor
 # -----------------------------------------------------------------------------
 .vscode/
 !.vscode/extensions.json
@@ -108,7 +122,7 @@ logs/
 
 
 # -----------------------------------------------------------------------------
-# 9. OS metadata
+# 10. OS metadata
 # -----------------------------------------------------------------------------
 .DS_Store
 Thumbs.db
@@ -117,7 +131,7 @@ $RECYCLE.BIN/
 
 
 # -----------------------------------------------------------------------------
-# 10. Misc scratch
+# 11. Misc scratch
 # -----------------------------------------------------------------------------
 *.bak
 *.tmp

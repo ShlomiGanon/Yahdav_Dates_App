@@ -10,7 +10,7 @@ const IS_DEV_BUILD = process.env.EXPO_PUBLIC_RUNTIME_API_URL_ENABLED === 'true';
 module.exports = {
   expo: {
     name: IS_DEV_BUILD ? 'יחדיו (Dev)' : 'יחדיו',
-    slug: 'yahdav',
+    slug: 'shlomi-ganon',
     scheme: 'yahdav',
     version: '1.0.0',
     orientation: 'portrait',
@@ -34,6 +34,7 @@ module.exports = {
 
     android: {
       package: IS_DEV_BUILD ? 'com.yahdav.app.dev' : 'com.yahdav.app',
+      googleServicesFile: './google-services.json',
       adaptiveIcon: {
         backgroundColor: '#1A1A2E',
         foregroundImage: './assets/android-icon-foreground.png',
@@ -71,14 +72,25 @@ module.exports = {
           sounds: [],
         },
       ],
+      // Dev build only — lets the ServerUrlGate screen (see
+      // src/components/ServerUrlGate.tsx) hit a plain http:// address on
+      // the local network. Android blocks cleartext traffic by default
+      // (API 28+), and there is no top-level app.config.js field for this
+      // in SDK 57 — usesCleartextTraffic must go through
+      // expo-build-properties. Omitted entirely for production, so its
+      // build keeps the platform default (cleartext blocked) exactly as
+      // before this plugin existed.
+      ...(IS_DEV_BUILD
+        ? [['expo-build-properties', { android: { usesCleartextTraffic: true } }]]
+        : []),
     ],
 
     extra: {
       eas: {
-        projectId: 'REPLACE_WITH_EAS_PROJECT_ID',
+        projectId: '41d146c0-c806-42cb-868c-2b30afb9e94e',
       },
     },
 
-    owner: 'REPLACE_WITH_EXPO_ACCOUNT_USERNAME',
+    owner: 'shlomiganons-team',
   },
 };

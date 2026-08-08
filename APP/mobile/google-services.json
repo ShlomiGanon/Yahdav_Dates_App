@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "154244566607",
+    "project_id": "yahdav-app",
+    "storage_bucket": "yahdav-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:154244566607:android:65879630259edab150243a",
+        "android_client_info": {
+          "package_name": "com.yahdav.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxO94pIcl7fUQSRjk5RDp5DnQSJ_vW6T4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:154244566607:android:f410a459cbca8b1d50243a",
+        "android_client_info": {
+          "package_name": "com.yahdav.app.dev"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxO94pIcl7fUQSRjk5RDp5DnQSJ_vW6T4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
